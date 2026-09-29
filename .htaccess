@@ -1,0 +1,17 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    DirectoryIndex index.php
+
+    RewriteRule ^(?:index\.php|public/index\.php)$ - [END]
+    RewriteRule ^$ index.php [END]
+
+    # Expose generated and public assets from the project subfolder.
+    RewriteRule ^(build|images|img|js|css|storage)(/.*)?$ public/$1$2 [END]
+    RewriteRule ^(.+\.(png|jpg|jpeg|gif|ico|svg|webp|woff|woff2|ttf|eot))$ public/$1 [END]
+
+    # Front controller at the project root so Laravel sees the subdirectory
+    # (e.g. /Proagroindustria2) as the app base path, not as a route.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [END]
+</IfModule>

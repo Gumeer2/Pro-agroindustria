@@ -1,0 +1,24 @@
+--- INICIO DEL DESPLIEGUE ---
+[2026-01-20 02:03:07] Iniciando script extract_debug.php
+[2026-01-20 02:03:07] Directorio actual: /home/u174025152/domains/pro-agroindustria.com/public_html
+[2026-01-20 02:03:07] Usuario: u174025152
+[2026-01-20 02:03:07] Permisos de directorio: 0755
+[2026-01-20 02:03:07] Archivo release.zip encontrado. Tamaño: 14855789 bytes
+[2026-01-20 02:03:07] ZIP abierto correctamente.
+[2026-01-20 02:03:08] Extracción reportada como EXITOSA.
+[2026-01-20 02:03:08] Manifest timestamp: 2026-01-20 01:46:36
+[2026-01-20 02:03:08] Intentando limpiar caché de Laravel...
+[2026-01-20 02:03:08] 🗑️ Cache eliminado: packages.php
+[2026-01-20 02:03:08] 🗑️ Cache eliminado: services.php
+[2026-01-20 02:03:08] ✅ View Clear: INFO  Compiled views cleared successfully.
+[2026-01-20 02:03:08] ✅ Optimize Clear: INFO  Clearing cached bootstrap files.  
+
+  cache ......................................................... 39.30ms DONE
+  compiled ....................................................... 0.89ms DONE
+  config ......................................................... 0.65ms DONE
+  events ......................................................... 0.60ms DONE
+  routes ......................................................... 0.61ms DONE
+  views .......................................................... 0.53ms DONE
+[2026-01-20 02:03:08] Auto-eliminando ZIP...
+[2026-01-20 02:03:08] ZIP eliminado.
+[2026-01-20 02:03:08] --- FIN DEL PROCESO ---

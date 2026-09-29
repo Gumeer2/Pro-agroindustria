@@ -1,0 +1,36 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    # Disable caching for PWA Service Worker and Manifest
+    <FilesMatch "^(sw\.js|manifest\.webmanifest)$">
+        FileETag None
+        <IfModule mod_headers.c>
+            Header set Cache-Control "max-age=0, no-cache, no-store, must-revalidate"
+            Header set Pragma "no-cache"
+            Header set Expires "Wed, 11 Jan 1984 05:00:00 GMT"
+        </IfModule>
+    </FilesMatch>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Handle X-XSRF-Token Header
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Redirect Trailing Slashes If Not A Folder...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [END,R=301]
+
+    # Send Requests To Front Controller...
+    RewriteRule ^index\.php$ - [END]
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [END]
+</IfModule>

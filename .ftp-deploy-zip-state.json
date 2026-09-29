@@ -1,0 +1,71 @@
+{
+    "description": "DO NOT DELETE THIS FILE. This file is used to keep track of which files have been synced in the most recent deployment. If you delete this file a resync will need to be done (which can take a while) - read more: https://github.com/SamKirkland/FTP-Deploy-Action",
+    "version": "1.0.0",
+    "generatedTime": 1775949355157,
+    "data": [
+        {
+            "type": "file",
+            "name": ".htaccess",
+            "size": 128,
+            "hash": "3633137df80998c887cae9ef26b9e3340b7a6342dd3ce45b21ec3c174f9c3da5"
+        },
+        {
+            "type": "file",
+            "name": "deploy_health_check.php",
+            "size": 888,
+            "hash": "d4002ac272c12abe80fafbd1650015438a7e9c2acf761e6781c2aae0b9798b9e"
+        },
+        {
+            "type": "file",
+            "name": "extract.php",
+            "size": 3724,
+            "hash": "85221f7cfcaf8f4ea8c7a38c68fac2e22955b080294e8b90eef00d6ee05453b1"
+        },
+        {
+            "type": "file",
+            "name": "extract_debug.php",
+            "size": 5096,
+            "hash": "762ab8bcfa881b76d1f8d91c0f31774f916fd19a3871981f08b93fc17f0e6d72"
+        },
+        {
+            "type": "file",
+            "name": "fix_perms.php",
+            "size": 1377,
+            "hash": "7b7c644ac096ba77d8c0bf38b513e6bf4832a25181b7884eb36d457a93bb1925"
+        },
+        {
+            "type": "file",
+            "name": "index.php",
+            "size": 251,
+            "hash": "ea0fad45d088cc2773645b871386143ccd513e65e1e730942634514c0c712841"
+        },
+        {
+            "type": "file",
+            "name": "migrate.php",
+            "size": 1526,
+            "hash": "946f7356fbd680e1c48d30d685f469dfca020f9b9d82243bb34792825dff56b2"
+        },
+        {
+            "type": "folder",
+            "name": "public"
+        },
+        {
+            "type": "file",
+            "name": "release_1295.zip",
+            "size": 5361865,
+            "hash": "3a8b0b4b9928758e48541cf58dd095e5a195501aadfbd90c1466cbbbb9868610"
+        },
+        {
+            "type": "file",
+            "name": "public/extract_debug.php",
+            "size": 5096,
+            "hash": "762ab8bcfa881b76d1f8d91c0f31774f916fd19a3871981f08b93fc17f0e6d72"
+        },
+        {
+            "type": "file",
+            "name": "public/migrate.php",
+            "size": 1526,
+            "hash": "946f7356fbd680e1c48d30d685f469dfca020f9b9d82243bb34792825dff56b2"
+        }
+    ]
+}
