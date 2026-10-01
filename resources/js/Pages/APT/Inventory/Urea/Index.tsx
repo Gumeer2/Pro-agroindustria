@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useMemo, FormEventHandler } from "react";
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link, router, usePage, useForm } from "@inertiajs/react";
 import {
@@ -18,9 +19,6 @@ import {
     Trash2,
     Filter,
 } from "lucide-react";
-import { useState, useEffect, FormEventHandler } from "react";
-// @ts-ignore
-import { pickBy } from "lodash";
 import Swal from "sweetalert2";
 
 interface DailyProduction {
@@ -155,22 +153,20 @@ export default function UreaInventoryIndex({
     filters = {},
 }: PageProps) {
     const { flash } = usePage<any>().props;
-    const requestedTab = new URLSearchParams(window.location.search).get("tab") as
-        | "production"
-        | "initial"
-        | "summary"
-        | null;
+    const requestedTab = typeof window !== "undefined"
+        ? (new URLSearchParams(window.location.search).get("tab") as "production" | "initial" | "summary" | null)
+        : null;
     const [activeTab, setActiveTab] = useState<"production" | "initial" | "summary">(
-        requestedTab || initialTab || (filters.tab as any) || "production"
+        requestedTab || initialTab || (filters?.tab as any) || "production"
     );
 
     // Search and filter state
-    const [search, setSearch] = useState(filters.search || "");
-    const [warehouseFilter, setWarehouseFilter] = useState(filters.warehouse || "");
-    const [plantFilter, setPlantFilter] = useState(filters.plant_origin || "");
-    const [shiftFilter, setShiftFilter] = useState(filters.shift || "");
-    const [dateFrom, setDateFrom] = useState(filters.date_from || "");
-    const [dateTo, setDateTo] = useState(filters.date_to || "");
+    const [search, setSearch] = useState(filters?.search || "");
+    const [warehouseFilter, setWarehouseFilter] = useState(filters?.warehouse || "");
+    const [plantFilter, setPlantFilter] = useState(filters?.plant_origin || "");
+    const [shiftFilter, setShiftFilter] = useState(filters?.shift || "");
+    const [dateFrom, setDateFrom] = useState(filters?.date_from || "");
+    const [dateTo, setDateTo] = useState(filters?.date_to || "");
 
     // Modal States
     const [isDailyModalOpen, setIsDailyModalOpen] = useState(false);
@@ -221,10 +217,20 @@ export default function UreaInventoryIndex({
         notes: "",
     });
 
+    const cleanParams = (params: Record<string, any>) => {
+        const result: Record<string, any> = {};
+        Object.entries(params).forEach(([key, val]) => {
+            if (val !== undefined && val !== null && val !== "") {
+                result[key] = val;
+            }
+        });
+        return result;
+    };
+
     // Handle filter application
     const applyFilters = (overrides = {}) => {
-        const from = new URLSearchParams(window.location.search).get("from");
-        const query = pickBy({
+        const from = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null;
+        const query = cleanParams({
             tab: activeTab,
             search,
             warehouse: warehouseFilter,
@@ -254,8 +260,8 @@ export default function UreaInventoryIndex({
         setShiftFilter("");
         setDateFrom("");
         setDateTo("");
-        const from = new URLSearchParams(window.location.search).get("from");
-        router.get(route("apt.inventory.urea.index"), pickBy({ tab: activeTab, from }), {
+        const from = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null;
+        router.get(route("apt.inventory.urea.index"), cleanParams({ tab: activeTab, from }), {
             preserveState: true,
         });
     };
