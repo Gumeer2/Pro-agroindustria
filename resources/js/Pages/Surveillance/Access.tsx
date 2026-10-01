@@ -147,28 +147,19 @@ export default function Access({
             const response = await axios.post(route("surveillance.scan-order"), { code: code.trim() });
             const data = response.data;
 
-            setScannedOrderData(data.order);
-            setScannedSubjectData(data.subject);
-            setOrderAvailableOrders(data.available_orders || []);
-            const autoAdditional = (data.available_orders || [])
-                .filter((o: any) => o.id !== data.order?.id)
-                .slice(0, 2)
-                .map((o: any) => o.id);
-            setSelectedAdditionalOrderIds(autoAdditional);
-            setIsOrderInPlant(!!data.is_in_plant);
-            setActiveOrderLog(data.active_log || null);
             setOrderScanInput("");
             setShowOrderCamera(false);
 
             Swal.fire({
                 icon: "success",
-                title: "Orden Localizada",
-                text: `Folio: ${data.order?.folio ?? data.order?.id} | Operador: ${data.subject?.name || data.order?.operator_name}`,
-                toast: true,
-                position: "top-end",
+                title: "¡Entrada Registrada!",
+                text: data.message || `Operador ${data.subject?.name || data.order?.operator_name} ingresó a planta.`,
+                timer: 1500,
                 showConfirmButton: false,
-                timer: 3500,
             });
+
+            // Redirect automatically to Salidas de Operadores
+            router.visit(route("surveillance.exits.index"));
         } catch (error: any) {
             console.error("Order Scan Error:", error);
             const errorMessage = error.response?.data?.error || "No se encontró la orden de embarque o el código es inválido";
@@ -553,7 +544,7 @@ export default function Access({
                             }`}
                         >
                             <Scan className={`w-5 h-5 mr-2 ${activeTab === "scan" ? "text-indigo-600" : "text-gray-400"}`} />
-                            Registro Escaneo (Gafete)
+                            Registro Escaneo
                         </button>
                         <button
                             onClick={() => setActiveTab("order_entry")}
@@ -778,21 +769,6 @@ export default function Access({
                                                 Escanear Otra Orden
                                             </button>
                                         </div>
-
-                                        {/* In-Plant Alert if Operator is already inside */}
-                                        {isOrderInPlant && (
-                                            <div className="p-4 bg-amber-50 border-2 border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900">
-                                                <AlertTriangle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
-                                                <div>
-                                                    <p className="font-bold text-sm uppercase tracking-wide">
-                                                        El operador ya se encuentra registrado en planta
-                                                    </p>
-                                                    <p className="text-xs mt-1 text-amber-800">
-                                                        Hora de entrada actual: {activeOrderLog?.entry_at ? new Date(activeOrderLog.entry_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Activo"}. Al dar entrada, esta orden se vinculará directamente a su estancia activa sin generar registros duplicados.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        )}
 
                                         {/* 2-Column Info Grid */}
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1190,7 +1166,10 @@ export default function Access({
                                     <thead className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white">
                                         <tr>
                                             <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                Tiempos
+                                                Tiempos (Entrada / Salida)
+                                            </th>
+                                            <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
+                                                Orden de Embarque
                                             </th>
                                             <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                                 Operador
@@ -1207,56 +1186,90 @@ export default function Access({
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-100">
-                                        {history.data.map((log: any) => (
-                                            <tr key={log.id} className="hover:bg-indigo-50/50 transition-colors duration-200">
-                                                <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-500">
-                                                    <div className="flex items-center text-green-700 font-medium mb-1">
-                                                        <span className="w-12 text-xs uppercase font-bold text-gray-400">Entró:</span>
-                                                        {new Date(log.entry_at).toLocaleString()}
-                                                    </div>
-                                                    <div className="flex items-center text-red-700 font-medium">
-                                                        <span className="w-12 text-xs uppercase font-bold text-gray-400">Salió:</span>
-                                                        {new Date(log.exit_at).toLocaleString()}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-900">
-                                                    <div className="font-bold uppercase text-gray-800">
-                                                        {log.subject?.operator_name || log.subject?.name}
-                                                    </div>
-                                                    {log.subject?.status === "vetoed" && (
-                                                        <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-800 border border-red-200">
-                                                            <AlertTriangle className="w-3 h-3 mr-1" />
-                                                            VETADO
+                                        {history.data.map((log: any) => {
+                                            const orders = log.shipment_orders || log.shipmentOrders || [];
+                                            return (
+                                                <tr key={log.id} className="hover:bg-indigo-50/50 transition-colors duration-200">
+                                                    <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-500">
+                                                        <div className="flex items-center text-emerald-700 font-bold mb-1">
+                                                            <span className="w-14 text-xs uppercase font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded mr-2">Entró:</span>
+                                                            {log.entry_at ? new Date(log.entry_at).toLocaleString() : "N/A"}
+                                                        </div>
+                                                        <div className="flex items-center text-rose-700 font-bold">
+                                                            <span className="w-14 text-xs uppercase font-extrabold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded mr-2">Salió:</span>
+                                                            {log.exit_at ? new Date(log.exit_at).toLocaleString() : "N/A"}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5 text-sm">
+                                                        {orders && orders.length > 0 ? (
+                                                            <div className="space-y-1">
+                                                                {orders.map((o: any) => (
+                                                                    <div key={o.id} className="bg-amber-50/80 border border-amber-200/80 rounded-lg p-1.5 max-w-[240px]">
+                                                                        <div className="flex items-center justify-between gap-1">
+                                                                            <span className="font-mono font-black text-amber-900 text-xs">
+                                                                                {o.folio ?? o.id}
+                                                                            </span>
+                                                                            <span className="text-[10px] uppercase font-bold text-amber-700">
+                                                                                {o.status}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-[11px] text-gray-600 font-medium truncate mt-0.5" title={o.client?.business_name || o.client?.name || o.client_name || ""}>
+                                                                            {o.client?.business_name || o.client?.name || o.client_name || "N/A"}
+                                                                        </p>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-400 font-medium italic">
+                                                                Sin orden vinculada
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-900">
+                                                        <div className="font-bold uppercase text-gray-800">
+                                                            {log.subject?.operator_name || log.subject?.name}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500 font-medium">
+                                                            {log.subject?.transport_line || log.subject?.transporter_line || "Línea N/A"}
+                                                        </div>
+                                                        {log.subject?.status === "vetoed" && (
+                                                            <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-800 border border-red-200">
+                                                                <AlertTriangle className="w-3 h-3 mr-1" />
+                                                                VETADO
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-500">
+                                                        <div className="font-mono font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded inline-block">
+                                                            {log.subject?.tractor_plate || "S/P"}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500 mt-0.5">
+                                                            Econ: <span className="font-bold">#{log.subject?.economic_number || "S/N"}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5 whitespace-nowrap">
+                                                        <span
+                                                            className={`px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-full uppercase tracking-wide ${
+                                                                log.subject_type.includes("Vessel")
+                                                                    ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                                                    : "bg-green-100 text-green-800 border border-green-200"
+                                                            }`}
+                                                        >
+                                                            {log.subject_type.includes("Vessel") ? "Barco" : "Salida"}
                                                         </span>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-500">
-                                                    <span className="font-mono font-bold text-gray-700 bg-gray-100 px-2 py-1 rounded">
-                                                        {log.subject?.tractor_plate || "S/P"}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3.5 whitespace-nowrap">
-                                                    <span
-                                                        className={`px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-full uppercase tracking-wide ${
-                                                            log.subject_type.includes("Vessel")
-                                                                ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                                                : "bg-green-100 text-green-800 border border-green-200"
-                                                        }`}
-                                                    >
-                                                        {log.subject_type.includes("Vessel") ? "Barco" : "Salida"}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium space-x-2">
-                                                    <button
-                                                        onClick={() => setViewingLog(log)}
-                                                        className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-all shadow-sm inline-flex items-center font-bold text-xs uppercase"
-                                                    >
-                                                        <User className="w-3 h-3 mr-1.5" />
-                                                        Ver
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium space-x-2">
+                                                        <button
+                                                            onClick={() => setViewingLog(log)}
+                                                            className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-all shadow-sm inline-flex items-center font-bold text-xs uppercase"
+                                                        >
+                                                            <User className="w-3 h-3 mr-1.5" />
+                                                            Ver
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>

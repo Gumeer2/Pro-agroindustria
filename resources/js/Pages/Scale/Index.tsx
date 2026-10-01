@@ -288,12 +288,12 @@ export default function Index({
     // ... buttons array ...
     const buttons = [
         {
-            name: "Entrada MI / MP",
+            name: "Carga y descarga de barco",
             icon: Package,
             color: "bg-indigo-50 text-indigo-600",
             hover: "hover:border-indigo-500",
             href: route("scale.entry-mp") + `?scale_id=${scaleId}`,
-            subtitle: "Entrada de Materia Prima"
+            subtitle: "Materia Prima"
         },
         {
             name: "Salida",

@@ -17,6 +17,13 @@ import {
     Camera,
     X,
     ArrowLeft,
+    Ship,
+    RefreshCw,
+    CheckCircle2,
+    Calculator,
+    Layers,
+    TrendingUp,
+    ChevronDown,
 } from "lucide-react";
 import { QrReader } from "react-qr-reader";
 import InputLabel from "@/Components/InputLabel";
@@ -27,12 +34,39 @@ import Swal from "sweetalert2";
 import { useScale } from "@/Contexts/ScaleContext";
 import ActiveScaleIndicator from "@/Components/ActiveScaleIndicator";
 
+interface BurreoUnitType {
+    unit_type: string;
+    weighed_count: number;
+    total_weight_kg: number;
+    total_weight_tm: number;
+    average_weight_kg: number;
+    average_weight_tm: number;
+    total_trips: number;
+    applied_weight_tm: number | null;
+    is_applied: boolean;
+}
+
+interface BurreoVesselStats {
+    vessel_id: string;
+    vessel_name: string;
+    client_name: string;
+    product_name: string;
+    apt_operation_type: string;
+    is_burreo: boolean;
+    total_weighed: number;
+    total_weight_tm: number;
+    total_trips: number;
+    unit_types: BurreoUnitType[];
+}
+
 export default function EntryMP({
     auth,
     active_scale_id = 1,
+    burreo_vessels = [],
 }: {
     auth: any;
     active_scale_id?: number;
+    burreo_vessels?: BurreoVesselStats[];
 }) {
     const { weight, isConnected, connectScale, setManualWeight } = useScale();
     const [capturedWeight, setCapturedWeight] = useState<number | null>(null);
@@ -41,6 +75,14 @@ export default function EntryMP({
     const [showCamera, setShowCamera] = useState(false);
     const [orderDetails, setOrderDetails] = useState<any>(null);
     const isSearchingRef = useRef(false);
+
+    // Burreo Averages State
+    const [burreoVesselsData, setBurreoVesselsData] = useState<BurreoVesselStats[]>(burreo_vessels || []);
+    const [selectedBurreoVesselId, setSelectedBurreoVesselId] = useState<string>(
+        burreo_vessels?.[0]?.vessel_id || ""
+    );
+    const [isRefreshingStats, setIsRefreshingStats] = useState(false);
+    const [isApplying, setIsApplying] = useState(false);
 
     const { data, setData, post, processing, errors, reset } = useForm({
         shipment_order_id: "",
@@ -113,6 +155,67 @@ export default function EntryMP({
 
     // Cleanup logic handled globally by ScaleProvider
 
+    const reloadBurreoStats = async (targetVesselId?: string) => {
+        setIsRefreshingStats(true);
+        try {
+            const res = await axios.get(route("scale.burreo.averages"), {
+                params: targetVesselId ? { vessel_id: targetVesselId } : {}
+            });
+            if (Array.isArray(res.data)) {
+                setBurreoVesselsData(res.data);
+                if (!selectedBurreoVesselId && res.data.length > 0) {
+                    setSelectedBurreoVesselId(res.data[0].vessel_id);
+                }
+            } else if (res.data?.vessel_id) {
+                setBurreoVesselsData(prev =>
+                    prev.map(v => (v.vessel_id === res.data.vessel_id ? res.data : v))
+                );
+            }
+        } catch (err) {
+            console.error("Error refreshing burreo averages:", err);
+        } finally {
+            setIsRefreshingStats(false);
+        }
+    };
+
+    const handleApplyAverage = async (vesselId: string, unitType?: string) => {
+        if (!vesselId) return;
+        setIsApplying(true);
+        try {
+            const res = await axios.post(route("scale.burreo.apply"), {
+                vessel_id: vesselId,
+                unit_type: unitType || null,
+            });
+            if (res.data?.success) {
+                Swal.fire({
+                    icon: "success",
+                    title: "¡Promedio Aplicado con Éxito!",
+                    text: unitType
+                        ? `Se aplicó el promedio de ${res.data.average_tm} TM (${res.data.average_kg} kg) a todos los viajes de ${unitType}.`
+                        : "Se calcularon y aplicaron los promedios por tipo de unidad a los viajes de este barco.",
+                    confirmButtonColor: "#4f46e5",
+                });
+                await reloadBurreoStats(vesselId);
+            } else {
+                Swal.fire({
+                    icon: "info",
+                    title: "Información",
+                    text: res.data?.message || "No se encontraron pesajes suficientes para aplicar promedio.",
+                    confirmButtonColor: "#4f46e5",
+                });
+            }
+        } catch (err: any) {
+            Swal.fire({
+                icon: "error",
+                title: "Error",
+                text: err.response?.data?.message || "Error al aplicar promedio de burreo.",
+                confirmButtonColor: "#d33",
+            });
+        } finally {
+            setIsApplying(false);
+        }
+    };
+
     const handleCapture = () => {
         setCapturedWeight(weight);
     };
@@ -149,6 +252,10 @@ export default function EntryMP({
             const res = response.data;
             setOrderDetails(res);
 
+            if (res.vessel_id) {
+                setSelectedBurreoVesselId(res.vessel_id);
+            }
+
             if (res.type === "vessel_operator") {
                 // New Entry from Vessel Scan
                 setData((prev) => ({
@@ -176,10 +283,10 @@ export default function EntryMP({
                     bill_of_lading: "",
                 }));
             } else {
-                // Existing Loading Order (Refactored from Shipment Order)
+                // Existing Loading Order
                 setData((prev) => ({
                     ...prev,
-                    shipment_order_id: res.id, // Maps to LoadingOrder ID
+                    shipment_order_id: res.id,
                     provider: res.provider || "",
                     driver: res.driver || "",
                     product: res.product,
@@ -249,13 +356,18 @@ export default function EntryMP({
                 reset();
                 setOrderDetails(null);
                 setQrValue("");
+                reloadBurreoStats(data.vessel_id);
             },
         });
     };
 
+    const activeVesselStat =
+        burreoVesselsData.find((v) => v.vessel_id === selectedBurreoVesselId) ||
+        burreoVesselsData[0];
+
     return (
-        <DashboardLayout user={auth.user} header="Báscula - Entrada MI / MP">
-            <Head title="Entrada MI / MP" />
+        <DashboardLayout user={auth.user} header="Báscula - Carga y descarga de barco">
+            <Head title="Carga y descarga de barco" />
 
             <div className="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="mb-6">
@@ -377,9 +489,6 @@ export default function EntryMP({
                                     videoStyle={{ width: "100%" }}
                                     className="w-full"
                                 />
-                                <p className="text-white text-center py-2 text-sm">
-                                    Apunte al código QR...
-                                </p>
                             </div>
                         )}
                     </div>
@@ -471,10 +580,20 @@ export default function EntryMP({
                             <p className="text-sm text-gray-600">
                                 {orderDetails
                                     ? orderDetails.type === "vessel_operator"
-                                        ? "Nueva Entrada (Barco detectado)"
+                                        ? orderDetails.is_burreo
+                                            ? `Muestreo de Burreo: ${orderDetails.reference || "Barco"} (${orderDetails.vehicle_type || "Unidad"}). Su pesaje actualizará el promedio de ${orderDetails.vehicle_type}.`
+                                            : "Nueva Entrada (Barco detectado)"
                                         : "Orden Existente (Precargada)"
                                     : "Esperando lectura de QR..."}
                             </p>
+                            {orderDetails?.burreo_avg_weight_tm && (
+                                <div className="mt-3 pt-2 border-t border-blue-200 flex items-center justify-between text-xs">
+                                    <span className="text-blue-800 font-semibold">Promedio actual {orderDetails.vehicle_type}:</span>
+                                    <span className="font-mono font-black text-blue-900 bg-blue-100 px-2 py-0.5 rounded">
+                                        {orderDetails.burreo_avg_weight_tm} TM
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
                         <div className="pt-2">
@@ -664,6 +783,232 @@ export default function EntryMP({
                         </div>
                     </div>
                 </form>
+
+                {/* Separador Visual Amplio */}
+                <div className="pt-16 pb-8">
+                    <div className="relative flex items-center">
+                        <div className="flex-grow border-t-2 border-dashed border-gray-300"></div>
+                        <div className="flex-shrink mx-6 flex items-center gap-2.5 bg-indigo-50 text-indigo-900 px-6 py-2.5 rounded-full font-black text-xs uppercase tracking-widest border border-indigo-200 shadow-sm">
+                            <Ship className="w-4 h-4 text-indigo-600" />
+                            <span>Promedios por Tipo de Unidad • Solo Burreo</span>
+                        </div>
+                        <div className="flex-grow border-t-2 border-dashed border-gray-300"></div>
+                    </div>
+                </div>
+
+                {/* DEDICATED PANEL: Promedios por Tipo de Unidad (Solo Burreo) */}
+                <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden mb-16">
+                    <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-indigo-900 p-6 md:p-8 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md border border-white/20">
+                                <Calculator className="w-8 h-8 text-emerald-300" />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-xl md:text-2xl font-black tracking-tight">
+                                        Promedios por Tipo de Unidad
+                                    </h3>
+                                    <span className="bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-black uppercase px-2.5 py-0.5 rounded-full">
+                                        Solo Burreo
+                                    </span>
+                                </div>
+                                <p className="text-emerald-100/80 text-sm mt-0.5">
+                                    Pesaje de unidades por barco, cálculo del promedio por tipo de unidad y aplicación a todos los viajes del mismo tipo
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Controls & Vessel Selector */}
+                        <div className="flex flex-wrap items-center gap-3">
+                            {burreoVesselsData.length > 0 && (
+                                <div className="relative">
+                                    <select
+                                        value={selectedBurreoVesselId}
+                                        onChange={(e) => setSelectedBurreoVesselId(e.target.value)}
+                                        className="bg-white/10 border border-white/30 text-white text-sm font-bold rounded-xl px-4 py-2.5 pr-8 focus:ring-emerald-400 focus:border-emerald-400 backdrop-blur-md"
+                                    >
+                                        {burreoVesselsData.map((bv) => (
+                                            <option key={bv.vessel_id} value={bv.vessel_id} className="text-gray-900">
+                                                🚢 {bv.vessel_name} ({bv.product_name})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => reloadBurreoStats(selectedBurreoVesselId)}
+                                disabled={isRefreshingStats}
+                                className="p-2.5 bg-white/10 hover:bg-white/20 border border-white/30 rounded-xl text-white transition disabled:opacity-50 flex items-center gap-1 text-sm font-semibold"
+                                title="Actualizar estadísticas"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${isRefreshingStats ? "animate-spin" : ""}`} />
+                                <span className="hidden sm:inline">Actualizar</span>
+                            </button>
+
+                            {activeVesselStat && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleApplyAverage(activeVesselStat.vessel_id)}
+                                    disabled={isApplying || activeVesselStat.total_weighed === 0}
+                                    className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl shadow-lg transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <TrendingUp className="w-4 h-4" />
+                                    Recalcular y Aplicar Todo
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Content Section */}
+                    <div className="p-6 md:p-8">
+                        {!activeVesselStat ? (
+                            <div className="text-center py-12 text-gray-500">
+                                <Ship className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                                <p className="text-lg font-bold">No hay barcos activos en modalidad Burreo</p>
+                                <p className="text-sm text-gray-400">Cuando un buque se configure en operación de Burreo, sus estadísticas y tipos de unidad aparecerán aquí.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                {/* Vessel Summary Row */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-xl">
+                                            <Ship className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Barco Activo</span>
+                                            <span className="font-extrabold text-gray-900 text-base">{activeVesselStat.vessel_name}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
+                                            <Scale className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Muestreo en Báscula</span>
+                                            <span className="font-extrabold text-gray-900 text-base">
+                                                {activeVesselStat.total_weighed} unidades ({activeVesselStat.total_weight_tm.toFixed(2)} TM)
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-teal-100 text-teal-700 rounded-xl">
+                                            <Layers className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Total Viajes de Burreo</span>
+                                            <span className="font-extrabold text-gray-900 text-base">
+                                                {activeVesselStat.total_trips} vueltas registradas
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Unit Types Table */}
+                                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-gradient-to-r from-gray-800 to-gray-900 text-white text-xs font-black uppercase tracking-wider">
+                                                <th className="px-6 py-4">Tipo de Unidad</th>
+                                                <th className="px-6 py-4 text-center">Pesajes en Báscula</th>
+                                                <th className="px-6 py-4 text-center">Total Pesado (TM)</th>
+                                                <th className="px-6 py-4 text-center">Promedio Calculado</th>
+                                                <th className="px-6 py-4 text-center">Viajes Burreo</th>
+                                                <th className="px-6 py-4 text-center">Estado de Aplicación</th>
+                                                <th className="px-6 py-4 text-center">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 bg-white">
+                                            {activeVesselStat.unit_types.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={7} className="px-6 py-10 text-center text-gray-400 italic">
+                                                        No hay tipos de unidad registrados para este barco.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                activeVesselStat.unit_types.map((ut) => {
+                                                    const hasWeighed = ut.weighed_count > 0;
+                                                    return (
+                                                        <tr key={ut.unit_type} className="hover:bg-indigo-50/50 transition">
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="p-2 bg-indigo-50 text-indigo-700 rounded-lg font-bold">
+                                                                        <Truck className="w-4 h-4" />
+                                                                    </div>
+                                                                    <span className="font-black text-gray-900 text-base">
+                                                                        {ut.unit_type}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black ${hasWeighed ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}>
+                                                                    {ut.weighed_count} {ut.weighed_count === 1 ? "pesaje" : "pesajes"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center font-mono font-bold text-gray-700">
+                                                                {hasWeighed ? `${ut.total_weight_tm.toFixed(2)} TM` : "---"}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                {hasWeighed ? (
+                                                                    <div className="inline-flex flex-col items-center">
+                                                                        <span className="font-mono font-black text-lg text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-xl">
+                                                                            {ut.average_weight_tm.toFixed(3)} TM
+                                                                        </span>
+                                                                        <span className="text-[11px] text-gray-400 font-mono mt-0.5">
+                                                                            ({ut.average_weight_kg.toLocaleString("es-MX")} kg)
+                                                                        </span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-gray-400 italic text-sm">
+                                                                        Pendiente de pesaje
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <span className="font-mono font-bold text-gray-800">
+                                                                    {ut.total_trips} vueltas
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                {ut.is_applied ? (
+                                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                                                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                                        Aplicado ({ut.applied_weight_tm?.toFixed(3)} TM)
+                                                                    </span>
+                                                                ) : hasWeighed ? (
+                                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                                                                        Actualización disponible
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-xs text-gray-400">
+                                                                        Sin datos
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleApplyAverage(activeVesselStat.vessel_id, ut.unit_type)}
+                                                                    disabled={!hasWeighed || isApplying}
+                                                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                    title={`Aplicar ${ut.average_weight_tm} TM a todos los viajes de ${ut.unit_type}`}
+                                                                >
+                                                                    Aplicar a {ut.unit_type}
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </DashboardLayout>
     );

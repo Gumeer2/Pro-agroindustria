@@ -39,6 +39,18 @@ interface Props {
 }
 
 export default function PrintExit({ movement, movements }: Props) {
+    React.useEffect(() => {
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("autoprint") === "1" || params.get("print") === "1") {
+                const timer = setTimeout(() => {
+                    window.print();
+                }, 600);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, []);
+
     const handlePrint = () => {
         window.print();
     };
@@ -63,9 +75,9 @@ export default function PrintExit({ movement, movements }: Props) {
     const totalQuantitySum = itemsList.reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
     const totalCostSum = itemsList.reduce((acc, curr) => acc + Number(curr.total_cost || 0), 0);
 
-    const folioDisplay = isMultiple
-        ? `VALE-CONSOLIDADO (${itemsList.length} INSUMOS)`
-        : (firstItem.reference_document || `VAL-${(firstItem.id || 0).toString().padStart(5, "0")}`);
+    const folioDisplay = firstItem.reference_document
+        ? firstItem.reference_document
+        : `VAL-${(firstItem.id || 0).toString().padStart(4, "0")}`;
 
     const firstLocation = (firstItem.location || firstItem.destination_area)?.trim();
     const uniqueLocations = Array.from(
@@ -164,9 +176,6 @@ export default function PrintExit({ movement, movements }: Props) {
                                 PRO-AGROINDUSTRIA S.A. DE C.V.
                             </h1>
                             <div className="mx-auto my-1 h-[2.5px] w-48 bg-red-600"></div>
-                            <h2 className="text-[13px] font-black tracking-normal text-black leading-tight uppercase">
-                                {locationDisplay}
-                            </h2>
                         </div>
 
                         {/* Right Truck Illustration */}
@@ -348,6 +357,7 @@ export default function PrintExit({ movement, movements }: Props) {
                             Datos del Vale y Entrega:
                         </span>
                         <div className="space-y-1 text-gray-700">
+                            <div><strong>Folio del Vale:</strong> <span className="font-mono font-bold text-amber-900">{folioDisplay}</span></div>
                             <div><strong>Solicitó / Retiró:</strong> {firstItem.responsible_person || firstItem.user?.name || "Personal Solicitante"}</div>
                             <div><strong>Despachador (Almacén):</strong> {firstItem.user?.name || "Admin"}</div>
                             <div><strong>Área / Frente de Trabajo:</strong> {firstItem.location || "Área Operativa"}</div>

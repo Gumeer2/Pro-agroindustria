@@ -175,7 +175,7 @@ export default function InventoryHub({ auth, mainModules = [], metrics }: Props)
                         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                                    Valor Total Estimado
+                                    Valuación de Inventario
                                 </span>
                                 <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
                                     <DollarSign className="w-5 h-5" />

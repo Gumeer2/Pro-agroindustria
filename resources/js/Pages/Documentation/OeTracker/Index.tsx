@@ -17,10 +17,10 @@ import { useState, useEffect, useRef } from "react";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface ProcessStatus {
-    stage: 'pending_entry' | 'in_plant' | 'loading' | 'loaded' | 'completed';
+    stage: 'pending_entry' | 'in_plant' | 'tared' | 'loading' | 'loaded' | 'completed';
     label: string;
     detail: string;
-    color: 'red' | 'amber' | 'indigo' | 'blue' | 'emerald';
+    color: 'red' | 'amber' | 'purple' | 'indigo' | 'blue' | 'emerald';
 }
 
 interface OeRow {
@@ -141,6 +141,7 @@ function StatusBadge({ row }: { row: OeRow }) {
         const colorClasses: Record<string, string> = {
             red: "bg-red-50 text-red-700 border-red-200",
             amber: "bg-amber-50 text-amber-800 border-amber-200",
+            purple: "bg-purple-50 text-purple-700 border-purple-200",
             indigo: "bg-orange-50 text-orange-700 border-orange-200",
             blue: "bg-blue-50 text-blue-700 border-blue-200",
             emerald: "bg-emerald-50 text-emerald-800 border-emerald-200",

@@ -48,7 +48,13 @@ class SurveillanceController extends Controller
         return Inertia::render('Surveillance/Access', [
             'pending_logs'   => $pending,
             'in_plant_count' => $inPlantCount,
-            'history'        => AccessLog::with(['subject', 'user', 'shipmentOrders'])
+            'history'        => AccessLog::with([
+                'subject',
+                'user',
+                'shipmentOrders.client',
+                'shipmentOrders.items.product',
+                'shipmentOrders.origin',
+            ])
                 ->where('status', 'completed')
                 ->whereNotNull('exit_at')
                 ->orderBy('exit_at', 'desc')
@@ -131,55 +137,6 @@ class SurveillanceController extends Controller
             ->orderBy('entry_at', 'desc')
             ->get();
 
-        // Auto-link any active shipment orders for in-plant operators that don't have them linked yet
-        foreach ($logs as $log) {
-            if ($log->shipmentOrders->isEmpty() && $log->subject) {
-                $subject = $log->subject;
-                $type = $log->subject_type;
-                $operatorName = trim($subject->name ?? $subject->operator_name ?? '');
-                $tractorPlate = trim($subject->tractor_plate ?? '');
-                $economicNumber = trim($subject->economic_number ?? '');
-                $subjectId = $subject->id ?? null;
-
-                $foundOrders = ShipmentOrder::whereNotIn('status', ['cancelled', 'closed'])
-                    ->where(function ($q) use ($subject, $type, $operatorName, $tractorPlate, $economicNumber, $subjectId) {
-                        if ($type === 'App\Models\ExitOperator' && $subjectId) {
-                            $q->whereHas('loadingOrders', fn($lq) => $lq->where('exit_operator_id', $subjectId));
-                        } elseif ($type === 'App\Models\VesselOperator' && $subjectId) {
-                            $q->whereHas('loadingOrders', fn($lq) => $lq->where('vessel_operator_id', $subjectId));
-                        }
-
-                        if (!empty($operatorName) && !empty($tractorPlate) && $tractorPlate !== 'S/P') {
-                            $q->orWhere(function ($sq) use ($operatorName, $tractorPlate) {
-                                $sq->where('operator_name', 'like', "%{$operatorName}%")
-                                   ->where('tractor_plate', 'like', "%{$tractorPlate}%");
-                            });
-                        }
-                        if (!empty($tractorPlate) && $tractorPlate !== 'S/P') {
-                            $q->orWhere('tractor_plate', $tractorPlate);
-                        }
-                        if (!empty($operatorName)) {
-                            $q->orWhere('operator_name', 'like', "%{$operatorName}%");
-                        }
-                        if (!empty($economicNumber) && $economicNumber !== 'S/N') {
-                            $q->orWhere('economic_number', $economicNumber);
-                        }
-                    })
-                    ->with(['client', 'items.product', 'origin', 'weight_ticket', 'loadingOrders.weight_ticket'])
-                    ->orderBy('created_at', 'desc')
-                    ->limit(3)
-                    ->get();
-
-                if ($foundOrders->isNotEmpty()) {
-                    $orderIds = $foundOrders->pluck('id')->toArray();
-                    $log->shipmentOrders()->sync($orderIds);
-                    $log->load(['shipmentOrders' => function ($q) {
-                        $q->whereNotIn('shipment_orders.status', ['closed']);
-                    }, 'shipmentOrders.items.product', 'shipmentOrders.client', 'shipmentOrders.weight_ticket', 'shipmentOrders.loadingOrders.weight_ticket', 'shipmentOrders.origin']);
-                }
-            }
-        }
-
         $inPlant = $logs->map(function ($log) {
             $uncompletedFolios = [];
             $hasSader = false;
@@ -243,12 +200,23 @@ class SurveillanceController extends Controller
 
     /**
      * Helper to query active & valid ShipmentOrders for an operator (ExitOperator or VesselOperator)
-     * (Takes only orders in pending / destaradas, strictly excluding cancelled and closed).
+     * (Takes only orders in pending / destaradas, strictly excluding cancelled, closed, completed,
+     * and orders that are ALREADY linked to an active in-plant AccessLog).
      */
-    private function queryAvailableOrdersForOperator($subject, $type)
+    private function queryAvailableOrdersForOperator($subject, $type, array $excludedOrderIds = null)
     {
         if (!$subject) {
             return [];
+        }
+
+        if ($excludedOrderIds === null) {
+            // Exclude orders that are currently inside the plant with active AccessLogs
+            $excludedOrderIds = \DB::table('access_log_shipment_order')
+                ->join('access_logs', 'access_logs.id', '=', 'access_log_shipment_order.access_log_id')
+                ->where('access_logs.status', 'in_plant')
+                ->whereNull('access_logs.exit_at')
+                ->pluck('access_log_shipment_order.shipment_order_id')
+                ->toArray();
         }
 
         $operatorName = trim($subject->name ?? $subject->operator_name ?? '');
@@ -256,8 +224,13 @@ class SurveillanceController extends Controller
         $economicNumber = trim($subject->economic_number ?? '');
         $subjectId = $subject->id ?? null;
 
-        return ShipmentOrder::whereNotIn('status', ['cancelled', 'closed', 'completed'])
-            ->where(function ($q) use ($subject, $type, $operatorName, $tractorPlate, $economicNumber, $subjectId) {
+        $query = ShipmentOrder::whereNotIn('status', ['cancelled', 'closed', 'completed']);
+
+        if (!empty($excludedOrderIds)) {
+            $query->whereNotIn('id', $excludedOrderIds);
+        }
+
+        return $query->where(function ($q) use ($subject, $type, $operatorName, $tractorPlate, $economicNumber, $subjectId) {
                 if ($type === 'App\Models\ExitOperator' && $subjectId) {
                     $q->whereHas('loadingOrders', fn($lq) => $lq->where('exit_operator_id', $subjectId));
                 } elseif ($type === 'App\Models\VesselOperator' && $subjectId) {
@@ -327,7 +300,16 @@ class SurveillanceController extends Controller
         $subject = $log->subject;
         $type = $log->subject_type;
 
-        $orders = $this->queryAvailableOrdersForOperator($subject, $type);
+        // Exclude orders linked to OTHER active in-plant logs (allow this log's current orders)
+        $inPlantOtherOrderIds = \DB::table('access_log_shipment_order')
+            ->join('access_logs', 'access_logs.id', '=', 'access_log_shipment_order.access_log_id')
+            ->where('access_logs.status', 'in_plant')
+            ->where('access_logs.id', '!=', $logId)
+            ->whereNull('access_logs.exit_at')
+            ->pluck('access_log_shipment_order.shipment_order_id')
+            ->toArray();
+
+        $orders = $this->queryAvailableOrdersForOperator($subject, $type, $inPlantOtherOrderIds);
         $linkedOrderIds = $log->shipmentOrders()->pluck('shipment_orders.id')->toArray();
 
         return response()->json([
@@ -844,6 +826,21 @@ class SurveillanceController extends Controller
             ], 422);
         }
 
+        // Validate that order is NOT already inside plant
+        $existingInPlantLog = AccessLog::where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->whereHas('shipmentOrders', function ($q) use ($order) {
+                $q->where('shipment_orders.id', $order->id);
+            })
+            ->first();
+
+        if ($existingInPlantLog) {
+            $entryTime = $existingInPlantLog->entry_at ? Carbon::parse($existingInPlantLog->entry_at)->format('H:i d/m/Y') : 'recientemente';
+            return response()->json([
+                'error' => "La orden de embarque '{$order->folio}' ya se encuentra registrada dentro de planta (Entrada registrada a las {$entryTime}). No se permite duplicar la entrada.",
+            ], 422);
+        }
+
         // Determine Operator
         $subject = null;
         $type = 'App\Models\ExitOperator';
@@ -899,16 +896,11 @@ class SurveillanceController extends Controller
             ], 403);
         }
 
-        // Check if operator is already in plant
-        $activeLog = AccessLog::where('subject_id', $subject->id)
-            ->where('subject_type', $type)
-            ->where('status', 'in_plant')
-            ->whereNull('exit_at')
-            ->with(['shipmentOrders'])
-            ->first();
-
-        // Query available orders for operator (excluding cancelled / closed / completed / destaradas)
-        $availableOrders = $this->queryAvailableOrdersForOperator($subject, $type);
+        // Query available orders for operator (excluding the primary scanned order and completed/destaradas)
+        $availableOrders = collect($this->queryAvailableOrdersForOperator($subject, $type))
+            ->filter(fn($o) => (string)$o['id'] !== (string)$order->id && (string)$o['folio'] !== (string)$order->folio)
+            ->values()
+            ->all();
 
         // Format order details
         $formattedOrder = [
@@ -926,13 +918,33 @@ class SurveillanceController extends Controller
             'transport_line' => $order->transport_company ?? $subject->transport_line,
         ];
 
+        // Delete any existing pending logs for this operator
+        AccessLog::where('subject_id', $subject->id)
+            ->where('subject_type', $type)
+            ->where('status', 'pending')
+            ->delete();
+
+        // Automatically create in_plant AccessLog with current timestamp
+        $now = Carbon::now();
+        $log = AccessLog::create([
+            'subject_id'       => $subject->id,
+            'subject_type'     => $type,
+            'status'           => 'in_plant',
+            'entry_at'         => $now,
+            'checklist_passed' => true,
+            'user_id'          => auth()->id(),
+            'notes'            => "Entrada registrada mediante escaneo de orden de embarque {$order->folio}",
+        ]);
+
+        $log->shipmentOrders()->sync([$order->id]);
+
         return response()->json([
-            'message'          => 'Orden y operador localizados.',
+            'success'          => true,
+            'message'          => "¡Entrada registrada exitosamente para la orden {$order->folio} con el operador {$subject->name}!",
             'order'            => $formattedOrder,
             'subject'          => $subject,
-            'is_in_plant'      => !!$activeLog,
-            'active_log'       => $activeLog,
-            'available_orders' => $availableOrders,
+            'log'              => $log,
+            'entry_at'         => $now->toDateTimeString(),
         ]);
     }
 
@@ -956,6 +968,18 @@ class SurveillanceController extends Controller
 
         if ($this->isOrderCompleted($order) || in_array($order->status, ['completed', 'closed']) || ($order->destare_status ?? '') === 'completed') {
             return response()->json(['error' => "La orden de embarque '{$order->folio}' ya fue destarada / completada."], 422);
+        }
+
+        // Validate that order is NOT already inside plant
+        $existingInPlantLog = AccessLog::where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->whereHas('shipmentOrders', function ($q) use ($order) {
+                $q->where('shipment_orders.id', $order->id);
+            })
+            ->first();
+
+        if ($existingInPlantLog) {
+            return response()->json(['error' => "La orden de embarque '{$order->folio}' ya se encuentra registrada dentro de planta."], 422);
         }
 
         // Resolve Operator
@@ -1001,18 +1025,13 @@ class SurveillanceController extends Controller
             return response()->json(['error' => "EL OPERADOR '{$subject->name}' SE ENCUENTRA VETADO."], 403);
         }
 
-        // Build list of order IDs (scanned order + any valid additional non-completed orders, max 3)
+        // Build list of order IDs (scanned order + any valid selected additional non-completed orders, max 3)
         $additionalOrderIds = $request->input('additional_order_ids', []);
-        if (empty($additionalOrderIds)) {
-            $autoOrders = $this->queryAvailableOrdersForOperator($subject, $type);
-            $additionalOrderIds = collect($autoOrders)->pluck('id')->filter(fn($id) => $id !== $order->id)->take(2)->toArray();
-        }
-
         $validAdditional = [];
         if (!empty($additionalOrderIds)) {
             $addOrders = ShipmentOrder::with(['weight_ticket', 'loadingOrders.weight_ticket'])->whereIn('id', $additionalOrderIds)->get();
             foreach ($addOrders as $addO) {
-                if ($addO->status !== 'cancelled' && !$this->isOrderCompleted($addO) && !in_array($addO->status, ['completed', 'closed']) && ($addO->destare_status ?? '') !== 'completed') {
+                if ($addO->id !== $order->id && $addO->status !== 'cancelled' && !$this->isOrderCompleted($addO) && !in_array($addO->status, ['completed', 'closed']) && ($addO->destare_status ?? '') !== 'completed') {
                     $validAdditional[] = $addO->id;
                 }
             }
@@ -1020,26 +1039,13 @@ class SurveillanceController extends Controller
         $orderIds = array_values(array_unique(array_merge([$order->id], $validAdditional)));
         $orderIds = array_slice($orderIds, 0, 3);
 
-        // Check if already in plant
-        $activeLog = AccessLog::where('subject_id', $subject->id)
+        // Delete any existing pending logs for this operator
+        AccessLog::where('subject_id', $subject->id)
             ->where('subject_type', $type)
-            ->where('status', 'in_plant')
-            ->whereNull('exit_at')
-            ->first();
+            ->where('status', 'pending')
+            ->delete();
 
-        if ($activeLog) {
-            $existingIds = $activeLog->shipmentOrders()->pluck('shipment_orders.id')->toArray();
-            $combined = array_slice(array_unique(array_merge($existingIds, $orderIds)), 0, 3);
-            $activeLog->shipmentOrders()->sync($combined);
-
-            return response()->json([
-                'success' => true,
-                'message' => "El operador '{$subject->name}' ya se encuentra en planta. Se vincularon las órdenes al registro activo.",
-                'log'     => $activeLog,
-            ]);
-        }
-
-        // Create new in_plant AccessLog directly with entry timestamp
+        // Create new in_plant AccessLog directly with entry timestamp NOW
         $now = Carbon::now();
         $log = AccessLog::create([
             'subject_id'       => $subject->id,
@@ -1048,14 +1054,14 @@ class SurveillanceController extends Controller
             'entry_at'         => $now,
             'checklist_passed' => true,
             'user_id'          => auth()->id(),
-            'notes'            => $request->notes ?? "Entrada registrada mediante escaneo de orden de embarque {$order->folio}",
+            'notes'            => $request->notes ?? "Entrada registrada mediante orden de embarque {$order->folio}",
         ]);
 
         $log->shipmentOrders()->sync($orderIds);
 
         return response()->json([
             'success'  => true,
-            'message'  => "¡Entrada registrada exitosamente para el operador {$subject->name} con la orden {$order->folio}!",
+            'message'  => "¡Entrada registrada exitosamente para la orden {$order->folio} con el operador {$subject->name}!",
             'log'      => $log,
             'entry_at' => $now->toDateTimeString(),
         ]);

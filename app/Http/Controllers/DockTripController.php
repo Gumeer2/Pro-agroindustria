@@ -102,11 +102,12 @@ class DockTripController extends Controller
         }
 
         // 3. WEIGHT VALIDATION: If Burreo Auto-creation is likely, check weights
-        $automaticWeightKg = $vessel->draft_weight ?? $vessel->provisional_burreo_weight;
+        $unitTypeWeightKg = \App\Services\BurreoWeightService::getAverageWeightKgForOperator($validated['vessel_operator_id']);
+        $automaticWeightKg = $unitTypeWeightKg ?? ($vessel->draft_weight ?? $vessel->provisional_burreo_weight);
         if (!$pendingOrder && $vessel->apt_operation_type === 'burreo' && $vessel->is_external_warehouse) {
             if (!$automaticWeightKg || $automaticWeightKg <= 0) {
                 return back()->withErrors([
-                    'vessel_id' => 'ALERTA: El barco no tiene "Pesos de Burreo" configurados. Ingrese el peso en el módulo de Tráfico primero.'
+                    'vessel_id' => 'ALERTA: El barco no tiene pesos por tipo de unidad ni "Pesos de Burreo" configurados. Pese una unidad en Báscula o ingrese el peso en Tráfico primero.'
                 ]);
             }
         }

@@ -1054,6 +1054,9 @@ class DocumentationController extends Controller
                 'lot',
                 'loadingOrders.weight_ticket.lot',
                 'loadingOrders.lot',
+                'accessLogs' => function ($q) {
+                    $q->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at');
+                },
             ])
             ->whereNotIn('status', ['cancelled', 'closed']);
 
@@ -1064,6 +1067,7 @@ class DocumentationController extends Controller
             $baseQuery->where(function ($q) {
                 $q->whereHas('weight_ticket', fn($w) => $w->where('weighing_status', '!=', 'cancelled'))
                     ->orWhereHas('loadingOrders.weight_ticket', fn($w) => $w->where('weighing_status', '!=', 'cancelled'))
+                    ->orWhereHas('accessLogs', fn($al) => $al->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at'))
                     ->orWhereIn('id', function ($sub) {
                         $sub->select('companion_shipment_order_id')
                             ->from('weight_tickets')
@@ -1074,6 +1078,7 @@ class DocumentationController extends Controller
         } elseif ($inPlant === 'no') {
             $baseQuery->whereDoesntHave('weight_ticket', fn($w) => $w->where('weighing_status', '!=', 'cancelled'))
                 ->whereDoesntHave('loadingOrders.weight_ticket', fn($w) => $w->where('weighing_status', '!=', 'cancelled'))
+                ->whereDoesntHave('accessLogs', fn($al) => $al->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at'))
                 ->whereNotIn('id', function ($sub) {
                     $sub->select('companion_shipment_order_id')
                         ->from('weight_tickets')
@@ -1183,7 +1188,7 @@ class DocumentationController extends Controller
             return 'N/A';
         };
 
-        // Helper: compute status and timing for ticket
+        // Helper: compute status and timing for ticket and access log
         $computeStatus = function (ShipmentOrder $order) use ($resolveTicket) {
             $ticket = $resolveTicket($order);
 
@@ -1192,7 +1197,12 @@ class DocumentationController extends Controller
             $isCompleted = ($order->status === 'completed') || ($ticket && !is_null($ticket->weigh_out_at));
             $isPending = !$isCompleted;
 
-            $createdAt = $order->created_at?->toIso8601String();
+            $activeAccessLog = $order->relationLoaded('accessLogs') 
+                ? $order->accessLogs->first() 
+                : $order->accessLogs()->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at')->first();
+
+            $entryAt = $activeAccessLog?->entry_at ?? $order->created_at;
+            $createdAt = $entryAt ? Carbon::parse($entryAt)->toIso8601String() : $order->created_at?->toIso8601String();
             $completedAt = null;
 
             if ($isCompleted) {
@@ -1227,7 +1237,7 @@ class DocumentationController extends Controller
                 return [
                     'stage' => 'pending_entry',
                     'label' => 'Por Ingresar',
-                    'detail' => 'Pendiente de ingresar a báscula para pesaje de tara.',
+                    'detail' => 'Pendiente de registrar entrada en caseta de vigilancia / báscula.',
                     'color' => 'red',
                 ];
             }
@@ -1256,10 +1266,22 @@ class DocumentationController extends Controller
                 ];
             }
 
+            // Has registered tare weight ticket in scale (waiting for warehouse load)
+            $hasTareTicket = ($ticket && $ticket->weighing_status !== 'cancelled' && (!empty($ticket->weigh_in_at) || !empty($ticket->tare_weight)));
+            if ($hasTareTicket) {
+                $whLabel = ($warehouse !== 'N/A') ? " ({$warehouse})" : "";
+                return [
+                    'stage' => 'tared',
+                    'label' => 'Tara Registrada' . $whLabel,
+                    'detail' => 'Pesaje de entrada (tara) registrado en báscula. Esperando inicio de carga en almacén.',
+                    'color' => 'purple',
+                ];
+            }
+
             return [
                 'stage' => 'in_plant',
                 'label' => 'En Planta (Espera)',
-                'detail' => 'Tara registrada en báscula. Esperando asignación de almacén o inicio de carga.',
+                'detail' => 'Operador ingresó a planta por vigilancia. Esperando turno para pesaje de tara en báscula.',
                 'color' => 'amber',
             ];
         };
@@ -1278,9 +1300,15 @@ class DocumentationController extends Controller
             }
 
             // EN PLANTA resolution:
-            // SÍ if it has a ticket OR if it is a companion of an active ticket OR if it has loaded/lot in APT
+            // SÍ if it has an active AccessLog (scanned in Vigilancia) OR if it has a ticket OR if it is a companion of an active ticket OR if it has loaded/lot in APT
+            $activeAccessLog = $order->relationLoaded('accessLogs') 
+                ? $order->accessLogs->first() 
+                : $order->accessLogs()->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at')->first();
+
             $inPlant = false;
-            if ($ticket && $ticket->weighing_status !== 'cancelled') {
+            if ($activeAccessLog) {
+                $inPlant = true;
+            } elseif ($ticket && $ticket->weighing_status !== 'cancelled') {
                 $inPlant = true;
             } elseif (in_array($order->id, $activeCompanions)) {
                 $inPlant = true;

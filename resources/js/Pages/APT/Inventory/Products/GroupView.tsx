@@ -124,28 +124,17 @@ export default function GroupView({
     };
 
     const generateProductCode = (typeSlug: string, groupNumber: number) => {
-        let typePrefix = "MAT";
-        switch (typeSlug) {
-            case "materiales": typePrefix = "MAT"; break;
-            case "mano-de-obra": typePrefix = "MAN"; break;
-            case "herramienta-y-equipo": typePrefix = "HER"; break;
-            case "subcontratos": typePrefix = "SUB"; break;
-            case "indirectos": typePrefix = "IND"; break;
-            case "administrativos": typePrefix = "ADM"; break;
-            case "maquinaria": typePrefix = "MAQ"; break;
-            case "combustibles": typePrefix = "COM"; break;
-            case "refacciones": typePrefix = "REF"; break;
-            default: typePrefix = typeSlug.substring(0, 3).toUpperCase(); break;
-        }
+        const typeId = type.id || 1;
+        const typePad = String(typeId).padStart(2, "0");
         const groupPad = String(groupNumber).padStart(2, "0");
-        const prefix = `${typePrefix}-${groupPad}`;
+        const prefix = `${typePad}-${groupPad}`;
 
         const matchingItems = (items?.data || []).filter(
-            (i) => i.type_slug === typeSlug && Number(i.group_number) === Number(groupNumber)
+            (i: any) => Number(i.group_number || group.number) === Number(groupNumber)
         );
 
         let maxNum = matchingItems.length;
-        matchingItems.forEach((i) => {
+        matchingItems.forEach((i: any) => {
             if (i.code) {
                 const parts = i.code.split("-");
                 const lastPart = parseInt(parts[parts.length - 1], 10);
@@ -156,7 +145,7 @@ export default function GroupView({
         });
 
         const nextCount = maxNum + 1;
-        return `${prefix}-${String(nextCount).padStart(3, "0")}`;
+        return `${prefix}-${String(nextCount).padStart(4, "0")}`;
     };
 
     const openCreateModal = () => {

@@ -58,6 +58,18 @@ export default function PrintEntry({ auth, movement, movements, users = [] }: Pr
         ? users
         : (pageProps.users || []);
 
+    React.useEffect(() => {
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("autoprint") === "1" || params.get("print") === "1") {
+                const timer = setTimeout(() => {
+                    window.print();
+                }, 600);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, []);
+
     const handlePrint = () => {
         window.print();
     };
@@ -81,10 +93,9 @@ export default function PrintEntry({ auth, movement, movements, users = [] }: Pr
     const isMultiple = itemsList.length > 1;
     const totalQuantitySum = itemsList.reduce((acc, curr) => acc + Number(curr.quantity || 0), 0);
     const totalCostSum = itemsList.reduce((acc, curr) => acc + Number(curr.total_cost || 0), 0);
-
-    const folioDisplay = isMultiple
-        ? `CONSOLIDADO (${itemsList.length} INSUMOS)`
-        : (firstItem.reference_document || `ENT-${(firstItem.id || 0).toString().padStart(5, "0")}`);
+    const folioDisplay = firstItem.reference_document
+        ? firstItem.reference_document
+        : `ENT-${(firstItem.id || 0).toString().padStart(4, "0")}`;
 
     const firstLocation = firstItem.location?.trim();
     const uniqueLocations = Array.from(new Set(itemsList.map((i) => i.location?.trim()).filter(Boolean)));
@@ -186,9 +197,6 @@ export default function PrintEntry({ auth, movement, movements, users = [] }: Pr
                                 PRO-AGROINDUSTRIA S.A. DE C.V.
                             </h1>
                             <div className="mx-auto my-1 h-[2.5px] w-48 bg-red-600"></div>
-                            <h2 className="text-[13px] font-black tracking-normal text-black leading-tight uppercase">
-                                {locationDisplay}
-                            </h2>
                         </div>
 
                         {/* Right Truck Illustration */}
@@ -370,9 +378,10 @@ export default function PrintEntry({ auth, movement, movements, users = [] }: Pr
                             Datos del Movimiento:
                         </span>
                         <div className="space-y-1 text-gray-700">
+                            <div><strong>Folio de Entrada:</strong> <span className="font-mono font-bold text-emerald-900">{folioDisplay}</span></div>
                             <div><strong>Responsable de Recepción:</strong> {receivedBy || firstItem.responsible_person || "Sin asignar"}</div>
                             <div><strong>Usuario que registró:</strong> {loggedUserName}</div>
-                            <div><strong>Documento / Remisión / Factura:</strong> {firstItem.reference_document || (isMultiple ? "Múltiples comprobantes" : "Sin referencia adicional")}</div>
+                            <div><strong>Documento / Remisión / Factura:</strong> {firstItem.reference_document || folioDisplay}</div>
                         </div>
                     </div>
 

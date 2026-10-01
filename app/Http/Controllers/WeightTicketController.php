@@ -644,8 +644,21 @@ class WeightTicketController extends Controller
     public function createEntry(Request $request)
     {
         $scaleId = $request->query('scale_id', 1); // Default to 1 if not provided
+
+        $burreoVessels = Vessel::with(['client', 'product'])
+            ->where('status', 'active')
+            ->where('apt_operation_type', 'burreo')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $burreoStats = [];
+        foreach ($burreoVessels as $bv) {
+            $burreoStats[] = \App\Services\BurreoWeightService::getVesselBurreoStats($bv->id);
+        }
+
         return Inertia::render('Scale/EntryMP', [
-            'active_scale_id' => (int) $scaleId
+            'active_scale_id' => (int) $scaleId,
+            'burreo_vessels' => $burreoStats,
         ]);
     }
 
@@ -1010,12 +1023,8 @@ class WeightTicketController extends Controller
             }
             $suggestedWithdrawal = str_pad($nextFolio, 5, '0', STR_PAD_LEFT);
 
-            if ($operator->vessel->apt_operation_type === 'burreo' && $request->input('context') !== 'apt') {
-                return response()->json([
-                    'error' => 'ALERTA: Este operador NO puede ingresar por Báscula. El barco (' . $operator->vessel->name . ') está marcado para operación de BURREO.',
-                    'blocked' => true
-                ], 403);
-            }
+            $isBurreoVessel = $operator->vessel->apt_operation_type === 'burreo';
+            $burreoAvgWeightKg = $isBurreoVessel ? \App\Services\BurreoWeightService::getAverageWeightKgForOperator($operator->id) : null;
 
             return response()->json([
                 'type' => 'vessel_operator',
@@ -1038,6 +1047,8 @@ class WeightTicketController extends Controller
                 'status' => 'new_entry',
                 'vessel_etb' => $operator->vessel->etb,
                 'force_burreo' => false,
+                'is_burreo' => $isBurreoVessel,
+                'burreo_avg_weight_tm' => $burreoAvgWeightKg ? round($burreoAvgWeightKg / 1000, 3) : null,
                 'apt_operation_type' => $operator->vessel->apt_operation_type ?? 'scale',
                 'vessel_operator_id_val' => $operator->id, // Added this to be explicit
                 'has_chief_foreman' => (bool) ($operator->vessel->has_chief_foreman ?? false),
@@ -1172,6 +1183,7 @@ class WeightTicketController extends Controller
                     'exit_operator_id' => $exitOperatorId,
                     'vessel_operator_id' => $vesselOperatorId,
                     'vessel_operator_trip_id' => $vesselOperatorTripId,
+                    'operation_type' => $isBurreo ? 'burreo' : 'scale',
                     'warehouse' => ($vessel && $vessel->is_external_warehouse) ? 'ALMACÉN CLIENTE' : null,
                 ]);
 
@@ -1305,6 +1317,13 @@ class WeightTicketController extends Controller
                     $order->sales_order?->syncLoadedQuantity();
                 } elseif ($order->shipment_order && $order->shipment_order->sales_order_id) {
                     $order->shipment_order->sales_order?->syncLoadedQuantity();
+                }
+
+                // Automatic Burreo Unit Average Recalculation & Application
+                if ($order->vessel_id && ($order->vessel?->apt_operation_type === 'burreo' || $order->operation_type === 'burreo' || $ticket->is_burreo)) {
+                    if (!empty($order->unit_type)) {
+                        \App\Services\BurreoWeightService::applyUnitAverage($order->vessel_id, $order->unit_type);
+                    }
                 }
             });
 
@@ -1470,5 +1489,43 @@ class WeightTicketController extends Controller
             \Illuminate\Support\Facades\Log::error('Error reopening ticket: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Error al re-abrir ticket: ' . $e->getMessage()]);
         }
+    }
+
+    public function getBurreoAverages(Request $request)
+    {
+        $vesselId = $request->query('vessel_id');
+        if ($vesselId) {
+            $stats = \App\Services\BurreoWeightService::getVesselBurreoStats($vesselId);
+            return response()->json($stats);
+        }
+
+        $burreoVessels = Vessel::with(['client', 'product'])
+            ->where('status', 'active')
+            ->where('apt_operation_type', 'burreo')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $stats = [];
+        foreach ($burreoVessels as $bv) {
+            $stats[] = \App\Services\BurreoWeightService::getVesselBurreoStats($bv->id);
+        }
+
+        return response()->json($stats);
+    }
+
+    public function applyBurreoAverages(Request $request)
+    {
+        $validated = $request->validate([
+            'vessel_id' => 'required|exists:vessels,id',
+            'unit_type' => 'nullable|string',
+        ]);
+
+        if (!empty($validated['unit_type'])) {
+            $res = \App\Services\BurreoWeightService::applyUnitAverage($validated['vessel_id'], $validated['unit_type']);
+        } else {
+            $res = \App\Services\BurreoWeightService::calculateAndApplyAll($validated['vessel_id']);
+        }
+
+        return response()->json($res);
     }
 }

@@ -6,6 +6,7 @@ use App\Models\SupplyInventoryItem;
 use App\Models\SupplyInventoryMovement;
 use App\Services\SupplyInventoryCatalog;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -129,6 +130,8 @@ class SupplyInventoryController extends Controller
      */
     public function products(Request $request)
     {
+        SupplyInventoryCatalog::normalizeProductCodes();
+
         $types = SupplyInventoryCatalog::getTypes();
         $selectedTypeSlug = $request->input('type', '');
 
@@ -241,6 +244,8 @@ class SupplyInventoryController extends Controller
      */
     public function groupView(Request $request, string $type_slug, int $group_number)
     {
+        SupplyInventoryCatalog::normalizeProductCodes();
+
         $type = SupplyInventoryCatalog::findType($type_slug);
 
         if (!$type) {
@@ -305,6 +310,9 @@ class SupplyInventoryController extends Controller
      */
     public function entries(Request $request)
     {
+        SupplyInventoryCatalog::normalizeProductCodes();
+        SupplyInventoryCatalog::normalizeMovementFolios();
+
         $query = SupplyInventoryMovement::with(['item', 'user'])
             ->where('movement_type', 'entry');
 
@@ -331,12 +339,58 @@ class SupplyInventoryController extends Controller
             $query->whereDate('movement_date', '<=', $request->input('date_to'));
         }
 
-        $movements = $query->orderBy('movement_date', 'desc')->orderBy('id', 'desc')->paginate(15)->withQueryString();
+        $allFiltered = $query->orderBy('movement_date', 'desc')->orderBy('id', 'desc')->get();
 
-        // Calculate summary metrics for entries
+        $grouped = $allFiltered->groupBy(function ($item) {
+            return !empty($item->reference_document) ? $item->reference_document : ('MOV-' . $item->id);
+        })->map(function ($group) {
+            $first = $group->first();
+            $totalCost = (float) $group->sum('total_cost');
+            $totalQuantity = (float) $group->sum('quantity');
+            $itemsCount = $group->count();
+            $ids = $group->pluck('id')->toArray();
+
+            $locations = $group->pluck('location')->filter()->unique()->values();
+            $locationDisplay = $locations->first() ?: ($first->location ?: 'Almacén General');
+
+            $itemNames = $group->map(fn($g) => $g->quantity . ' ' . ($g->unit ?: 'PZA') . ' - ' . ($g->item_name ?: ($g->item?->name ?? 'Insumo')))->values()->all();
+
+            return [
+                'id' => $first->id,
+                'ids' => $ids,
+                'movement_type' => $first->movement_type,
+                'movement_date' => $first->movement_date,
+                'entry_date' => $first->entry_date,
+                'reference_document' => $first->reference_document,
+                'responsible_person' => $first->responsible_person ?: ($first->user?->name ?: 'Admin VECODE'),
+                'location' => $locationDisplay,
+                'all_locations' => $locations->all(),
+                'total_cost' => $totalCost,
+                'total_quantity' => $totalQuantity,
+                'unit_cost' => $itemsCount === 1 ? (float) $first->unit_cost : null,
+                'items_count' => $itemsCount,
+                'items_summary' => $itemNames,
+                'user' => $first->user,
+                'created_at' => $first->created_at,
+            ];
+        })->values();
+
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 15;
+        $movements = new LengthAwarePaginator(
+            $grouped->forPage($page, $perPage)->values(),
+            $grouped->count(),
+            $perPage,
+            $page,
+            ['path' => LengthAwarePaginator::resolveCurrentPath(), 'query' => $request->query()]
+        );
+
+        // Calculate summary metrics for entries (distinct vouchers)
         $allEntries = SupplyInventoryMovement::where('movement_type', 'entry')->get();
+        $allVouchersCount = $allEntries->groupBy(fn($m) => !empty($m->reference_document) ? $m->reference_document : ('MOV-' . $m->id))->count();
+
         $metrics = [
-            'total_entries' => $allEntries->count(),
+            'total_entries' => $allVouchersCount,
             'total_quantity' => (float) $allEntries->sum('quantity'),
             'total_cost' => (float) $allEntries->sum('total_cost'),
             'entries_this_month' => (float) $allEntries->filter(fn($m) => $m->movement_date && $m->movement_date->format('Y-m') === now()->format('Y-m'))->sum('quantity'),
@@ -359,13 +413,93 @@ class SupplyInventoryController extends Controller
     }
 
     /**
-     * Store an Inventory Entry movement.
+     * Store an Inventory Entry movement (single or batch).
      */
     public function storeEntry(Request $request)
     {
+        $hasItemsArray = $request->has('items') && is_array($request->input('items')) && count($request->input('items')) > 0;
+
+        if ($hasItemsArray) {
+            $validated = $request->validate([
+                'items' => 'required|array|min:1',
+                'items.*.item_id' => 'required|exists:supply_inventory_items,id',
+                'items.*.quantity' => 'required|numeric|min:0.001',
+                'items.*.unit_cost' => 'nullable|numeric|min:0',
+                'items.*.location' => 'nullable|string|max:255',
+                'items.*.notes' => 'nullable|string|max:1000',
+                'movement_date' => 'nullable|date',
+                'entry_date' => 'nullable|date',
+                'exit_date' => 'nullable|date',
+                'reference_document' => 'nullable|string|max:255',
+                'responsible_person' => 'nullable|string|max:255',
+                'location' => 'nullable|string|max:255',
+                'notes' => 'nullable|string|max:1000',
+            ]);
+
+            $movementDate = $validated['movement_date'] ?? ($validated['entry_date'] ?? now()->toDateString());
+            $entryDate = $validated['entry_date'] ?? $movementDate;
+            $exitDate = $validated['exit_date'] ?? null;
+            $globalRefDoc = !empty($validated['reference_document']) ? trim($validated['reference_document']) : null;
+            if (!$globalRefDoc) {
+                $nextId = (int) (SupplyInventoryMovement::max('id') ?? 0) + 1;
+                $globalRefDoc = 'ENT-' . str_pad((string) $nextId, 4, '0', STR_PAD_LEFT);
+            }
+            $globalResp = $validated['responsible_person'] ?? null;
+            $globalLoc = $validated['location'] ?? null;
+            $globalNotes = $validated['notes'] ?? null;
+
+            $createdMovementIds = [];
+
+            DB::transaction(function () use ($validated, $movementDate, $entryDate, $exitDate, $globalRefDoc, $globalResp, $globalLoc, $globalNotes, &$createdMovementIds) {
+                foreach ($validated['items'] as $entryItem) {
+                    $item = SupplyInventoryItem::findOrFail($entryItem['item_id']);
+                    $quantity = (float) $entryItem['quantity'];
+                    $unitCost = isset($entryItem['unit_cost']) && $entryItem['unit_cost'] > 0 ? (float) $entryItem['unit_cost'] : (float) $item->unit_cost;
+                    $totalCost = $quantity * $unitCost;
+                    $loc = !empty($entryItem['location']) ? trim($entryItem['location']) : $globalLoc;
+                    $notes = !empty($entryItem['notes']) ? $entryItem['notes'] : $globalNotes;
+
+                    $movement = SupplyInventoryMovement::create([
+                        'movement_type' => 'entry',
+                        'item_id' => $item->id,
+                        'item_code' => $item->code,
+                        'item_name' => $item->name,
+                        'type_id' => $item->type_id,
+                        'type_name' => $item->type_name,
+                        'type_slug' => $item->type_slug,
+                        'group_number' => $item->group_number,
+                        'group_name' => $item->group_name,
+                        'quantity' => $quantity,
+                        'unit' => $item->unit,
+                        'unit_cost' => $unitCost,
+                        'total_cost' => $totalCost,
+                        'reference_document' => $globalRefDoc,
+                        'responsible_person' => $globalResp,
+                        'location' => $loc,
+                        'user_id' => auth()->id(),
+                        'notes' => $notes,
+                        'movement_date' => $movementDate,
+                        'entry_date' => $entryDate,
+                        'exit_date' => $exitDate,
+                    ]);
+
+                    $createdMovementIds[] = $movement->id;
+
+                    $item->increment('stock', $quantity);
+                    if ($unitCost > 0) {
+                        $item->update(['unit_cost' => $unitCost]);
+                    }
+                }
+            });
+
+            $idsParam = implode(',', $createdMovementIds);
+            return redirect()->route('apt.inventory.entries.print-batch', ['ids' => $idsParam, 'autoprint' => 1])
+                ->with('success', count($createdMovementIds) . ' productos ingresados correctamente al inventario.');
+        }
+
         $validated = $request->validate([
             'item_id' => 'required|exists:supply_inventory_items,id',
-            'quantity' => 'required|numeric|min:0.01',
+            'quantity' => 'required|numeric|min:0.001',
             'movement_date' => 'nullable|date',
             'entry_date' => 'nullable|date',
             'exit_date' => 'nullable|date',
@@ -385,9 +519,11 @@ class SupplyInventoryController extends Controller
         $entryDate = $validated['entry_date'] ?? $movementDate;
         $exitDate = $validated['exit_date'] ?? null;
 
-        DB::transaction(function () use ($item, $quantity, $unitCost, $totalCost, $movementDate, $entryDate, $exitDate, $validated) {
+        $movementId = null;
+
+        DB::transaction(function () use ($item, $quantity, $unitCost, $totalCost, $movementDate, $entryDate, $exitDate, $validated, &$movementId) {
             // 1. Create movement record
-            SupplyInventoryMovement::create([
+            $movement = SupplyInventoryMovement::create([
                 'movement_type' => 'entry',
                 'item_id' => $item->id,
                 'item_code' => $item->code,
@@ -403,13 +539,15 @@ class SupplyInventoryController extends Controller
                 'total_cost' => $totalCost,
                 'reference_document' => $validated['reference_document'] ?? null,
                 'responsible_person' => $validated['responsible_person'] ?? null,
-                'location' => $validated['location'] ?? $item->location,
+                'location' => !empty($validated['location']) ? trim($validated['location']) : null,
                 'user_id' => auth()->id(),
                 'notes' => $validated['notes'] ?? null,
                 'movement_date' => $movementDate,
                 'entry_date' => $entryDate,
                 'exit_date' => $exitDate,
             ]);
+
+            $movementId = $movement->id;
 
             // 2. Increment stock and update cost if provided (do NOT overwrite product location)
             $item->increment('stock', $quantity);
@@ -418,7 +556,8 @@ class SupplyInventoryController extends Controller
             }
         });
 
-        return redirect()->back()->with('success', "Entrada de {$quantity} {$item->unit} de \"{$item->name}\" registrada correctamente.");
+        return redirect()->route('apt.inventory.entries.print', ['id' => $movementId, 'autoprint' => 1])
+            ->with('success', "Entrada de {$quantity} {$item->unit} de \"{$item->name}\" registrada correctamente.");
     }
 
     /**
@@ -426,6 +565,9 @@ class SupplyInventoryController extends Controller
      */
     public function exits(Request $request)
     {
+        SupplyInventoryCatalog::normalizeProductCodes();
+        SupplyInventoryCatalog::normalizeMovementFolios();
+
         $query = SupplyInventoryMovement::with(['item', 'user'])
             ->where('movement_type', 'exit');
 
@@ -453,11 +595,61 @@ class SupplyInventoryController extends Controller
             $query->whereDate('movement_date', '<=', $request->input('date_to'));
         }
 
-        $movements = $query->orderBy('movement_date', 'desc')->orderBy('id', 'desc')->paginate(15)->withQueryString();
+        $allFiltered = $query->orderBy('movement_date', 'desc')->orderBy('id', 'desc')->get();
+
+        $grouped = $allFiltered->groupBy(function ($item) {
+            return !empty($item->reference_document) ? $item->reference_document : ('MOV-' . $item->id);
+        })->map(function ($group) {
+            $first = $group->first();
+            $totalCost = (float) $group->sum('total_cost');
+            $totalQuantity = (float) $group->sum('quantity');
+            $itemsCount = $group->count();
+            $ids = $group->pluck('id')->toArray();
+
+            $destinations = $group->pluck('destination_area')->filter()->unique()->values();
+            $locations = $group->pluck('location')->filter()->unique()->values();
+
+            $destinationDisplay = $destinations->first() ?: ($first->destination_area ?: 'Almacén General');
+            $locationDisplay = $locations->first() ?: ($first->location ?: 'Almacén General');
+
+            $itemNames = $group->map(fn($g) => $g->quantity . ' ' . ($g->unit ?: 'PZA') . ' - ' . ($g->item_name ?: ($g->item?->name ?? 'Insumo')))->values()->all();
+
+            return [
+                'id' => $first->id,
+                'ids' => $ids,
+                'movement_type' => $first->movement_type,
+                'movement_date' => $first->movement_date,
+                'exit_date' => $first->exit_date,
+                'reference_document' => $first->reference_document,
+                'responsible_person' => $first->responsible_person ?: ($first->user?->name ?: 'Admin VECODE'),
+                'destination_area' => $destinationDisplay,
+                'location' => $locationDisplay,
+                'all_locations' => $locations->all(),
+                'total_cost' => $totalCost,
+                'total_quantity' => $totalQuantity,
+                'unit_cost' => $itemsCount === 1 ? (float) $first->unit_cost : null,
+                'items_count' => $itemsCount,
+                'items_summary' => $itemNames,
+                'user' => $first->user,
+                'created_at' => $first->created_at,
+            ];
+        })->values();
+
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 15;
+        $movements = new LengthAwarePaginator(
+            $grouped->forPage($page, $perPage)->values(),
+            $grouped->count(),
+            $perPage,
+            $page,
+            ['path' => LengthAwarePaginator::resolveCurrentPath(), 'query' => $request->query()]
+        );
 
         $allExits = SupplyInventoryMovement::where('movement_type', 'exit')->get();
+        $allVouchersCount = $allExits->groupBy(fn($m) => !empty($m->reference_document) ? $m->reference_document : ('MOV-' . $m->id))->count();
+
         $metrics = [
-            'total_exits' => $allExits->count(),
+            'total_exits' => $allVouchersCount,
             'total_quantity' => (float) $allExits->sum('quantity'),
             'total_cost' => (float) $allExits->sum('total_cost'),
             'exits_this_month' => (float) $allExits->filter(fn($m) => $m->movement_date && $m->movement_date->format('Y-m') === now()->format('Y-m'))->sum('quantity'),
@@ -480,13 +672,100 @@ class SupplyInventoryController extends Controller
     }
 
     /**
-     * Store an Inventory Exit movement.
+     * Store an Inventory Exit movement (single or batch).
      */
     public function storeExit(Request $request)
     {
+        $hasItemsArray = $request->has('items') && is_array($request->input('items')) && count($request->input('items')) > 0;
+
+        if ($hasItemsArray) {
+            $validated = $request->validate([
+                'items' => 'required|array|min:1',
+                'items.*.item_id' => 'required|exists:supply_inventory_items,id',
+                'items.*.quantity' => 'required|numeric|min:0.001',
+                'items.*.unit_cost' => 'nullable|numeric|min:0',
+                'items.*.location' => 'nullable|string|max:255',
+                'items.*.destination_area' => 'nullable|string|max:255',
+                'items.*.notes' => 'nullable|string|max:1000',
+                'movement_date' => 'required|date',
+                'destination_area' => 'nullable|string|max:255',
+                'responsible_person' => 'nullable|string|max:255',
+                'reference_document' => 'nullable|string|max:255',
+                'location' => 'nullable|string|max:255',
+                'notes' => 'nullable|string|max:1000',
+            ]);
+
+            // Validate stock availability for all items before performing transaction
+            foreach ($validated['items'] as $exitItem) {
+                $item = SupplyInventoryItem::findOrFail($exitItem['item_id']);
+                $quantity = (float) $exitItem['quantity'];
+                if ($item->stock < $quantity) {
+                    return back()->withErrors([
+                        'quantity' => "Existencia insuficiente para \"{$item->name}\" ({$item->code}). Stock disponible: {$item->stock} {$item->unit}, solicitado: {$quantity} {$item->unit}."
+                    ]);
+                }
+            }
+
+            $movementDate = $validated['movement_date'];
+            $globalRefDoc = !empty($validated['reference_document']) ? trim($validated['reference_document']) : null;
+            if (!$globalRefDoc) {
+                $nextId = (int) (SupplyInventoryMovement::max('id') ?? 0) + 1;
+                $globalRefDoc = 'VAL-' . str_pad((string) $nextId, 4, '0', STR_PAD_LEFT);
+            }
+            $globalResp = $validated['responsible_person'] ?? null;
+            $globalDest = !empty($validated['destination_area']) ? trim($validated['destination_area']) : (!empty($validated['location']) ? trim($validated['location']) : null);
+            $globalLoc = !empty($validated['location']) ? trim($validated['location']) : $globalDest;
+            $globalNotes = $validated['notes'] ?? null;
+
+            $createdMovementIds = [];
+
+            DB::transaction(function () use ($validated, $movementDate, $globalRefDoc, $globalResp, $globalDest, $globalLoc, $globalNotes, &$createdMovementIds) {
+                foreach ($validated['items'] as $exitItem) {
+                    $item = SupplyInventoryItem::findOrFail($exitItem['item_id']);
+                    $quantity = (float) $exitItem['quantity'];
+                    $unitCost = isset($exitItem['unit_cost']) && $exitItem['unit_cost'] > 0 ? (float) $exitItem['unit_cost'] : (float) $item->unit_cost;
+                    $totalCost = $quantity * $unitCost;
+                    $dest = !empty($exitItem['destination_area']) ? trim($exitItem['destination_area']) : $globalDest;
+                    $loc = !empty($exitItem['location']) ? trim($exitItem['location']) : ($dest ?: $globalLoc);
+                    $notes = !empty($exitItem['notes']) ? $exitItem['notes'] : $globalNotes;
+
+                    $movement = SupplyInventoryMovement::create([
+                        'movement_type' => 'exit',
+                        'item_id' => $item->id,
+                        'item_code' => $item->code,
+                        'item_name' => $item->name,
+                        'type_id' => $item->type_id,
+                        'type_name' => $item->type_name,
+                        'type_slug' => $item->type_slug,
+                        'group_number' => $item->group_number,
+                        'group_name' => $item->group_name,
+                        'quantity' => $quantity,
+                        'unit' => $item->unit,
+                        'unit_cost' => $unitCost,
+                        'total_cost' => $totalCost,
+                        'reference_document' => $globalRefDoc,
+                        'responsible_person' => $globalResp,
+                        'destination_area' => $dest,
+                        'location' => $loc,
+                        'user_id' => auth()->id(),
+                        'notes' => $notes,
+                        'movement_date' => $movementDate,
+                    ]);
+
+                    $createdMovementIds[] = $movement->id;
+
+                    $item->decrement('stock', $quantity);
+                }
+            });
+
+            $idsParam = implode(',', $createdMovementIds);
+            return redirect()->route('apt.inventory.exits.print-batch', ['ids' => $idsParam, 'autoprint' => 1])
+                ->with('success', count($createdMovementIds) . ' productos despachados correctamente en vale de salida.');
+        }
+
         $validated = $request->validate([
             'item_id' => 'required|exists:supply_inventory_items,id',
-            'quantity' => 'required|numeric|min:0.01',
+            'quantity' => 'required|numeric|min:0.001',
             'movement_date' => 'required|date',
             'destination_area' => 'nullable|string|max:255',
             'responsible_person' => 'nullable|string|max:255',
@@ -504,10 +783,12 @@ class SupplyInventoryController extends Controller
 
         $unitCost = (float) $item->unit_cost;
         $totalCost = $quantity * $unitCost;
-        $locationVal = $validated['location'] ?? ($validated['destination_area'] ?? 'Área Operativa');
+        $destVal = !empty($validated['destination_area']) ? trim($validated['destination_area']) : (!empty($validated['location']) ? trim($validated['location']) : null);
+        $locationVal = !empty($validated['location']) ? trim($validated['location']) : $destVal;
+        $movementId = null;
 
-        DB::transaction(function () use ($item, $quantity, $unitCost, $totalCost, $locationVal, $validated) {
-            SupplyInventoryMovement::create([
+        DB::transaction(function () use ($item, $quantity, $unitCost, $totalCost, $destVal, $locationVal, $validated, &$movementId) {
+            $movement = SupplyInventoryMovement::create([
                 'movement_type' => 'exit',
                 'item_id' => $item->id,
                 'item_code' => $item->code,
@@ -523,17 +804,20 @@ class SupplyInventoryController extends Controller
                 'total_cost' => $totalCost,
                 'reference_document' => $validated['reference_document'] ?? null,
                 'responsible_person' => $validated['responsible_person'] ?? null,
-                'destination_area' => $validated['destination_area'] ?? $locationVal,
+                'destination_area' => $destVal,
                 'location' => $locationVal,
                 'user_id' => auth()->id(),
                 'notes' => $validated['notes'] ?? null,
                 'movement_date' => $validated['movement_date'],
             ]);
 
+            $movementId = $movement->id;
+
             $item->decrement('stock', $quantity);
         });
 
-        return redirect()->back()->with('success', "Salida de {$quantity} {$item->unit} de \"{$item->name}\" registrada correctamente.");
+        return redirect()->route('apt.inventory.exits.print', ['id' => $movementId, 'autoprint' => 1])
+            ->with('success', "Salida de {$quantity} {$item->unit} de \"{$item->name}\" registrada correctamente.");
     }
 
     /**
@@ -574,11 +858,12 @@ class SupplyInventoryController extends Controller
 
         $code = $validated['code'];
         if (empty($code)) {
-            $prefix = strtoupper(substr($type['slug'], 0, 3)) . '-' . str_pad($validated['group_number'], 2, '0', STR_PAD_LEFT);
+            $typePad = str_pad($type['id'], 2, '0', STR_PAD_LEFT);
+            $groupPad = str_pad($validated['group_number'], 2, '0', STR_PAD_LEFT);
             $lastCount = SupplyInventoryItem::where('type_id', $type['id'])
                 ->where('group_number', $validated['group_number'])
                 ->count() + 1;
-            $code = $prefix . '-' . str_pad($lastCount, 3, '0', STR_PAD_LEFT);
+            $code = "{$typePad}-{$groupPad}-" . str_pad($lastCount, 4, '0', STR_PAD_LEFT);
         }
 
         SupplyInventoryItem::create([
@@ -684,7 +969,34 @@ class SupplyInventoryController extends Controller
         if ($request->filled('ids')) {
             $ids = array_filter(explode(',', $request->input('ids')));
         } elseif ($id) {
-            $ids = [$id];
+            $target = SupplyInventoryMovement::find($id);
+            if ($target) {
+                // If reference_document is set, fetch all movements with the same reference_document & movement_type
+                if (!empty($target->reference_document)) {
+                    $relatedIds = SupplyInventoryMovement::where('movement_type', 'entry')
+                        ->where('reference_document', $target->reference_document)
+                        ->pluck('id')
+                        ->toArray();
+                    $ids = !empty($relatedIds) ? $relatedIds : [$id];
+                } else {
+                    // Check if created around the same timestamp (+/- 15 seconds) by the same user
+                    if ($target->created_at) {
+                        $relatedIds = SupplyInventoryMovement::where('movement_type', 'entry')
+                            ->where('user_id', $target->user_id)
+                            ->whereBetween('created_at', [
+                                $target->created_at->copy()->subSeconds(15),
+                                $target->created_at->copy()->addSeconds(15)
+                            ])
+                            ->pluck('id')
+                            ->toArray();
+                        $ids = !empty($relatedIds) ? $relatedIds : [$id];
+                    } else {
+                        $ids = [$id];
+                    }
+                }
+            } else {
+                $ids = [$id];
+            }
         }
 
         $query = SupplyInventoryMovement::with(['item', 'user'])
@@ -707,7 +1019,7 @@ class SupplyInventoryController extends Controller
             $query->where('type_slug', $request->input('type_slug'));
         }
 
-        $movements = $query->orderBy('movement_date', 'desc')->orderBy('id', 'desc')->get();
+        $movements = $query->orderBy('id', 'asc')->get();
 
         if ($movements->isEmpty()) {
             return redirect()->route('apt.inventory.entries.index')->withErrors(['error' => 'No se encontraron registros de entrada para imprimir.']);
@@ -729,7 +1041,32 @@ class SupplyInventoryController extends Controller
         if ($request->filled('ids')) {
             $ids = array_filter(explode(',', $request->input('ids')));
         } elseif ($id) {
-            $ids = [$id];
+            $target = SupplyInventoryMovement::find($id);
+            if ($target) {
+                if (!empty($target->reference_document)) {
+                    $relatedIds = SupplyInventoryMovement::where('movement_type', 'exit')
+                        ->where('reference_document', $target->reference_document)
+                        ->pluck('id')
+                        ->toArray();
+                    $ids = !empty($relatedIds) ? $relatedIds : [$id];
+                } else {
+                    if ($target->created_at) {
+                        $relatedIds = SupplyInventoryMovement::where('movement_type', 'exit')
+                            ->where('user_id', $target->user_id)
+                            ->whereBetween('created_at', [
+                                $target->created_at->copy()->subSeconds(15),
+                                $target->created_at->copy()->addSeconds(15)
+                            ])
+                            ->pluck('id')
+                            ->toArray();
+                        $ids = !empty($relatedIds) ? $relatedIds : [$id];
+                    } else {
+                        $ids = [$id];
+                    }
+                }
+            } else {
+                $ids = [$id];
+            }
         }
 
         $query = SupplyInventoryMovement::with(['item', 'user'])
@@ -752,7 +1089,7 @@ class SupplyInventoryController extends Controller
             $query->where('type_slug', $request->input('type_slug'));
         }
 
-        $movements = $query->orderBy('movement_date', 'desc')->orderBy('id', 'desc')->get();
+        $movements = $query->orderBy('id', 'asc')->get();
 
         if ($movements->isEmpty()) {
             return redirect()->route('apt.inventory.exits.index')->withErrors(['error' => 'No se encontraron vales de salida para imprimir.']);

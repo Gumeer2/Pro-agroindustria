@@ -134,6 +134,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/scale/entry', [\App\Http\Controllers\WeightTicketController::class , 'storeEntry'])->name('scale.entry.store');
         Route::post('/scale/exit', [\App\Http\Controllers\WeightTicketController::class , 'storeExit'])->name('scale.exit.store');
         Route::get('/scale/ticket/{id}', [\App\Http\Controllers\WeightTicketController::class , 'printTicket'])->name('scale.ticket.print');
+        Route::get('/scale/burreo-averages', [\App\Http\Controllers\WeightTicketController::class , 'getBurreoAverages'])->name('scale.burreo.averages');
+        Route::post('/scale/burreo-averages/apply', [\App\Http\Controllers\WeightTicketController::class , 'applyBurreoAverages'])->name('scale.burreo.apply');
 
         // Ticket Management
         Route::get('/scale/tickets', [\App\Http\Controllers\WeightTicketController::class , 'tickets'])->name('scale.tickets.index');

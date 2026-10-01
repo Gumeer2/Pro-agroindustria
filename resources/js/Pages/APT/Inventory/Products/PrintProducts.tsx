@@ -123,9 +123,6 @@ export default function PrintProducts({ items = [], mode }: Props) {
                                 PRO-AGROINDUSTRIA S.A. DE C.V.
                             </h1>
                             <div className="mx-auto my-1 h-[2.5px] w-48 bg-red-600"></div>
-                            <h2 className="text-[13px] font-black tracking-normal text-black leading-tight uppercase">
-                                {locationDisplay}
-                            </h2>
                         </div>
 
                         {/* Right Truck Illustration */}

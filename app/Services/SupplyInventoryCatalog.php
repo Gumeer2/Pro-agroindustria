@@ -302,4 +302,58 @@ class SupplyInventoryCatalog
 
         return null;
     }
+
+    /**
+     * Ensure all products and movements follow the TT-GG-CCCC standard (e.g. 01-01-0001).
+     */
+    public static function normalizeProductCodes(): void
+    {
+        $needsUpdate = \App\Models\SupplyInventoryItem::where('code', 'not regexp', '^[0-9]{2}-[0-9]{2}-[0-9]{4}$')->exists();
+        if (!$needsUpdate) {
+            return;
+        }
+
+        $types = \App\Models\SupplyInventoryItem::select('type_id')->distinct()->orderBy('type_id')->pluck('type_id');
+        foreach ($types as $typeId) {
+            $groups = \App\Models\SupplyInventoryItem::where('type_id', $typeId)
+                ->select('group_number')
+                ->distinct()
+                ->orderBy('group_number')
+                ->pluck('group_number');
+
+            foreach ($groups as $groupNumber) {
+                $items = \App\Models\SupplyInventoryItem::where('type_id', $typeId)
+                    ->where('group_number', $groupNumber)
+                    ->orderBy('id', 'asc')
+                    ->get();
+
+                $consecutive = 1;
+                foreach ($items as $item) {
+                    $newCode = sprintf('%02d-%02d-%04d', (int) $typeId, (int) $groupNumber, $consecutive);
+                    if ($item->code !== $newCode) {
+                        $item->update(['code' => $newCode]);
+                        \App\Models\SupplyInventoryMovement::where('item_id', $item->id)->update(['item_code' => $newCode]);
+                    }
+                    $consecutive++;
+                }
+            }
+        }
+    }
+
+    /**
+     * Ensure all movement reference documents / folios follow the standard ENT-0000 / VAL-0000 format.
+     */
+    public static function normalizeMovementFolios(): void
+    {
+        $movements = \App\Models\SupplyInventoryMovement::all();
+        foreach ($movements as $m) {
+            $ref = trim($m->reference_document ?? '');
+            $prefix = $m->movement_type === 'entry' ? 'ENT-' : 'VAL-';
+            if (empty($ref)) {
+                $m->update(['reference_document' => sprintf('%s%04d', $prefix, $m->id)]);
+            } elseif (ctype_digit($ref)) {
+                $m->update(['reference_document' => sprintf('%s%04d', $prefix, (int) $ref)]);
+            }
+        }
+    }
 }
