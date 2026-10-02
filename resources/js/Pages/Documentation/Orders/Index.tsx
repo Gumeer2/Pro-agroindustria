@@ -618,12 +618,34 @@ export default function Index({
                                             label = "Siguiente";
                                         }
 
-                                        return link.url ? (
+                                        let pageNum: string | null = null;
+                                        if (link.url) {
+                                            try {
+                                                const parsed = new URL(link.url, window.location.origin);
+                                                pageNum = parsed.searchParams.get("page");
+                                            } catch (e) {
+                                                const match = link.url.match(/page=(\d+)/);
+                                                if (match) pageNum = match[1];
+                                            }
+                                        }
+
+                                        const targetUrl = link.url && pageNum
+                                            ? route("documentation.orders.index", pickBy({
+                                                search: search || undefined,
+                                                status: status || undefined,
+                                                page: pageNum,
+                                                ...(fromProduction ? { from: "production", module: "apt" } : {}),
+                                            }))
+                                            : link.url;
+
+                                        return targetUrl ? (
                                             <Link
                                                 key={key}
-                                                href={link.url}
+                                                href={targetUrl}
+                                                preserveState
+                                                preserveScroll
                                                 className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
-                                                    ? "bg-indigo-600 text-white shadow-sm"
+                                                    ? "bg-indigo-600 text-white shadow-sm font-bold"
                                                     : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
                                                     }`}
                                                 dangerouslySetInnerHTML={{

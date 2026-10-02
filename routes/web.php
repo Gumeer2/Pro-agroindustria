@@ -171,9 +171,6 @@ Route::middleware('auth')->group(function () {
         Route::delete('/documentation/exit-operators/{id}', [\App\Http\Controllers\ExitOperatorController::class , 'destroy'])->name('documentation.exit-operators.destroy');
         Route::get('/documentation/exit-operators/{id}/qr', [\App\Http\Controllers\ExitOperatorController::class , 'qr'])->name('documentation.exit-operators.qr');
 
-        // New Shipment Orders Report Route
-        Route::get('/documentation/shipment-orders', [\App\Http\Controllers\DocumentationController::class , 'shipmentOrdersIndex'])->name('documentation.orders.index');
-
         // Transport Lines Catalogue
         Route::get('/transport-lines', [\App\Http\Controllers\TransportLineController::class, 'index'])->name('transport-lines.index');
         Route::post('/transport-lines', [\App\Http\Controllers\TransportLineController::class, 'store'])->name('transport-lines.store');
