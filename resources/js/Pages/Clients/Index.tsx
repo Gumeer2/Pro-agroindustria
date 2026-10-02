@@ -39,11 +39,24 @@ interface PageProps {
 export default function Index({ auth, clients, filters }: PageProps) {
     const [search, setSearch] = useState(filters.search || "");
 
+    const applyFilters = (newParams: Partial<PageProps["filters"] & { page?: string | number }>) => {
+        const params = pickBy({
+            search,
+            ...newParams,
+        });
+        router.get(route("clients.index"), params as any, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        router.get(route("clients.index"), pickBy({ search }), {
-            preserveState: true,
-        });
+        applyFilters({ page: 1 });
+    };
+
+    const handlePageChange = (pageNum: string | number) => {
+        applyFilters({ page: pageNum });
     };
 
     return (
@@ -230,17 +243,35 @@ export default function Index({ auth, clients, filters }: PageProps) {
                                 resultados
                             </div>
                             <div className="flex justify-center space-x-1">
-                                {clients.links.map((link, key) =>
-                                    link.url ? (
-                                        <Link
+                                {clients.links.map((link, key) => {
+                                    let label = link.label;
+                                    if (label.includes('&laquo;') || label.toLowerCase().includes('anterior') || label.toLowerCase().includes('previous')) {
+                                        label = 'Anterior';
+                                    } else if (label.includes('&raquo;') || label.toLowerCase().includes('siguiente') || label.toLowerCase().includes('next')) {
+                                        label = 'Siguiente';
+                                    }
+
+                                    let pageNum: string | null = null;
+                                    if (link.url) {
+                                        try {
+                                            const parsed = new URL(link.url, window.location.origin);
+                                            pageNum = parsed.searchParams.get("page") || "1";
+                                        } catch (e) {
+                                            pageNum = null;
+                                        }
+                                    }
+
+                                    return pageNum ? (
+                                        <button
                                             key={key}
-                                            href={link.url}
-                                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
-                                                    ? "bg-indigo-600 text-white shadow-sm"
-                                                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                                                }`}
+                                            type="button"
+                                            onClick={() => handlePageChange(pageNum!)}
+                                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${link.active
+                                                ? "bg-indigo-600 text-white shadow-sm font-bold"
+                                                : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                                            }`}
                                             dangerouslySetInnerHTML={{
-                                                __html: link.label,
+                                                __html: label,
                                             }}
                                         />
                                     ) : (
@@ -248,11 +279,11 @@ export default function Index({ auth, clients, filters }: PageProps) {
                                             key={key}
                                             className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
                                             dangerouslySetInnerHTML={{
-                                                __html: link.label,
+                                                __html: label,
                                             }}
                                         />
-                                    ),
-                                )}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

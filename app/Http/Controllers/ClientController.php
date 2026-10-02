@@ -11,14 +11,16 @@ class ClientController extends Controller
     {
         $query = Client::query();
 
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->input('search');
-            $query->where('business_name', 'like', "%{$search}%")
-                ->orWhere('rfc', 'like', "%{$search}%")
-                ->orWhere('contact_info', 'like', "%{$search}%");
+            $query->where(function ($q) use ($search) {
+                $q->where('business_name', 'like', "%{$search}%")
+                    ->orWhere('rfc', 'like', "%{$search}%")
+                    ->orWhere('contact_info', 'like', "%{$search}%");
+            });
         }
 
-        $clients = $query->orderBy('created_at', 'desc')->paginate(10);
+        $clients = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
 
         return \Inertia\Inertia::render('Clients/Index', [
             'clients' => $clients,

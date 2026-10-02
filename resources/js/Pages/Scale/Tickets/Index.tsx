@@ -148,6 +148,14 @@ export default function Index({
         setShowScaleModal(false);
     };
 
+    const handlePageChange = (pageNum: string | number) => {
+        router.get(
+            route("scale.tickets.index"),
+            pickBy({ search, date, status, tab: filters.tab, page: pageNum }),
+            { preserveState: true, preserveScroll: true }
+        );
+    };
+
     const clearFilters = () => {
         setSearch("");
         setDate("");
@@ -637,28 +645,42 @@ export default function Index({
                             </div>
                             <div className="flex justify-center space-x-1">
                                 {tickets.links.map((link: any, i: number) => {
-                                    // Render disabled label if URL is null
-                                    if (link.url === null)
-                                        return (
-                                            <span
-                                                key={i}
-                                                className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
-                                                dangerouslySetInnerHTML={{
-                                                    __html: link.label,
-                                                }}
-                                            ></span>
-                                        );
+                                    let label = link.label;
+                                    if (label.includes('&laquo;') || label.toLowerCase().includes('anterior') || label.toLowerCase().includes('previous')) {
+                                        label = 'Anterior';
+                                    } else if (label.includes('&raquo;') || label.toLowerCase().includes('siguiente') || label.toLowerCase().includes('next')) {
+                                        label = 'Siguiente';
+                                    }
 
-                                    return (
-                                        <Link
+                                    let pageNum: string | null = null;
+                                    if (link.url) {
+                                        try {
+                                            const parsed = new URL(link.url, window.location.origin);
+                                            pageNum = parsed.searchParams.get("page") || "1";
+                                        } catch (e) {
+                                            pageNum = null;
+                                        }
+                                    }
+
+                                    return pageNum ? (
+                                        <button
                                             key={i}
-                                            href={link.url}
-                                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
-                                                ? "bg-indigo-600 text-white shadow-sm"
+                                            type="button"
+                                            onClick={() => handlePageChange(pageNum!)}
+                                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${link.active
+                                                ? "bg-indigo-600 text-white shadow-sm font-bold"
                                                 : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-300"
-                                                }`}
+                                            }`}
                                             dangerouslySetInnerHTML={{
-                                                __html: link.label,
+                                                __html: label,
+                                            }}
+                                        />
+                                    ) : (
+                                        <span
+                                            key={i}
+                                            className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
+                                            dangerouslySetInnerHTML={{
+                                                __html: label,
                                             }}
                                         />
                                     );
