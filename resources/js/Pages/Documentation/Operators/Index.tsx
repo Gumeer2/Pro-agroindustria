@@ -63,7 +63,7 @@ export default function Index({
     const [vesselId, setVesselId] = useState(filters.vessel_id || "");
     const [status, setStatus] = useState(filters.status || "active");
 
-    const applyFilters = (newParams: Partial<PageProps["filters"]>) => {
+    const applyFilters = (newParams: Partial<PageProps["filters"] & { page?: string | number }>) => {
         const params = pickBy({
             search,
             vessel_id: vesselId,
@@ -72,18 +72,23 @@ export default function Index({
         });
         router.get(route("documentation.operators.index"), params as any, {
             preserveState: true,
+            preserveScroll: true,
         });
     };
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        applyFilters({});
+        applyFilters({ page: 1 });
     };
 
     const handleFilterChange = (key: string, value: string) => {
         if (key === "vessel_id") setVesselId(value);
         if (key === "status") setStatus(value);
-        applyFilters({ [key]: value });
+        applyFilters({ [key]: value, page: 1 });
+    };
+
+    const handlePageChange = (pageNum: string | number) => {
+        applyFilters({ page: pageNum });
     };
 
     return (
@@ -364,17 +369,35 @@ export default function Index({
                                 resultados
                             </div>
                             <div className="flex justify-center space-x-1">
-                                {operators.links.map((link, key) =>
-                                    link.url ? (
-                                        <Link
+                                {operators.links.map((link, key) => {
+                                    let label = link.label;
+                                    if (label.includes('&laquo;') || label.toLowerCase().includes('anterior') || label.toLowerCase().includes('previous')) {
+                                        label = 'Anterior';
+                                    } else if (label.includes('&raquo;') || label.toLowerCase().includes('siguiente') || label.toLowerCase().includes('next')) {
+                                        label = 'Siguiente';
+                                    }
+
+                                    let pageNum: string | null = null;
+                                    if (link.url) {
+                                        try {
+                                            const parsed = new URL(link.url, window.location.origin);
+                                            pageNum = parsed.searchParams.get("page") || "1";
+                                        } catch (e) {
+                                            pageNum = null;
+                                        }
+                                    }
+
+                                    return pageNum ? (
+                                        <button
                                             key={key}
-                                            href={link.url}
-                                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
-                                                ? "bg-indigo-600 text-white shadow-sm"
+                                            type="button"
+                                            onClick={() => handlePageChange(pageNum!)}
+                                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${link.active
+                                                ? "bg-indigo-600 text-white shadow-sm font-bold"
                                                 : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
                                                 }`}
                                             dangerouslySetInnerHTML={{
-                                                __html: link.label,
+                                                __html: label,
                                             }}
                                         />
                                     ) : (
@@ -382,11 +405,11 @@ export default function Index({
                                             key={key}
                                             className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
                                             dangerouslySetInnerHTML={{
-                                                __html: link.label,
+                                                __html: label,
                                             }}
                                         />
-                                    ),
-                                )}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

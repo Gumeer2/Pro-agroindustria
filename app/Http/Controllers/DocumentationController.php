@@ -407,7 +407,7 @@ class DocumentationController extends Controller
     {
         $query = VesselOperator::query()->with('vessel');
 
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('operator_name', 'like', "%{$search}%")
@@ -417,7 +417,7 @@ class DocumentationController extends Controller
             });
         }
 
-        if ($request->has('vessel_id')) {
+        if ($request->filled('vessel_id')) {
             $query->where('vessel_id', $request->input('vessel_id'));
         }
 
