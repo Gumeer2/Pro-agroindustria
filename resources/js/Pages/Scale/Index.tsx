@@ -296,7 +296,7 @@ export default function Index({
             subtitle: "Materia Prima"
         },
         {
-            name: "Salida",
+            name: "Tara",
             icon: Truck,
             color: "bg-blue-50 text-blue-600",
             hover: "hover:border-blue-500",
