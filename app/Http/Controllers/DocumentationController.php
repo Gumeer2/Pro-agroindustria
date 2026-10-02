@@ -533,6 +533,10 @@ class DocumentationController extends Controller
         // Filter by Status: 'active' (default) vs 'cancelled'
         $statusFilter = $request->input('status', 'active'); // active | cancelled
 
+        if (!$request->has('status')) {
+            $request->query->set('status', 'active');
+        }
+
         if ($statusFilter === 'cancelled') {
             $query->where('status', 'cancelled');
         } else {
@@ -540,18 +544,7 @@ class DocumentationController extends Controller
             $query->whereIn('status', ['created', 'loading', 'closed', 'completed']);
         }
 
-        $appends = ['status' => $statusFilter];
-        if ($request->filled('search')) {
-            $appends['search'] = $request->input('search');
-        }
-        if ($request->filled('from')) {
-            $appends['from'] = $request->input('from');
-        }
-        if ($request->filled('module')) {
-            $appends['module'] = $request->input('module');
-        }
-
-        $orders = $query->orderBy('created_at', 'desc')->paginate(10)->appends($appends);
+        $orders = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
 
         return Inertia::render('Documentation/Orders/Index', [
             'orders' => $orders,

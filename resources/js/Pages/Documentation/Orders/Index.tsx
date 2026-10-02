@@ -618,20 +618,10 @@ export default function Index({
                                             label = "Siguiente";
                                         }
 
-                                        let targetUrl: string | null = null;
-                                        if (link.url) {
-                                            try {
-                                                const parsed = new URL(link.url, window.location.origin);
-                                                targetUrl = `${window.location.pathname}${parsed.search}`;
-                                            } catch (e) {
-                                                targetUrl = link.url;
-                                            }
-                                        }
-
-                                        return targetUrl ? (
+                                        return link.url ? (
                                             <Link
                                                 key={key}
-                                                href={targetUrl}
+                                                href={link.url}
                                                 preserveScroll
                                                 className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
                                                     ? "bg-indigo-600 text-white shadow-sm font-bold"
