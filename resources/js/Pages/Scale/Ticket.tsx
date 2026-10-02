@@ -150,35 +150,35 @@ const TicketCopy: React.FC<{
                         ["Carta Porte:", ticket.withdrawal_letter],
                     ].map(([label, value], idx) => (
                         <div key={idx} className="flex border-b border-black min-h-[16px]">
-                            <div className="w-[30%] font-bold border-r border-black px-1.5 py-0.5 uppercase text-[9px]">
+                            <div className="w-[30%] font-bold border-r border-black px-1.5 py-0.5 uppercase text-[9.5px]">
                                 {label}
                             </div>
-                            <div className="w-[70%] px-1.5 py-0.5 truncate uppercase">{value}</div>
+                            <div className="w-[70%] px-1.5 py-0.5 break-words uppercase text-[10px] leading-tight font-medium">{value}</div>
                         </div>
                     ))}
 
                     <div className="flex border-b border-black">
-                        <div className="w-[15%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[9px]">
+                        <div className="w-[18%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[10px] flex items-center">
                             Placas:
                         </div>
-                        <div className="w-[35%] px-1.5 py-0.5 border-r border-black font-mono text-[9px]">
+                        <div className="w-[32%] px-1.5 py-0.5 border-r border-black font-mono font-bold text-sm tracking-wider text-black flex items-center">
                             {ticket.tractor_plate}
                         </div>
                         {ticket.trailer_plate && ticket.trailer_plate !== "N/A" ? (
                             <>
-                                <div className="w-[15%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[9px]">
+                                <div className="w-[18%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[10px] flex items-center">
                                     Remolque:
                                 </div>
-                                <div className="w-[35%] px-1.5 py-0.5 font-mono text-[9px]">
+                                <div className="w-[32%] px-1.5 py-0.5 font-mono font-bold text-sm tracking-wider text-black flex items-center">
                                     {ticket.trailer_plate}
                                 </div>
                             </>
                         ) : (
                             <>
-                                <div className="w-[15%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[9px]">
+                                <div className="w-[18%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[10px] flex items-center">
                                     Econo:
                                 </div>
-                                <div className="w-[35%] px-1.5 py-0.5 font-mono text-[9px]">
+                                <div className="w-[32%] px-1.5 py-0.5 font-mono font-bold text-sm tracking-wider text-black flex items-center">
                                     {ticket.economic_number}
                                 </div>
                             </>
@@ -192,10 +192,10 @@ const TicketCopy: React.FC<{
                         ["Consig:", ticket.consignee],
                     ].map(([label, value], idx) => (
                         <div key={idx} className="flex border-b border-black min-h-[16px]">
-                            <div className="w-1/4 font-bold border-r border-black px-1.5 py-0.5 uppercase text-[9px]">
+                            <div className="w-1/4 font-bold border-r border-black px-1.5 py-0.5 uppercase text-[9.5px]">
                                 {label}
                             </div>
-                            <div className="w-3/4 px-1.5 py-0.5 uppercase truncate">
+                            <div className="w-3/4 px-1.5 py-0.5 uppercase break-words text-[10px] leading-tight">
                                 {value}
                             </div>
                         </div>
@@ -205,7 +205,7 @@ const TicketCopy: React.FC<{
                         <div className="font-bold px-1.5 pt-0.5 text-[8px] uppercase">
                             Observaciones:
                         </div>
-                        <div className="px-1.5 py-0.5 text-[9px] italic leading-tight truncate">
+                        <div className="px-1.5 py-0.5 text-[9px] italic leading-tight break-words">
                             {ticket.observations || "N/A"}
                         </div>
                     </div>

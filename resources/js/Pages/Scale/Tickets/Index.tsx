@@ -478,7 +478,7 @@ export default function Index({
                                                     {ticket.product}
                                                 </div>
                                                 <div
-                                                    className="text-gray-500 text-xs truncate max-w-[200px]"
+                                                    className="text-gray-600 text-xs font-medium break-words max-w-[280px]"
                                                     title={ticket.provider}
                                                 >
                                                     {ticket.provider}
