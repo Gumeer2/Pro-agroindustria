@@ -554,14 +554,6 @@ export default function EntrySale({
                                             />
                                         </div>
                                         <div>
-                                            <InputLabel value="Destino Final" className="mb-2" />
-                                            <TextInput
-                                                value={data.destination}
-                                                readOnly
-                                                className="w-full bg-gray-50 text-gray-600"
-                                            />
-                                        </div>
-                                        <div>
                                             <InputLabel value="Peso Programado" className="mb-2" />
                                             <div className="text-xl font-bold text-blue-900 p-2.5 rounded-lg bg-blue-50 text-blue-800 font-bold border border-blue-200">
                                                 {orderDetails?.programmed_weight ? `${orderDetails.programmed_weight} TM` : "N/A"}
