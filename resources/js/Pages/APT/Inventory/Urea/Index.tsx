@@ -562,26 +562,6 @@ export default function UreaInventoryIndex({
                             </p>
                         </div>
 
-                        <div className="flex flex-wrap gap-3">
-                            {activeTab === "production" && (
-                                <button
-                                    onClick={() => openDailyModal()}
-                                    className="inline-flex items-center px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm shadow-lg hover:shadow-emerald-500/30 transition-all transform hover:-translate-y-0.5 border border-emerald-400/30"
-                                >
-                                    <Plus className="w-5 h-5 mr-1.5" />
-                                    Capturar Producción Diaria
-                                </button>
-                            )}
-                            {activeTab === "initial" && (
-                                <button
-                                    onClick={() => openInitialModal()}
-                                    className="inline-flex items-center px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm shadow-md backdrop-blur-sm transition-all border border-purple-400/30"
-                                >
-                                    <Boxes className="w-5 h-5 mr-1.5" />
-                                    Capturar Inventario Inicial
-                                </button>
-                            )}
-                        </div>
                     </div>
                 </div>
 
