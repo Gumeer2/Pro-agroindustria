@@ -12,19 +12,13 @@ export default function Pagination({ links }: { links: any[] }) {
                 let label = link.label;
                 let icon = null;
 
-                if (link.label.includes('&laquo;')) {
-                    // label = 'Anterior';
+                if (link.label.includes('&laquo;') || link.label.includes('pagination.previous') || link.label.toLowerCase().includes('previous')) {
                     icon = <ChevronLeft className="w-4 h-4" />;
-                    label = ''; // Hide text if desired, or keep it
-                } else if (link.label.includes('&raquo;')) {
-                    // label = 'Siguiente';
+                    label = '';
+                } else if (link.label.includes('&raquo;') || link.label.includes('pagination.next') || link.label.toLowerCase().includes('next')) {
                     icon = <ChevronRight className="w-4 h-4" />;
                     label = '';
                 }
-
-                // If label is just 'Previous' or 'Next' from Laravel default
-                if (label.includes('Previous')) { label = ''; icon = <ChevronLeft className="w-4 h-4" />; }
-                if (label.includes('Next')) { label = ''; icon = <ChevronRight className="w-4 h-4" />; }
 
                 return (
                     link.url === null ? (

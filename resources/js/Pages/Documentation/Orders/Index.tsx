@@ -610,8 +610,15 @@ export default function Index({
                                     resultados
                                 </div>
                                 <div className="flex justify-center space-x-1">
-                                    {orders.links.map((link, key) =>
-                                        link.url ? (
+                                    {orders.links.map((link, key) => {
+                                        let label = link.label;
+                                        if (label.includes("pagination.previous") || label.toLowerCase().includes("previous") || label.includes("&laquo;")) {
+                                            label = "Anterior";
+                                        } else if (label.includes("pagination.next") || label.toLowerCase().includes("next") || label.includes("&raquo;")) {
+                                            label = "Siguiente";
+                                        }
+
+                                        return link.url ? (
                                             <Link
                                                 key={key}
                                                 href={link.url}
@@ -620,7 +627,7 @@ export default function Index({
                                                     : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
                                                     }`}
                                                 dangerouslySetInnerHTML={{
-                                                    __html: link.label,
+                                                    __html: label,
                                                 }}
                                             />
                                         ) : (
@@ -628,11 +635,11 @@ export default function Index({
                                                 key={key}
                                                 className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
                                                 dangerouslySetInnerHTML={{
-                                                    __html: link.label,
+                                                    __html: label,
                                                 }}
                                             />
-                                        ),
-                                    )}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )
