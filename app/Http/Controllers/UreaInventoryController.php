@@ -24,6 +24,10 @@ class UreaInventoryController extends Controller
      */
     public function index(Request $request)
     {
+        if (!$request->has('tab')) {
+            return redirect()->route('apt.inventory.urea.index', array_merge(['tab' => 'production'], $request->query()));
+        }
+
         $tab = $request->input('tab', 'production'); // 'production' | 'initial' | 'summary'
 
         // Base queries
