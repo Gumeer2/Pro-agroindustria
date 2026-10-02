@@ -103,17 +103,17 @@ const TicketCopy: React.FC<{
                         </div>
                     </div>
                     {/* Date Row */}
-                    <div className={`flex border-t border-black ${isVessel ? "text-[8px] h-8" : "text-[10px]"}`}>
-                        <div className={`w-1/3 flex items-center justify-center font-bold bg-gray-700 text-white uppercase h-full border-r border-black ${isVessel ? "text-[7px]" : ""}`}>
+                    <div className={`flex border-t border-black ${isVessel ? "text-[9px] min-h-[32px]" : "min-h-[40px]"}`}>
+                        <div className={`w-[30%] flex items-center justify-center font-bold bg-gray-700 text-white uppercase border-r border-black ${isVessel ? "text-[8.5px]" : "text-[11.5px] tracking-wider"}`}>
                             Fecha:
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center font-mono">
-                            <div className={`flex w-full border-b border-black font-bold ${isVessel ? "text-[6px] bg-gray-50" : "text-[8px]"}`}>
+                            <div className={`flex w-full border-b border-black font-bold ${isVessel ? "text-[7.5px] bg-gray-50 py-0.5" : "text-[9.5px] py-0.5"}`}>
                                 <span className="w-1/3 flex justify-center border-r border-black">DIA</span>
                                 <span className="w-1/3 flex justify-center border-r border-black">MES</span>
                                 <span className="w-1/3 flex justify-center">AÑO</span>
                             </div>
-                            <div className={`flex w-full font-bold h-full ${isVessel ? "text-[11px] leading-tight" : "text-[12px]"}`}>
+                            <div className={`flex w-full font-bold h-full ${isVessel ? "text-[12px] py-0.5" : "text-[14px] py-0.5 text-black"}`}>
                                 <span className="w-1/3 flex justify-center border-r border-black items-center">{ticket.date.split("/")[0]}</span>
                                 <span className="w-1/3 flex justify-center border-r border-black items-center">{ticket.date.split("/")[1]}</span>
                                 <span className="w-1/3 flex justify-center items-center">{ticket.date.split("/")[2]}</span>
