@@ -185,7 +185,12 @@ class DocumentationController extends Controller
             $validated['scale_name'] = $request->input('scale_name');
         }
 
-        if (!empty($validated['destination'])) {
+        if (!empty($validated['destination_id'])) {
+            $dest = ShipmentDestination::find($validated['destination_id']);
+            if ($dest) {
+                $validated['destination'] = $dest->name;
+            }
+        } elseif (!empty($validated['destination'])) {
             $this->ensureDestinationsExist($validated['destination']);
             $destination = ShipmentDestination::where('name', strtoupper(trim($validated['destination'])))->first();
             if ($destination) {
@@ -576,12 +581,17 @@ class DocumentationController extends Controller
      */
     public function printOrder($id)
     {
-        $order = ShipmentOrder::with(['client', 'sales_order.client', 'product', 'vessel', 'transporter', 'driver', 'vehicle', 'origin', 'scale_operator'])
+        $order = ShipmentOrder::with(['client', 'sales_order.client', 'product', 'vessel', 'transporter', 'driver', 'vehicle', 'origin', 'scale_operator', 'shipment_destination'])
             ->findOrFail($id);
 
         // Fallback for scale_name if scale_operator exists
         if (empty($order->scale_name) && $order->scale_operator) {
             $order->scale_name = $order->scale_operator->name;
+        }
+
+        // Fallback for destination if empty but shipment_destination exists
+        if (empty($order->destination) && $order->shipment_destination) {
+            $order->destination = $order->shipment_destination->name;
         }
 
         // Patch: If plates are missing, try to find them from the Operator registry (ExitOperator)
@@ -642,6 +652,7 @@ class DocumentationController extends Controller
             'order' => $order->toArray() + [
                 'product_code' => $productCode,
                 'product_text' => $productText,
+                'destination' => $order->destination ?: ($order->shipment_destination?->name ?: null),
                 'scale_name' => $order->scale_name ?? $order->scale_operator?->name ?? null,
             ]
         ]);
@@ -652,11 +663,15 @@ class DocumentationController extends Controller
      */
     public function printInstruction($id)
     {
-        $order = ShipmentOrder::with(['client', 'sales_order.client', 'product', 'vessel', 'transporter', 'driver', 'vehicle', 'origin', 'scale_operator'])
+        $order = ShipmentOrder::with(['client', 'sales_order.client', 'product', 'vessel', 'transporter', 'driver', 'vehicle', 'origin', 'scale_operator', 'shipment_destination'])
             ->findOrFail($id);
 
         if (empty($order->scale_name) && $order->scale_operator) {
             $order->scale_name = $order->scale_operator->name;
+        }
+
+        if (empty($order->destination) && $order->shipment_destination) {
+            $order->destination = $order->shipment_destination->name;
         }
 
         // Patch: If plates are missing, try to find them from the Operator registry (ExitOperator)
@@ -879,7 +894,12 @@ class DocumentationController extends Controller
         }
         unset($validated['operator_id']); // Not a column in DB, used for UI search only
 
-        if (!empty($validated['destination'])) {
+        if (!empty($validated['destination_id'])) {
+            $dest = ShipmentDestination::find($validated['destination_id']);
+            if ($dest) {
+                $validated['destination'] = $dest->name;
+            }
+        } elseif (!empty($validated['destination'])) {
             $this->ensureDestinationsExist($validated['destination']);
             $destination = ShipmentDestination::where('name', strtoupper(trim($validated['destination'])))->first();
             if ($destination) {

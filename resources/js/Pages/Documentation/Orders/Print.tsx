@@ -377,7 +377,7 @@ th, td {
                                                     <td className="text-center font-bold border-b-0 w-[18%]">{order.trailer_plate || "N/A"}</td>
 
                                                     <td className="bg-header w-[16%] text-center border-b-0">DESTINO:</td>
-                                                    <td className="text-center font-bold uppercase border-b-0 w-[33%]">{order.destination || "N/A"}</td>
+                                                    <td className="text-center font-bold uppercase border-b-0 w-[33%]">{order.destination || (order as any).shipment_destination?.name || "N/A"}</td>
 
                                                     <td className="bg-header w-[12%] text-center border-b-0">ESTADO:</td>
                                                     <td className="text-center font-bold uppercase border-r-0 border-b-0 w-[6%]">{order.state || "MX"}</td>

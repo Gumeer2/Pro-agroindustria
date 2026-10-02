@@ -859,7 +859,14 @@ export default function Edit({
                             <DestinationDropdown
                                 value={data.destination_id}
                                 initialDestinations={destinations}
-                                onChange={(id) => setData("destination_id", id)}
+                                onChange={(id) => {
+                                    const match = destinations?.find((d: any) => d.id === id);
+                                    setData((prev) => ({
+                                        ...prev,
+                                        destination_id: id,
+                                        destination: match ? match.name : prev.destination,
+                                    }));
+                                }}
                                 error={errors.destination_id}
                             />
 
