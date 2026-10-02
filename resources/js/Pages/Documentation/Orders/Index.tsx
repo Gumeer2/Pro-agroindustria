@@ -644,27 +644,11 @@ export default function Index({
                                             }
                                         }
 
-                                        let targetUrl: string | null = null;
-                                        if (pageNum) {
-                                            targetUrl = route(
-                                                "documentation.orders.index",
-                                                pickBy({
-                                                    page: pageNum,
-                                                    status: status || "active",
-                                                    search: search || undefined,
-                                                    ...(fromProduction ? { from: "production", module: "apt" } : {}),
-                                                })
-                                            );
-                                        }
-
-                                        return targetUrl && pageNum ? (
-                                            <a
+                                        return pageNum ? (
+                                            <button
                                                 key={key}
-                                                href={targetUrl}
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    handlePageChange(pageNum!);
-                                                }}
+                                                type="button"
+                                                onClick={() => handlePageChange(pageNum!)}
                                                 className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${link.active
                                                     ? "bg-indigo-600 text-white shadow-sm font-bold"
                                                     : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
