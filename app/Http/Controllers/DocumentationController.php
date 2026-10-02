@@ -540,11 +540,25 @@ class DocumentationController extends Controller
             $query->whereIn('status', ['created', 'loading', 'closed', 'completed']);
         }
 
-        $orders = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
+        $appends = ['status' => $statusFilter];
+        if ($request->filled('search')) {
+            $appends['search'] = $request->input('search');
+        }
+        if ($request->filled('from')) {
+            $appends['from'] = $request->input('from');
+        }
+        if ($request->filled('module')) {
+            $appends['module'] = $request->input('module');
+        }
+
+        $orders = $query->orderBy('created_at', 'desc')->paginate(10)->appends($appends);
 
         return Inertia::render('Documentation/Orders/Index', [
             'orders' => $orders,
-            'filters' => $request->only(['search', 'status']),
+            'filters' => [
+                'status' => $statusFilter,
+                'search' => $request->input('search', ''),
+            ],
             'sales_orders' => SalesOrder::where('status', 'created')->orWhere('status', 'open')->get(),
             'default_folio' => 'PA' . date('Y') . '-' . str_pad(ShipmentOrder::count() + 1, 4, '0', STR_PAD_LEFT),
         ]);

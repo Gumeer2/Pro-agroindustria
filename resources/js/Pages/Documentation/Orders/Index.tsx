@@ -618,31 +618,20 @@ export default function Index({
                                             label = "Siguiente";
                                         }
 
-                                        let pageNum: string | null = null;
+                                        let targetUrl: string | null = null;
                                         if (link.url) {
                                             try {
                                                 const parsed = new URL(link.url, window.location.origin);
-                                                pageNum = parsed.searchParams.get("page");
+                                                targetUrl = `${window.location.pathname}${parsed.search}`;
                                             } catch (e) {
-                                                const match = link.url.match(/page=(\d+)/);
-                                                if (match) pageNum = match[1];
+                                                targetUrl = link.url;
                                             }
                                         }
-
-                                        const targetUrl = link.url && pageNum
-                                            ? route("documentation.orders.index", pickBy({
-                                                search: search || undefined,
-                                                status: status || undefined,
-                                                page: pageNum,
-                                                ...(fromProduction ? { from: "production", module: "apt" } : {}),
-                                            }))
-                                            : link.url;
 
                                         return targetUrl ? (
                                             <Link
                                                 key={key}
                                                 href={targetUrl}
-                                                preserveState
                                                 preserveScroll
                                                 className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
                                                     ? "bg-indigo-600 text-white shadow-sm font-bold"
