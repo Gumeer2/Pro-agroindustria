@@ -202,10 +202,10 @@ const TicketCopy: React.FC<{
                     ))}
 
                     <div className={`flex flex-col ${isVessel ? "min-h-[30px]" : "min-h-[60px] flex-1"}`}>
-                        <div className="font-bold px-1.5 pt-0.5 text-[8px] uppercase">
+                        <div className="font-bold px-1.5 pt-0.5 text-[9px] uppercase">
                             Observaciones:
                         </div>
-                        <div className="px-1.5 py-0.5 text-[9px] italic leading-tight break-words">
+                        <div className="px-1.5 py-0.5 text-[10px] font-medium leading-tight break-words uppercase text-black">
                             {ticket.observations || "N/A"}
                         </div>
                     </div>

@@ -1185,6 +1185,7 @@ class WeightTicketController extends Controller
                     'vessel_operator_trip_id' => $vesselOperatorTripId,
                     'operation_type' => $isBurreo ? 'burreo' : 'scale',
                     'warehouse' => ($vessel && $vessel->is_external_warehouse) ? 'ALMACÉN CLIENTE' : null,
+                    'observations' => $validated['observations'] ?? null,
                 ]);
 
                 $loadingOrderId = $order->id;
@@ -1380,6 +1381,25 @@ class WeightTicketController extends Controller
             $observations = 'DESCARGA DE BARCO ' . $order->vessel->name . ' ' . $observations;
         }
 
+        // Full Unit Part (Primera Parte / Segunda Parte) from Tara
+        $fullPart = $ticket->full_part ?? ($order->full_part ?? ($order->shipment_order->full_part ?? null));
+        $fullPartText = '';
+        if (!empty($fullPart)) {
+            $fpLower = strtolower(trim($fullPart));
+            if ($fpLower === 'primera') {
+                $fullPartText = 'PRIMERA PARTE';
+            } elseif ($fpLower === 'segunda') {
+                $fullPartText = 'SEGUNDA PARTE';
+            } else {
+                $fullPartText = strtoupper($fullPart);
+            }
+        }
+
+        if ($fullPartText) {
+            $cleanObs = trim(str_ireplace(['primera parte', 'segunda parte'], '', $observations), " -,\t\n\r\0\x0B");
+            $observations = $cleanObs ? "{$fullPartText} - {$cleanObs}" : $fullPartText;
+        }
+
         // Destination Logic
         $destination = trim(($order->warehouse ?? '') . ($order->cubicle && $order->cubicle !== 'N/A' ? " - Cubículo {$order->cubicle}" : '')) ?: 'N/A';
         if ($isSale) {
@@ -1430,6 +1450,7 @@ class WeightTicketController extends Controller
                 ? ($order->shipment_order->trailer_plate ?? $order->trailer_plate ?? 'N/A')
                 : ($order->trailer_plate ?? 'N/A'),
             'economic_number' => $economicNumber,
+            'full_part' => $fullPartText,
 
             // Special logic: The "Reference" captured during destare becomes the "Destination" on the ticket
             'destination' => $isSpecialVesselWorkflow ? ($ticket->reference ?? ($order->reference ?? 'N/A')) : $destination,
