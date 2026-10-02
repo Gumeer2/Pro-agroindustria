@@ -618,10 +618,29 @@ export default function Index({
                                             label = "Siguiente";
                                         }
 
-                                        return link.url ? (
+                                        let targetUrl: string | null = null;
+                                        if (link.url) {
+                                            try {
+                                                const parsed = new URL(link.url, window.location.origin);
+                                                const pageNum = parsed.searchParams.get("page") || "1";
+                                                targetUrl = route(
+                                                    "documentation.orders.index",
+                                                    pickBy({
+                                                        page: pageNum,
+                                                        status: status || "active",
+                                                        search: search || undefined,
+                                                        ...(fromProduction ? { from: "production", module: "apt" } : {}),
+                                                    })
+                                                );
+                                            } catch (e) {
+                                                targetUrl = link.url;
+                                            }
+                                        }
+
+                                        return targetUrl ? (
                                             <Link
                                                 key={key}
-                                                href={link.url}
+                                                href={targetUrl}
                                                 preserveScroll
                                                 className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
                                                     ? "bg-indigo-600 text-white shadow-sm font-bold"

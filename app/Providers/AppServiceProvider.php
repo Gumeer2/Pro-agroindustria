@@ -26,7 +26,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         if (config('app.url')) {
-            URL::forceRootUrl(config('app.url'));
+            URL::forceRootUrl(rtrim(config('app.url'), '/'));
         }
 
         Vite::prefetch(concurrency: 3);
