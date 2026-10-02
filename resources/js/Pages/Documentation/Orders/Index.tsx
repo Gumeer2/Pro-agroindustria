@@ -143,8 +143,24 @@ export default function Index({
 
         router.get(
             route("documentation.orders.index"),
-            pickBy({ search: s, status: st, ...(fromProduction ? { from: "production", module: "apt" } : {}) }),
+            pickBy({ page: 1, search: s, status: st, ...(fromProduction ? { from: "production", module: "apt" } : {}) }),
             { preserveState: true },
+        );
+    };
+
+    const handlePageChange = (pageNum: string | number) => {
+        router.get(
+            route("documentation.orders.index"),
+            pickBy({
+                page: pageNum,
+                status: status || "active",
+                search: search || undefined,
+                ...(fromProduction ? { from: "production", module: "apt" } : {}),
+            }),
+            {
+                preserveScroll: true,
+                preserveState: false,
+            }
         );
     };
 
@@ -618,31 +634,38 @@ export default function Index({
                                             label = "Siguiente";
                                         }
 
-                                        let targetUrl: string | null = null;
+                                        let pageNum: string | null = null;
                                         if (link.url) {
                                             try {
                                                 const parsed = new URL(link.url, window.location.origin);
-                                                const pageNum = parsed.searchParams.get("page") || "1";
-                                                targetUrl = route(
-                                                    "documentation.orders.index",
-                                                    pickBy({
-                                                        page: pageNum,
-                                                        status: status || "active",
-                                                        search: search || undefined,
-                                                        ...(fromProduction ? { from: "production", module: "apt" } : {}),
-                                                    })
-                                                );
+                                                pageNum = parsed.searchParams.get("page") || "1";
                                             } catch (e) {
-                                                targetUrl = link.url;
+                                                pageNum = null;
                                             }
                                         }
 
-                                        return targetUrl ? (
-                                            <Link
+                                        let targetUrl: string | null = null;
+                                        if (pageNum) {
+                                            targetUrl = route(
+                                                "documentation.orders.index",
+                                                pickBy({
+                                                    page: pageNum,
+                                                    status: status || "active",
+                                                    search: search || undefined,
+                                                    ...(fromProduction ? { from: "production", module: "apt" } : {}),
+                                                })
+                                            );
+                                        }
+
+                                        return targetUrl && pageNum ? (
+                                            <a
                                                 key={key}
                                                 href={targetUrl}
-                                                preserveScroll
-                                                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${link.active
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    handlePageChange(pageNum!);
+                                                }}
+                                                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${link.active
                                                     ? "bg-indigo-600 text-white shadow-sm font-bold"
                                                     : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
                                                     }`}
