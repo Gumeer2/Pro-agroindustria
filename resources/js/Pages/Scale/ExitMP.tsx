@@ -557,20 +557,6 @@ export default function ExitMP({
                                     </div>
                                 </div>
                                 <div>
-                                    {isDynamicReference ? (
-                                        <ReferenceDropdown
-                                            value={selectedOriginId}
-                                            label="Referencia"
-                                            onChange={(id) => setSelectedOriginId(id)}
-                                            onSelect={(ref) => setData("reference", ref.name)}
-                                        />
-                                    ) : (
-                                        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-600">
-                                            {order.reference || "N/A"}
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
                                     <InputLabel value="Consignado a" />
                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-600">
                                         {order.consignee || "N/A"}
