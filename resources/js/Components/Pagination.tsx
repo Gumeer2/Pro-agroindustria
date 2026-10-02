@@ -34,7 +34,7 @@ export default function Pagination({ links }: { links: any[] }) {
                         <button
                             key={key}
                             type="button"
-                            onClick={() => router.visit(link.url, { preserveScroll: true })}
+                            onClick={() => router.visit(link.url, { preserveScroll: true, preserveState: true })}
                             className={cn(
                                 "flex items-center justify-center px-4 py-2 text-sm border rounded-lg transition-colors duration-200 cursor-pointer",
                                 link.active

@@ -29,7 +29,7 @@ class DockController extends Controller
         return Inertia::render('Dock/Index', [
             'operators' => VesselOperator::orderBy('operator_name')->get(),
             'vessels' => $query->paginate(10)->withQueryString(),
-            'filters' => $request->only(['start_date', 'end_date']),
+            'filters' => $request->only(['start_date', 'end_date', 'tab']),
         ]);
     }
 

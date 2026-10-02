@@ -2,7 +2,7 @@ import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link, router } from "@inertiajs/react";
 import { Users, Ship, Filter, X, List, ArrowLeft, Truck, Plus } from "lucide-react";
 import Pagination from "@/Components/Pagination";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { pickBy } from "lodash";
 
 export default function Index({
@@ -19,16 +19,34 @@ export default function Index({
         end_date: filters.end_date || "",
     });
 
-    // Handle tab parameter from URL
-    const queryParams = new URLSearchParams(window.location.search);
-    const initialTab = queryParams.get("tab");
+    // Handle tab parameter from URL or filters
+    const queryParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    const initialTab = filters?.tab || queryParams.get("tab");
+    const isTableActive =
+        initialTab === "gestion" ||
+        queryParams.has("page") ||
+        queryParams.has("start_date") ||
+        queryParams.has("end_date");
 
     const [viewMode, setViewMode] = useState<"menu" | "table">(
-        initialTab === "gestion" ? "table" : "menu"
+        isTableActive ? "table" : "menu"
     );
 
+    useEffect(() => {
+        const qParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+        if (
+            filters?.tab === "gestion" ||
+            qParams.get("tab") === "gestion" ||
+            qParams.has("page") ||
+            qParams.has("start_date") ||
+            qParams.has("end_date")
+        ) {
+            setViewMode("table");
+        }
+    }, [filters, typeof window !== "undefined" ? window.location.search : ""]);
+
     const handleSearch = () => {
-        router.get(route("dock.index"), pickBy(params), {
+        router.get(route("dock.index"), pickBy({ ...params, tab: "gestion" }), {
             preserveState: true,
             preserveScroll: true,
         });
@@ -38,7 +56,7 @@ export default function Index({
         setParams({ start_date: "", end_date: "" });
         router.get(
             route("dock.index"),
-            {},
+            { tab: "gestion" },
             { preserveState: true, preserveScroll: true },
         );
     };
@@ -59,7 +77,14 @@ export default function Index({
                         /* Action Cards Menu */
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <button
-                                onClick={() => setViewMode("table")}
+                                onClick={() => {
+                                    setViewMode("table");
+                                    router.get(
+                                        route("dock.index"),
+                                        { tab: "gestion" },
+                                        { preserveState: true, preserveScroll: true, replace: true }
+                                    );
+                                }}
                                 className="group bg-white rounded-xl shadow-md border-2 border-transparent p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl hover:border-indigo-500"
                             >
                                 <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6 transition-transform transform group-hover:scale-110 text-indigo-600">
@@ -112,7 +137,14 @@ export default function Index({
                                 <div className="flex-1 min-w-0">
                                     <div className="mb-4">
                                         <button
-                                            onClick={() => setViewMode("menu")}
+                                            onClick={() => {
+                                                setViewMode("menu");
+                                                router.get(
+                                                    route("dock.index"),
+                                                    {},
+                                                    { preserveState: true, preserveScroll: true }
+                                                );
+                                            }}
                                             className="text-gray-500 hover:text-gray-900 flex items-center text-sm font-medium transition-colors"
                                         >
                                             <ArrowLeft className="w-4 h-4 mr-1" />
