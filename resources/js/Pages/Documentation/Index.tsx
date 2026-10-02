@@ -13,7 +13,7 @@ export default function Index({ auth }: { auth: any }) {
             hover: "hover:border-indigo-500",
         },
         {
-            name: "Descarga de Barco",
+            name: "Barco",
             icon: Anchor,
             href: route("documentation.dock"),
             description: "Gestión de operadores y códigos QR.",
