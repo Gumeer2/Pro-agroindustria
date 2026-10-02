@@ -445,8 +445,8 @@ function Section({ rows, label, showPrint = true }: { rows: OeRow[]; label: stri
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const TABS = [
-    { key: "envasado", label: "Envasado", color: "indigo" },
-    { key: "granel", label: "Granel", color: "blue" },
+    { key: "envasado", label: "Envasado Clientes", color: "indigo" },
+    { key: "granel", label: "Granel Clientes", color: "blue" },
     { key: "saderEnvasado", label: "Envasado SADER", color: "green" },
     { key: "saderGranel", label: "Granel SADER", color: "amber" },
 ] as const;
