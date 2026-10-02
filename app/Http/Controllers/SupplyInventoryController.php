@@ -21,8 +21,30 @@ class SupplyInventoryController extends Controller
      */
     public function hub(Request $request)
     {
-        $types = SupplyInventoryCatalog::getTypes();
+        // Summaries for supply items
+        $totalProducts = SupplyInventoryItem::count();
+        $totalStock = (float) SupplyInventoryItem::sum('stock');
+        $totalValue = (float) SupplyInventoryItem::sum(DB::raw('stock * unit_cost'));
+        $lowStockCount = SupplyInventoryItem::where('stock', '>', 0)->whereColumn('stock', '<=', 'min_stock')->count();
+        $outOfStockCount = SupplyInventoryItem::where('stock', '<=', 0)->count();
 
+        return Inertia::render('APT/Inventory/Index', [
+            'metrics' => [
+                'total_products' => $totalProducts,
+                'total_stock' => $totalStock,
+                'total_value' => $totalValue,
+                'low_stock_count' => $lowStockCount,
+                'out_of_stock_count' => $outOfStockCount,
+            ],
+        ]);
+    }
+
+    /**
+     * Display the Submodule Hub for "Entrada y Salida de Productos"
+     * Shows the 3 Submodules (Productos, Entrada, Salida) and the 4 Metrics Bar.
+     */
+    public function productsHub(Request $request)
+    {
         // Summaries for supply items
         $totalProducts = SupplyInventoryItem::count();
         $totalStock = (float) SupplyInventoryItem::sum('stock');
@@ -93,26 +115,9 @@ class SupplyInventoryController extends Controller
                 'secondary_label' => 'Consumo operativo',
                 'secondary_value' => 'Control de vales',
             ],
-            [
-                'id' => 'urea',
-                'name' => 'Urea Agrícola',
-                'slug' => 'urea',
-                'description' => 'Módulo especializado de producción diaria por turno, planta de origen (Urea 1 y 2) e inventario inicial balanceado.',
-                'icon' => 'TrendingUp',
-                'color' => 'bg-teal-50 text-teal-600',
-                'border' => 'border-teal-200',
-                'hover' => 'hover:border-teal-500 hover:shadow-teal-100',
-                'accent' => 'teal',
-                'href' => route('apt.inventory.urea.index') . '?tab=production',
-                'badge' => 'Producción',
-                'stats_label' => 'Módulo especial',
-                'stats_value' => 'Producción e Inicial',
-                'secondary_label' => 'Plantas:',
-                'secondary_value' => 'UREA 1 / UREA 2',
-            ],
         ];
 
-        return Inertia::render('APT/Inventory/Index', [
+        return Inertia::render('APT/Inventory/ProductsHub', [
             'mainModules' => $mainModules,
             'metrics' => [
                 'total_products' => $totalProducts,

@@ -200,8 +200,9 @@ Route::middleware('auth')->group(function () {
         Route::patch('/apt/lots/{lot}/toggle', [\App\Http\Controllers\LotController::class , 'toggleStatus'])->name('apt.lots.toggle');
         Route::delete('/apt/lots/{lot}', [\App\Http\Controllers\LotController::class , 'destroy'])->name('apt.lots.destroy');
 
-        // Gestión de Inventarios (4 Submódulos Principales: Productos, Entrada, Salida, Urea Agrícola)
+        // Gestión de Inventarios (Módulos Principales: Entrada y Salida de Productos, Producción)
         Route::get('/apt/inventory', [\App\Http\Controllers\SupplyInventoryController::class, 'hub'])->name('apt.inventory.index');
+        Route::get('/apt/inventory/products-hub', [\App\Http\Controllers\SupplyInventoryController::class, 'productsHub'])->name('apt.inventory.products-hub');
         Route::get('/apt/inventory/products', [\App\Http\Controllers\SupplyInventoryController::class, 'products'])->name('apt.inventory.products.index');
         Route::get('/apt/inventory/products/print', [\App\Http\Controllers\SupplyInventoryController::class, 'printProducts'])->name('apt.inventory.products.print');
         Route::get('/apt/inventory/products/group/{type_slug}/{group_number}', [\App\Http\Controllers\SupplyInventoryController::class, 'groupView'])->name('apt.inventory.products.group');

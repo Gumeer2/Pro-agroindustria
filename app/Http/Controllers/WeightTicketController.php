@@ -196,7 +196,7 @@ class WeightTicketController extends Controller
                 $programmedWeight = $order->shipment_order?->programmed_tons ?? $order->programmed_tons ?? 'N/A';
                 $presentation = $order->shipment_order?->presentation ?? 'GRANEL';
                 $productName = $order->product?->name ?? $order->shipment_order?->product?->name ?? $order->shipment_order?->product ?? 'N/A';
-                
+
                 // If it's Envasado, ensure we show the bag size
                 if (strtoupper($presentation) === 'ENVASADO') {
                     $sacksCount = $order->shipment_order?->sacks_count;
@@ -259,14 +259,14 @@ class WeightTicketController extends Controller
     {
         // Auto-sync any existing cancelled vessel orders in loading_orders
         LoadingOrder::where(function ($q) {
-                $q->whereNotNull('vessel_id')->orWhereNull('shipment_order_id');
-            })
+            $q->whereNotNull('vessel_id')->orWhereNull('shipment_order_id');
+        })
             ->whereHas('weight_ticket', function ($q) {
                 $q->where('weighing_status', 'cancelled');
             })
             ->where(function ($q) {
                 $q->where('status', '!=', 'cancelled')
-                  ->orWhere('destare_status', '!=', 'completed');
+                    ->orWhere('destare_status', '!=', 'completed');
             })
             ->update([
                 'status' => 'cancelled',
@@ -736,10 +736,10 @@ class WeightTicketController extends Controller
                 $trailerPlate = $order->shipment_order->trailer_plate ?? $trailerPlate;
             }
 
-            $assignedWarehouse = $order->shipment_order?->warehouse 
-                ?? $order->warehouse 
-                ?? $order->shipment_order?->lot?->warehouse 
-                ?? $order->lot?->warehouse 
+            $assignedWarehouse = $order->shipment_order?->warehouse
+                ?? $order->warehouse
+                ?? $order->shipment_order?->lot?->warehouse
+                ?? $order->lot?->warehouse
                 ?? 'N/A';
 
             $orderData = [
@@ -907,12 +907,12 @@ class WeightTicketController extends Controller
                 'vessel.product',
                 'weight_ticket'
             ])
-            ->where(function ($q) use ($qr) {
-                $q->where('folio', $qr)
-                  ->orWhereHas('weight_ticket', fn($w) => $w->where('ticket_number', $qr)->orWhere('ticket_number', 'TK-' . $qr));
-            })
-            ->latest()
-            ->first();
+                ->where(function ($q) use ($qr) {
+                    $q->where('folio', $qr)
+                        ->orWhereHas('weight_ticket', fn($w) => $w->where('ticket_number', $qr)->orWhere('ticket_number', 'TK-' . $qr));
+                })
+                ->latest()
+                ->first();
 
             if ($loadingOrder) {
                 if ($loadingOrder->vessel_operator) {

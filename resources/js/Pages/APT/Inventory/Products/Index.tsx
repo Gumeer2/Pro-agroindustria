@@ -403,11 +403,11 @@ export default function ProductsIndex({
                 {/* Back button */}
                 <div className="mb-4">
                     <Link
-                        href={route("apt.inventory.index")}
+                        href={typeof route === "function" ? route("apt.inventory.products-hub") : "/apt/inventory/products-hub"}
                         className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium group"
                     >
                         <ArrowLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" />
-                        Volver a Gestión de Inventarios
+                        Volver a Entrada y Salida de Productos
                     </Link>
                 </div>
 
