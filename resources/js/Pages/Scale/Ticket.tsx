@@ -217,34 +217,34 @@ const TicketCopy: React.FC<{
                         BASCULA {ticket.scale_number}
                     </div>
 
-                    <div className={`${isVessel ? "flex-1 p-1.5 space-y-1" : "flex-1 p-3 space-y-2 flex flex-col justify-center text-[13px]"}`}>
-                        <div className="flex justify-between border-b border-dotted border-gray-400 pb-0.5 text-[10px]">
-                            <span>ENTRADA:</span>
+                    <div className={`${isVessel ? "flex-1 p-1.5 space-y-1" : "flex-1 p-3 space-y-2 flex flex-col justify-center"}`}>
+                        <div className="flex justify-between border-b border-dotted border-gray-400 pb-1 items-center">
+                            <span className={`${isVessel ? "text-[10px]" : "text-[12px]"} font-bold text-black`}>ENTRADA:</span>
                             <div className="flex flex-col items-end">
-                                <span>
+                                <span className={`${isVessel ? "text-[11px]" : "text-[13.5px]"} font-bold text-black`}>
                                     {(ticket.entry_weight).toLocaleString("es-MX")} kg
                                 </span>
-                                <span className="text-[8px] opacity-70">
+                                <span className={`${isVessel ? "text-[8.5px]" : "text-[10px]"} text-gray-700 font-medium`}>
                                     {ticket.entry_at || ticket.date}
                                 </span>
                             </div>
                         </div>
 
                         {ticket.net_weight > 0 ? (
-                            <div className="space-y-1 mt-1">
-                                <div className="flex justify-between text-[10px]">
-                                    <span>BRUTO:</span>
-                                    <span>{(ticket.gross_weight).toLocaleString("es-MX")} kg</span>
+                            <div className="space-y-1.5 mt-1">
+                                <div className="flex justify-between items-center">
+                                    <span className={`${isVessel ? "text-[10px]" : "text-[12px]"} font-bold text-black`}>BRUTO:</span>
+                                    <span className={`${isVessel ? "text-[11px]" : "text-[13px]"} font-bold text-black`}>{(ticket.gross_weight).toLocaleString("es-MX")} kg</span>
                                 </div>
-                                <div className="flex justify-between text-[10px]">
-                                    <span>TARA:</span>
-                                    <span>{(ticket.tare_weight).toLocaleString("es-MX")} kg</span>
+                                <div className="flex justify-between items-center">
+                                    <span className={`${isVessel ? "text-[10px]" : "text-[12px]"} font-bold text-black`}>TARA:</span>
+                                    <span className={`${isVessel ? "text-[11px]" : "text-[13px]"} font-bold text-black`}>{(ticket.tare_weight).toLocaleString("es-MX")} kg</span>
                                 </div>
-                                <div className={`flex justify-between pt-0.5 border-t border-black font-bold ${isVessel ? "text-[14px]" : "text-[18px]"}`}>
+                                <div className={`flex justify-between pt-1 border-t border-black font-bold items-center ${isVessel ? "text-[15px]" : "text-[19px]"} text-black`}>
                                     <span>NETO:</span>
                                     <span>{(ticket.net_weight).toLocaleString("es-MX")} kg</span>
                                 </div>
-                                <div className="text-right text-[8px] opacity-70">
+                                <div className={`text-right ${isVessel ? "text-[8.5px]" : "text-[10px]"} text-gray-700 font-medium`}>
                                     {ticket.exit_at || ticket.time}
                                 </div>
                             </div>
