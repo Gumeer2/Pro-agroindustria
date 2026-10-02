@@ -213,7 +213,7 @@ const TicketCopy: React.FC<{
 
                 {/* --- Weight Section --- */}
                 <div className={`${isVessel ? "w-[35%]" : "w-[40%]"} flex flex-col font-mono bg-gray-50/5`}>
-                    <div className={`text-center font-bold uppercase text-[9px] ${isVessel ? "border-b border-black py-0.5" : "border-b border-black py-1 h-[19px]"}`}>
+                    <div className={`text-center font-bold uppercase tracking-wider text-black ${isVessel ? "border-b border-black py-0.5 text-[11px]" : "border-b border-black py-1 text-[13px]"}`}>
                         BASCULA {ticket.scale_number}
                     </div>
 
