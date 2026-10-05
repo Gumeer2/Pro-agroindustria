@@ -531,14 +531,10 @@ export default function Index({
                                                 <div className="flex items-center justify-center gap-2">
                                                     {/* Reprint */}
                                                     <a
-                                                        href={
-                                                            route(
-                                                                "scale.ticket.print",
-                                                                ticket.id,
-                                                            ) + "?from=history"
-                                                        }
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
+                                                        href={route(
+                                                            "scale.ticket.print",
+                                                            ticket.id,
+                                                        )}
                                                         className="inline-flex items-center text-gray-500 hover:text-indigo-600 bg-gray-50 hover:bg-indigo-50 p-2 rounded-md transition-colors"
                                                         title="Reimprimir Ticket"
                                                     >

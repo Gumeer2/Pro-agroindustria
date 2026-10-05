@@ -56,7 +56,7 @@ const TicketCopy: React.FC<{
     return (
         <div
             className={`mx-auto bg-white relative text-black font-sans box-border border border-gray-300 print:border-none 
-                ${isVessel ? "w-[21cm] p-2 min-h-[13.5cm] max-h-[14cm] overflow-hidden" : "w-[24cm] p-6 pt-2 print:pt-10 mb-4"} 
+                ${isVessel ? "w-[21cm] p-2 min-h-[13.5cm] max-h-[14cm] overflow-hidden" : "w-[26.5cm] max-w-full p-4 print:p-0 print:pt-2 print:w-full mb-4"} 
                 ${!isLast ? "print:break-after-page" : ""}`}
         >
             {/* --- Header --- */}
@@ -66,7 +66,7 @@ const TicketCopy: React.FC<{
                     <img
                         src={tenant?.logo || "/images/logovecode.png"}
                         alt={tenant?.name || "Logo"}
-                        className={`${isVessel ? "h-12" : "h-20"} w-auto object-contain`}
+                        className={`${isVessel ? "h-12" : "h-22"} w-auto object-contain`}
                         onError={(e) => {
                             e.currentTarget.src = "/img/Proagro2.png";
                         }}
@@ -75,16 +75,16 @@ const TicketCopy: React.FC<{
 
                 {/* Company Info */}
                 <div className={`${isVessel ? "w-[60%]" : "w-[55%]"} flex flex-col justify-center items-center text-center px-1`}>
-                    <h1 className={`font-bold leading-tight tracking-tight ${isVessel ? "text-[16px]" : "text-[24px]"}`}>
+                    <h1 className={`font-bold leading-tight tracking-tight ${isVessel ? "text-[16px]" : "text-[26px]"}`}>
                         {tenant?.name || 'PRO-AGROINDUSTRIA S.A. DE C.V.'}
                     </h1>
-                    <p className={`${isVessel ? "text-[9px]" : "text-[10px]"} font-bold`}>
+                    <p className={`${isVessel ? "text-[9px]" : "text-[11.5px]"} font-bold`}>
                         {tenant?.slug === 'proagro' ? 'COATZACOALCOS, VERACRUZ' : 'SISTEMA DE LOGÍSTICA'}
                     </p>
-                    <p className={`font-bold ${isVessel ? "mt-0 text-[10px]" : "mt-1 text-[14px]"}`}>
+                    <p className={`font-bold ${isVessel ? "mt-0 text-[10px]" : "mt-1 text-[15px]"}`}>
                         {tenant?.slug === 'proagro' ? 'LOGISTICA Y SUMINISTROS' : 'CONTROL DE PESO'}
                     </p>
-                    <div className={`${isVessel ? "px-2 py-0 mt-1 text-[10px]" : "border border-black px-4 py-0.5 mt-2 text-[12px] bg-gray-50"} font-bold uppercase tracking-widest`}>
+                    <div className={`${isVessel ? "px-2 py-0 mt-1 text-[10px]" : "border border-black px-5 py-0.5 mt-1.5 text-[13px] bg-gray-50"} font-bold uppercase tracking-widest`}>
                         TICKET DE PESO
                     </div>
                 </div>
@@ -92,28 +92,28 @@ const TicketCopy: React.FC<{
                 {/* Folio & Date */}
                 <div className={`${isVessel ? "w-[25%]" : "w-[25%]"} flex flex-col border border-black`}>
                     {/* Folio */}
-                    <div className={`flex-1 flex flex-col items-center justify-center ${isVessel ? "p-1" : "p-1"} border-b border-black`}>
-                        <div className={`${isVessel ? "text-[9px]" : "text-[10px]"} font-bold uppercase`}>
+                    <div className={`flex-1 flex flex-col items-center justify-center ${isVessel ? "p-1" : "p-1.5"} border-b border-black`}>
+                        <div className={`${isVessel ? "text-[9px]" : "text-[11px]"} font-bold uppercase`}>
                             FOLIO
                         </div>
-                        <div className={`border-[2px] border-black ${isVessel ? "px-2 h-6" : "px-3 py-0.5 h-10"} mt-0.5 flex items-center justify-center font-bold bg-white`}>
-                            <span className={`${isVessel ? "text-[18px]" : "text-[24px]"} text-red-600`}>
+                        <div className={`border-[2px] border-black ${isVessel ? "px-2 h-6" : "px-4 py-0.5 h-11"} mt-0.5 flex items-center justify-center font-bold bg-white`}>
+                            <span className={`${isVessel ? "text-[18px]" : "text-[28px]"} text-red-600 font-extrabold`}>
                                 {(ticket.folio || "").split("-").pop()}
                             </span>
                         </div>
                     </div>
                     {/* Date Row */}
-                    <div className={`flex border-t border-black ${isVessel ? "text-[9px] min-h-[32px]" : "min-h-[40px]"}`}>
-                        <div className={`w-[30%] flex items-center justify-center font-bold bg-gray-700 text-white uppercase border-r border-black ${isVessel ? "text-[8.5px]" : "text-[11.5px] tracking-wider"}`}>
+                    <div className={`flex border-t border-black ${isVessel ? "text-[9px] min-h-[32px]" : "min-h-[44px]"}`}>
+                        <div className={`w-[30%] flex items-center justify-center font-bold bg-gray-700 text-white uppercase border-r border-black ${isVessel ? "text-[8.5px]" : "text-[13px] tracking-wider"}`}>
                             Fecha:
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center font-mono">
-                            <div className={`flex w-full border-b border-black font-bold ${isVessel ? "text-[7.5px] bg-gray-50 py-0.5" : "text-[9.5px] py-0.5"}`}>
+                            <div className={`flex w-full border-b border-black font-bold ${isVessel ? "text-[7.5px] bg-gray-50 py-0.5" : "text-[10.5px] py-0.5"}`}>
                                 <span className="w-1/3 flex justify-center border-r border-black">DIA</span>
                                 <span className="w-1/3 flex justify-center border-r border-black">MES</span>
                                 <span className="w-1/3 flex justify-center">AÑO</span>
                             </div>
-                            <div className={`flex w-full font-bold h-full ${isVessel ? "text-[12px] py-0.5" : "text-[14px] py-0.5 text-black"}`}>
+                            <div className={`flex w-full font-bold h-full ${isVessel ? "text-[12px] py-0.5" : "text-[15px] py-0.5 text-black"}`}>
                                 <span className="w-1/3 flex justify-center border-r border-black items-center">{ticket.date.split("/")[0]}</span>
                                 <span className="w-1/3 flex justify-center border-r border-black items-center">{ticket.date.split("/")[1]}</span>
                                 <span className="w-1/3 flex justify-center items-center">{ticket.date.split("/")[2]}</span>
@@ -127,17 +127,17 @@ const TicketCopy: React.FC<{
             <div className={`flex border border-black ${isVessel ? "text-[10px]" : "text-[12px]"}`}>
                 {/* --- Data Column --- */}
                 <div className={`${isVessel ? "w-[65%]" : "w-[60%]"} border-r border-black flex flex-col`}>
-                    <div className="flex border-b border-black">
-                        <div className="w-1/4 font-bold border-r border-black px-1.5 py-0.5 uppercase">
+                    <div className={`flex border-b border-black ${isVessel ? "" : "min-h-[24px]"}`}>
+                        <div className={`w-1/4 font-bold border-r border-black px-2 py-0.5 uppercase ${isVessel ? "text-[9.5px]" : "text-[12px]"}`}>
                             Ref:
                         </div>
-                        <div className="w-1/4 px-1.5 py-0.5 border-r border-black truncate">
+                        <div className={`w-1/4 px-2 py-0.5 border-r border-black truncate ${isVessel ? "text-[10px]" : "text-[12px] font-medium"}`}>
                             {ticket.reference || "N/A"}
                         </div>
-                        <div className="w-1/4 font-bold border-r border-black px-1.5 py-0.5 uppercase">
+                        <div className={`w-1/4 font-bold border-r border-black px-2 py-0.5 uppercase ${isVessel ? "text-[9.5px]" : "text-[12px]"}`}>
                             Op:
                         </div>
-                        <div className="w-1/4 px-1.5 py-0.5 text-center font-bold">
+                        <div className={`w-1/4 px-2 py-0.5 text-center font-bold ${isVessel ? "text-[10px]" : "text-[13px]"}`}>
                             {ticket.operation}
                         </div>
                     </div>
@@ -149,36 +149,36 @@ const TicketCopy: React.FC<{
                         ["Orden Venta:", ticket.sale_order || "N/A"],
                         ["Carta Porte:", ticket.withdrawal_letter],
                     ].map(([label, value], idx) => (
-                        <div key={idx} className="flex border-b border-black min-h-[16px]">
-                            <div className="w-[30%] font-bold border-r border-black px-1.5 py-0.5 uppercase text-[9.5px]">
+                        <div key={idx} className={`flex border-b border-black ${isVessel ? "min-h-[16px]" : "min-h-[22px]"}`}>
+                            <div className={`w-[30%] font-bold border-r border-black px-2 py-0.5 uppercase ${isVessel ? "text-[9.5px]" : "text-[12px]"}`}>
                                 {label}
                             </div>
-                            <div className="w-[70%] px-1.5 py-0.5 break-words uppercase text-[10px] leading-tight font-medium">{value}</div>
+                            <div className={`w-[70%] px-2 py-0.5 break-words uppercase font-medium ${isVessel ? "text-[10px] leading-tight" : "text-[12px] leading-snug"}`}>{value}</div>
                         </div>
                     ))}
 
-                    <div className="flex border-b border-black">
-                        <div className="w-[18%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[10px] flex items-center">
+                    <div className={`flex border-b border-black ${isVessel ? "" : "min-h-[24px]"}`}>
+                        <div className={`w-[18%] font-bold border-r border-black px-2 py-0.5 uppercase leading-tight ${isVessel ? "text-[10px]" : "text-[12px]"} flex items-center`}>
                             Placas:
                         </div>
-                        <div className="w-[32%] px-1.5 py-0.5 border-r border-black font-mono font-bold text-sm tracking-wider text-black flex items-center">
+                        <div className={`w-[32%] px-2 py-0.5 border-r border-black font-mono font-bold ${isVessel ? "text-sm" : "text-base"} tracking-wider text-black flex items-center`}>
                             {ticket.tractor_plate}
                         </div>
                         {ticket.trailer_plate && ticket.trailer_plate !== "N/A" ? (
                             <>
-                                <div className="w-[18%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[10px] flex items-center">
+                                <div className={`w-[18%] font-bold border-r border-black px-2 py-0.5 uppercase leading-tight ${isVessel ? "text-[10px]" : "text-[12px]"} flex items-center`}>
                                     Remolque:
                                 </div>
-                                <div className="w-[32%] px-1.5 py-0.5 font-mono font-bold text-sm tracking-wider text-black flex items-center">
+                                <div className={`w-[32%] px-2 py-0.5 font-mono font-bold ${isVessel ? "text-sm" : "text-base"} tracking-wider text-black flex items-center`}>
                                     {ticket.trailer_plate}
                                 </div>
                             </>
                         ) : (
                             <>
-                                <div className="w-[18%] font-bold border-r border-black px-1.5 py-0.5 uppercase leading-tight text-[10px] flex items-center">
+                                <div className={`w-[18%] font-bold border-r border-black px-2 py-0.5 uppercase leading-tight ${isVessel ? "text-[10px]" : "text-[12px]"} flex items-center`}>
                                     Econo:
                                 </div>
-                                <div className="w-[32%] px-1.5 py-0.5 font-mono font-bold text-sm tracking-wider text-black flex items-center">
+                                <div className={`w-[32%] px-2 py-0.5 font-mono font-bold ${isVessel ? "text-sm" : "text-base"} tracking-wider text-black flex items-center`}>
                                     {ticket.economic_number}
                                 </div>
                             </>
@@ -191,21 +191,21 @@ const TicketCopy: React.FC<{
                         ["Transp:", ticket.transporter],
                         ["Consig:", ticket.consignee],
                     ].map(([label, value], idx) => (
-                        <div key={idx} className="flex border-b border-black min-h-[16px]">
-                            <div className="w-1/4 font-bold border-r border-black px-1.5 py-0.5 uppercase text-[9.5px]">
+                        <div key={idx} className={`flex border-b border-black ${isVessel ? "min-h-[16px]" : "min-h-[22px]"}`}>
+                            <div className={`w-1/4 font-bold border-r border-black px-2 py-0.5 uppercase ${isVessel ? "text-[9.5px]" : "text-[12px]"}`}>
                                 {label}
                             </div>
-                            <div className="w-3/4 px-1.5 py-0.5 uppercase break-words text-[10px] leading-tight">
+                            <div className={`w-3/4 px-2 py-0.5 uppercase break-words ${isVessel ? "text-[10px] leading-tight" : "text-[12px] leading-snug"}`}>
                                 {value}
                             </div>
                         </div>
                     ))}
 
                     <div className={`flex flex-col ${isVessel ? "min-h-[30px]" : "min-h-[60px] flex-1"}`}>
-                        <div className="font-bold text-center px-1.5 pt-0.5 text-[9.5px] uppercase tracking-wider border-b border-black/10">
+                        <div className={`font-bold text-center px-2 pt-0.5 ${isVessel ? "text-[9.5px]" : "text-[12px]"} uppercase tracking-wider border-b border-black/10`}>
                             Observaciones:
                         </div>
-                        <div className="px-1.5 py-1 text-[10px] font-medium leading-tight break-words uppercase text-black">
+                        <div className={`px-2 py-1 ${isVessel ? "text-[10px]" : "text-[12px]"} font-medium leading-snug break-words uppercase text-black`}>
                             {ticket.observations || "N/A"}
                         </div>
                     </div>
@@ -213,43 +213,43 @@ const TicketCopy: React.FC<{
 
                 {/* --- Weight Section --- */}
                 <div className={`${isVessel ? "w-[35%]" : "w-[40%]"} flex flex-col font-mono bg-gray-50/5`}>
-                    <div className={`text-center font-bold uppercase tracking-wider text-black ${isVessel ? "border-b border-black py-0.5 text-[11px]" : "border-b border-black py-1 text-[13px]"}`}>
+                    <div className={`text-center font-bold uppercase tracking-wider text-black ${isVessel ? "border-b border-black py-0.5 text-[11px]" : "border-b border-black py-1.5 text-[15px] font-black"}`}>
                         BASCULA {ticket.scale_number}
                     </div>
 
-                    <div className={`${isVessel ? "flex-1 p-1.5 space-y-1" : "flex-1 p-3 space-y-2 flex flex-col justify-center"}`}>
-                        <div className="flex justify-between border-b border-dotted border-gray-400 pb-1 items-center">
-                            <span className={`${isVessel ? "text-[10px]" : "text-[12px]"} font-bold text-black`}>ENTRADA:</span>
+                    <div className={`${isVessel ? "flex-1 p-1.5 space-y-1" : "flex-1 p-3.5 space-y-2.5 flex flex-col justify-center"}`}>
+                        <div className="flex justify-between border-b border-dotted border-gray-400 pb-1.5 items-center">
+                            <span className={`${isVessel ? "text-[10px]" : "text-[13.5px]"} font-bold text-black`}>ENTRADA:</span>
                             <div className="flex flex-col items-end">
-                                <span className={`${isVessel ? "text-[11px]" : "text-[13.5px]"} font-bold text-black`}>
+                                <span className={`${isVessel ? "text-[11px]" : "text-[16px]"} font-bold text-black`}>
                                     {(ticket.entry_weight).toLocaleString("es-MX")} kg
                                 </span>
-                                <span className={`${isVessel ? "text-[8.5px]" : "text-[10px]"} text-gray-700 font-medium`}>
+                                <span className={`${isVessel ? "text-[8.5px]" : "text-[11.5px]"} text-gray-700 font-medium`}>
                                     {ticket.entry_at || ticket.date}
                                 </span>
                             </div>
                         </div>
 
                         {ticket.net_weight > 0 ? (
-                            <div className="space-y-1.5 mt-1">
+                            <div className="space-y-2 mt-1">
                                 <div className="flex justify-between items-center">
-                                    <span className={`${isVessel ? "text-[10px]" : "text-[12px]"} font-bold text-black`}>BRUTO:</span>
-                                    <span className={`${isVessel ? "text-[11px]" : "text-[13px]"} font-bold text-black`}>{(ticket.gross_weight).toLocaleString("es-MX")} kg</span>
+                                    <span className={`${isVessel ? "text-[10px]" : "text-[13.5px]"} font-bold text-black`}>BRUTO:</span>
+                                    <span className={`${isVessel ? "text-[11px]" : "text-[15.5px]"} font-bold text-black`}>{(ticket.gross_weight).toLocaleString("es-MX")} kg</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className={`${isVessel ? "text-[10px]" : "text-[12px]"} font-bold text-black`}>TARA:</span>
-                                    <span className={`${isVessel ? "text-[11px]" : "text-[13px]"} font-bold text-black`}>{(ticket.tare_weight).toLocaleString("es-MX")} kg</span>
+                                    <span className={`${isVessel ? "text-[10px]" : "text-[13.5px]"} font-bold text-black`}>TARA:</span>
+                                    <span className={`${isVessel ? "text-[11px]" : "text-[15.5px]"} font-bold text-black`}>{(ticket.tare_weight).toLocaleString("es-MX")} kg</span>
                                 </div>
-                                <div className={`flex justify-between pt-1 border-t border-black font-bold items-center ${isVessel ? "text-[15px]" : "text-[19px]"} text-black`}>
+                                <div className={`flex justify-between pt-1.5 border-t border-black font-bold items-center ${isVessel ? "text-[15px]" : "text-[22px]"} text-black`}>
                                     <span>NETO:</span>
-                                    <span>{(ticket.net_weight).toLocaleString("es-MX")} kg</span>
+                                    <span className="font-extrabold">{(ticket.net_weight).toLocaleString("es-MX")} kg</span>
                                 </div>
-                                <div className={`text-right ${isVessel ? "text-[8.5px]" : "text-[10px]"} text-gray-700 font-medium`}>
+                                <div className={`text-right ${isVessel ? "text-[8.5px]" : "text-[11.5px]"} text-gray-700 font-medium`}>
                                     {ticket.exit_at || ticket.time}
                                 </div>
                             </div>
                         ) : (
-                            <div className={`flex-1 flex items-center justify-center opacity-20 rotate-[-15deg] font-bold border-2 border-dashed border-gray-300 ${isVessel ? "m-1 text-[14px]" : "m-4 text-[20px]"}`}>
+                            <div className={`flex-1 flex items-center justify-center opacity-20 rotate-[-15deg] font-bold border-2 border-dashed border-gray-300 ${isVessel ? "m-1 text-[14px]" : "m-4 text-[22px]"}`}>
                                 PENDIENTE
                             </div>
                         )}
@@ -264,17 +264,17 @@ const TicketCopy: React.FC<{
             </div>
 
             {/* --- Footer / Signatures --- */}
-            <div className={`flex justify-between px-1 items-end ${isVessel ? "mt-2 h-12" : "mt-auto h-24 mb-2"}`}>
+            <div className={`flex justify-between px-2 items-end ${isVessel ? "mt-2 h-12" : "mt-12 print:mt-16 h-28 mb-2"}`}>
                 {[
                     ["Documentador", ticket.documenter],
                     ["Pesador", ticket.weighmaster],
                     ["Operador", ticket.driver],
                 ].map(([role, name], idx) => (
                     <div key={idx} className="flex flex-col items-center w-[30%]">
-                        <div className={`${isVessel ? "text-[8px]" : "text-[9px]"} w-full border-b border-black text-center flex items-end justify-center pb-0.5 truncate uppercase`}>
+                        <div className={`${isVessel ? "text-[8px]" : "text-[11.5px]"} w-full border-b border-black text-center flex items-end justify-center pb-1 truncate uppercase font-semibold`}>
                             {name}
                         </div>
-                        <div className={`${isVessel ? "text-[7px]" : "text-[8px]"} font-bold text-center mt-0.5 uppercase`}>
+                        <div className={`${isVessel ? "text-[7px]" : "text-[10.5px]"} font-bold text-center mt-1 uppercase`}>
                             {role}
                         </div>
                     </div>
@@ -295,27 +295,7 @@ export default function Ticket({ ticket }: TicketProps) {
     };
 
     const handleBack = () => {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("from") === "history") {
-            try {
-                window.close();
-            } catch (e) {
-                // Ignore
-            }
-            // Fallback in case window.close() is blocked (e.g., opened in same tab)
-            window.location.href = route("scale.tickets.index");
-            return;
-        }
-
-        if (
-            ticket.net_weight > 0 ||
-            (ticket.operation &&
-                ticket.operation.toUpperCase().includes("SALIDA"))
-        ) {
-            window.location.href = route("scale.index") + "?view=pending";
-        } else {
-            window.history.back();
-        }
+        window.location.href = route("scale.tickets.index");
     };
 
     return (
@@ -326,7 +306,7 @@ export default function Ticket({ ticket }: TicketProps) {
                 @media print {
                     @page {
                         size: ${ticket.is_vessel ? "half-letter landscape" : "letter landscape"};
-                        margin: ${ticket.is_vessel ? "0.1cm" : "2.5cm 0.5cm 0.5cm 0.5cm"};
+                        margin: ${ticket.is_vessel ? "0.3cm" : "1.2cm 0.5cm 0.5cm 0.5cm"};
                     }
                     body {
                         -webkit-print-color-adjust: exact !important;
@@ -356,7 +336,7 @@ export default function Ticket({ ticket }: TicketProps) {
                 </button>
             </div>
 
-            <div className="max-w-[25cm] mx-auto print:max-w-none">
+            <div className="max-w-[27.5cm] mx-auto print:max-w-none print:w-full">
                 <TicketCopy ticket={ticket} copyName="ORIGINAL" />
                 {/* <TicketCopy ticket={ticket} copyName="COPIA" isLast={true} /> */}
             </div>
