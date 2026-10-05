@@ -606,6 +606,14 @@ export default function ExitMP({
                                                     <option key={lot.id} value={lot.id?.toString()}>{lot.folio}</option>
                                                 ))}
                                             </select>
+                                            {(() => {
+                                                const currentLot = active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString()) || (order?.lot_observations ? { observations: order.lot_observations } : null);
+                                                return currentLot?.observations ? (
+                                                    <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1 mt-1">
+                                                        <span className="font-bold">Obs. del Lote:</span> {currentLot.observations}
+                                                    </p>
+                                                ) : null;
+                                            })()}
                                         </div>
 
                                         <div className="space-y-1">

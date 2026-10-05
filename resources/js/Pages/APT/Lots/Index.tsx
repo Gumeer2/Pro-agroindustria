@@ -29,6 +29,9 @@ interface Lot {
     cubicle?: string;
     plant_origin: string;
     status: "open" | "closed";
+    product?: string;
+    celdas?: string;
+    observations?: string;
     user?: {
         name: string;
     };
@@ -209,17 +212,15 @@ export default function Index({ auth, lots, filters }: PageProps) {
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                                                <div className="flex flex-col">
-                                                    <span className="font-bold flex items-center gap-1">
-                                                        <Database className="w-3 h-3 text-gray-400" />
-                                                        {lot.warehouse}
-                                                    </span>
+                                                <span className="font-bold flex items-center gap-1">
+                                                    <Database className="w-3 h-3 text-gray-400" />
+                                                    {lot.warehouse}
                                                     {lot.cubicle && (
-                                                        <span className="text-xs text-gray-500 ml-4">
-                                                            Cubículo: {lot.cubicle}
+                                                        <span className="text-xs text-gray-500 font-normal ml-2">
+                                                            (Cubículo: {lot.cubicle})
                                                         </span>
                                                     )}
-                                                </div>
+                                                </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                                                 <div className="flex items-center gap-1">

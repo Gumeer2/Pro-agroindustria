@@ -29,7 +29,7 @@ export default function Edit({
         lot_id: ticket.lot_id || "",
         packaging_type: ticket.packaging_type || "N/A",
         warehouse: order.warehouse || "",
-        observations: order.observation || "",
+        observations: order.observations || order.observation || "",
         documenter_id: ticket.documenter_id || "",
     });
 

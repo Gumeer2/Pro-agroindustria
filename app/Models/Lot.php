@@ -17,7 +17,10 @@ class Lot extends Model
         'warehouse',
         'cubicle',
         'plant_origin',
+        'product',
+        'celdas',
         'status',
+        'observations',
         'user_id',
         'created_at', // Allow mass assignment for editing date
     ];

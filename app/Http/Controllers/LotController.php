@@ -19,7 +19,10 @@ class LotController extends Controller
                 $q->where('folio', 'like', "%{$search}%")
                   ->orWhere('warehouse', 'like', "%{$search}%")
                   ->orWhere('cubicle', 'like', "%{$search}%")
-                  ->orWhere('plant_origin', 'like', "%{$search}%");
+                  ->orWhere('plant_origin', 'like', "%{$search}%")
+                  ->orWhere('product', 'like', "%{$search}%")
+                  ->orWhere('celdas', 'like', "%{$search}%")
+                  ->orWhere('observations', 'like', "%{$search}%");
             });
         }
 
@@ -33,7 +36,78 @@ class LotController extends Controller
 
     public function create()
     {
-        return Inertia::render('APT/Lots/Create');
+        return Inertia::render('APT/Lots/Create', [
+            'consecutives' => $this->getWarehouseConsecutives()
+        ]);
+    }
+
+    public function getWarehouseConsecutives(): array
+    {
+        $warehouses = ['Almacen 1', 'Almacen 2', 'Almacen 3', 'Almacen 4', 'Almacen 5'];
+        $products = ['UA', 'UI'];
+        $results = [];
+
+        // Global maximum consecutive for Urea Industrial (UI) across all lots
+        $allLots = Lot::all(['folio', 'product', 'warehouse']);
+        $globalMaxUI = 0;
+        foreach ($allLots as $lot) {
+            $isUI = false;
+            if ($lot->product && stripos($lot->product, 'UI') !== false) {
+                $isUI = true;
+            } elseif (preg_match('/-UI[(-]/i', $lot->folio)) {
+                $isUI = true;
+            }
+
+            if ($isUI && preg_match('/(\d{1,5})$/', trim($lot->folio), $matches)) {
+                $num = (int)$matches[1];
+                if ($num > $globalMaxUI) {
+                    $globalMaxUI = $num;
+                }
+            }
+        }
+
+        foreach ($warehouses as $wh) {
+            preg_match('/(\d+)/', $wh, $m);
+            $whNum = $m[1] ?? '1';
+
+            $lots = Lot::where('warehouse', $wh)
+                ->orWhere('folio', 'like', "%APT{$whNum}%")
+                ->get(['folio', 'product', 'warehouse']);
+
+            foreach ($products as $prod) {
+                if ($prod === 'UI') {
+                    // For UI, next consecutive is based on all UI lots
+                    $results[$wh][$prod] = str_pad($globalMaxUI + 1, 3, '0', STR_PAD_LEFT);
+                } else {
+                    // For UA, consecutive is per warehouse
+                    $maxConsecutive = 0;
+                    foreach ($lots as $lot) {
+                        $isProd = false;
+                        if ($lot->product && stripos($lot->product, $prod) !== false) {
+                            $isProd = true;
+                        } elseif (preg_match("/-{$prod}[(-]/i", $lot->folio)) {
+                            $isProd = true;
+                        }
+
+                        if ($isProd && preg_match('/(\d{1,5})$/', trim($lot->folio), $matches)) {
+                            $num = (int)$matches[1];
+                            if ($num > $maxConsecutive) {
+                                $maxConsecutive = $num;
+                            }
+                        }
+                    }
+                    $next = $maxConsecutive + 1;
+                    $results[$wh][$prod] = str_pad($next, 3, '0', STR_PAD_LEFT);
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    public function getConsecutives()
+    {
+        return response()->json($this->getWarehouseConsecutives());
     }
 
     public function store(Request $request)
@@ -43,7 +117,10 @@ class LotController extends Controller
             'warehouse' => 'required|string',
             'cubicle' => 'nullable|string',
             'plant_origin' => ['required', Rule::in(['UREA 1', 'UREA 2'])],
+            'product' => 'nullable|string',
+            'celdas' => 'nullable|string',
             'created_at' => 'nullable|date', // For manual override
+            'observations' => 'nullable|string',
         ]);
 
         $lot = Lot::create([
@@ -51,6 +128,9 @@ class LotController extends Controller
             'warehouse' => $validated['warehouse'],
             'cubicle' => $validated['cubicle'],
             'plant_origin' => $validated['plant_origin'],
+            'product' => $validated['product'] ?? null,
+            'celdas' => $validated['celdas'] ?? null,
+            'observations' => $validated['observations'] ?? null,
             'user_id' => auth()->id(),
             'status' => 'open',
             'created_at' => $validated['created_at'] ?? now(),
@@ -73,7 +153,10 @@ class LotController extends Controller
             'warehouse' => 'required|string',
             'cubicle' => 'nullable|string',
             'plant_origin' => ['required', Rule::in(['UREA 1', 'UREA 2'])],
+            'product' => 'nullable|string',
+            'celdas' => 'nullable|string',
             'created_at' => 'nullable|date',
+            'observations' => 'nullable|string',
         ]);
 
         $lot->update([
@@ -81,6 +164,9 @@ class LotController extends Controller
             'warehouse' => $validated['warehouse'],
             'cubicle' => $validated['cubicle'],
             'plant_origin' => $validated['plant_origin'],
+            'product' => $validated['product'] ?? null,
+            'celdas' => $validated['celdas'] ?? null,
+            'observations' => $validated['observations'] ?? null,
             'created_at' => $validated['created_at'] ?? $lot->created_at,
         ]);
 

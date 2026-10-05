@@ -9,6 +9,9 @@ import {
     MapPin,
     Factory,
     Box,
+    FileText,
+    Package,
+    Layers,
 } from "lucide-react";
 import { FormEventHandler } from "react";
 import InputLabel from "@/Components/InputLabel";
@@ -21,6 +24,9 @@ export default function Edit({ auth, lot }: { auth: any; lot: any }) {
         warehouse: lot.warehouse,
         cubicle: lot.cubicle || "",
         plant_origin: lot.plant_origin,
+        product: lot.product || "UA (UREA AGRICOLA)",
+        celdas: lot.celdas || "",
+        observations: lot.observations || "",
         created_at: lot.created_at ? lot.created_at.substring(0, 16) : "",
     });
 
@@ -110,6 +116,38 @@ export default function Edit({ auth, lot }: { auth: any; lot: any }) {
                                 <InputError message={errors.created_at} className="mt-2" />
                             </div>
 
+                            {/* Producto */}
+                            <div>
+                                <InputLabel value="Producto" className="mb-1 text-gray-700 font-bold" />
+                                <div className="relative">
+                                    <select
+                                        value={data.product}
+                                        onChange={(e) => setData("product", e.target.value)}
+                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white font-medium text-gray-800"
+                                    >
+                                        <option value="UA (UREA AGRICOLA)">UA (UREA AGRICOLA)</option>
+                                        <option value="UI (UREA INDUSTRIAL)">UI (UREA INDUSTRIAL)</option>
+                                    </select>
+                                    <Package className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
+                                </div>
+                                <InputError message={errors.product} className="mt-2" />
+                            </div>
+
+                            {/* Celdas */}
+                            <div>
+                                <InputLabel value="Celdas" className="mb-1 text-gray-700 font-bold" />
+                                <div className="relative">
+                                    <TextInput
+                                        value={data.celdas}
+                                        onChange={(e) => setData("celdas", e.target.value)}
+                                        className="w-full pl-10 font-bold text-gray-800 focus:border-indigo-500 focus:ring-indigo-500"
+                                        placeholder="Ej: Celda 1, Celda 2..."
+                                    />
+                                    <Layers className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
+                                </div>
+                                <InputError message={errors.celdas} className="mt-2" />
+                            </div>
+
                             {/* Location Info */}
                             <div className="md:col-span-2 mt-4">
                                 <h4 className="text-gray-900 font-bold mb-4 flex items-center text-lg border-b pb-2">
@@ -171,6 +209,25 @@ export default function Edit({ auth, lot }: { auth: any; lot: any }) {
                                     <InputError message={errors.cubicle} className="mt-2" />
                                 </div>
                             )}
+
+                            {/* Observations */}
+                            <div className="md:col-span-2 mt-4">
+                                <h4 className="text-gray-900 font-bold mb-4 flex items-center text-lg border-b pb-2">
+                                    <FileText className="w-5 h-5 mr-2 text-indigo-600" />
+                                    Observaciones
+                                </h4>
+                                <InputLabel value="Observaciones" className="mb-1 text-gray-700 font-bold" />
+                                <div className="relative">
+                                    <textarea
+                                        rows={3}
+                                        value={data.observations}
+                                        onChange={(e) => setData("observations", e.target.value)}
+                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 text-gray-800 placeholder-gray-400"
+                                        placeholder="Ingrese observaciones del lote (se concatenarán en el ticket de báscula)..."
+                                    />
+                                </div>
+                                <InputError message={errors.observations} className="mt-2" />
+                            </div>
 
                         </div>
 

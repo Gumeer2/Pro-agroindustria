@@ -191,6 +191,7 @@ Route::middleware('auth')->group(function () {
         // Lots Management
         Route::get('/apt/lots', [\App\Http\Controllers\LotController::class , 'index'])->name('apt.lots.index');
         Route::get('/apt/lots/create', [\App\Http\Controllers\LotController::class , 'create'])->name('apt.lots.create');
+        Route::get('/apt/lots/consecutives', [\App\Http\Controllers\LotController::class , 'getConsecutives'])->name('apt.lots.consecutives');
         Route::post('/apt/lots', [\App\Http\Controllers\LotController::class , 'store'])->name('apt.lots.store');
         Route::get('/apt/lots/{lot}/edit', [\App\Http\Controllers\LotController::class , 'edit'])->name('apt.lots.edit');
         Route::put('/apt/lots/{lot}', [\App\Http\Controllers\LotController::class , 'update'])->name('apt.lots.update');

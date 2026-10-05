@@ -9,20 +9,130 @@ import {
     MapPin,
     Factory,
     Box,
+    FileText,
+    Package,
+    Layers,
+    Sparkles,
 } from "lucide-react";
 import { FormEventHandler, useEffect } from "react";
 import InputLabel from "@/Components/InputLabel";
 import InputError from "@/Components/InputError";
 import TextInput from "@/Components/TextInput";
 
-export default function Create({ auth }: { auth: any }) {
+export default function Create({
+    auth,
+    consecutives = {
+        "Almacen 1": { UA: "012", UI: "003" },
+        "Almacen 2": { UA: "008", UI: "003" },
+        "Almacen 3": { UA: "007", UI: "003" },
+        "Almacen 4": { UA: "001", UI: "003" },
+        "Almacen 5": { UA: "001", UI: "003" },
+    },
+}: {
+    auth: any;
+    consecutives?: Record<string, any>;
+}) {
+    const initialCreatedAt = new Date().toISOString().substring(0, 16);
+    const initialWarehouse = "Almacen 1";
+    const initialPlant = "UREA 1";
+    const initialProduct = "UA (UREA AGRICOLA)";
+    const initialCeldas = "";
+
+    const getConsecutive = (warehouseVal: string, productVal: string) => {
+        const prodCode = productVal?.includes("UI") ? "UI" : "UA";
+        const whData = consecutives ? consecutives[warehouseVal] : null;
+        if (whData && typeof whData === "object") {
+            return whData[prodCode] || whData["UA"] || "001";
+        }
+        if (typeof whData === "string") {
+            return whData;
+        }
+        return "001";
+    };
+
+    const calculateFolio = (
+        productVal: string,
+        plantVal: string,
+        warehouseVal: string,
+        celdasVal: string,
+        dateVal: string
+    ) => {
+        const dateObj = dateVal ? new Date(dateVal) : new Date();
+        const year = isNaN(dateObj.getFullYear()) ? new Date().getFullYear() : dateObj.getFullYear();
+        const plantCode = plantVal === "UREA 2" ? "U2" : "U1";
+        const whMatch = (warehouseVal || "").match(/\d+/);
+        const aptCode = `APT${whMatch ? whMatch[0] : "1"}`;
+        const prodCode = productVal?.includes("UI") ? "UI" : (productVal?.includes("UA") ? "UA" : (productVal || "UA").trim());
+        const cleanCells = (celdasVal || "").trim().replace(/^\(+|\)+$/g, "").toUpperCase();
+        const cellsPart = cleanCells ? `(${cleanCells})` : "";
+        const cons = getConsecutive(warehouseVal, productVal);
+        return `PA${year}-${plantCode}-${aptCode}-${prodCode}${cellsPart}-${cons}`;
+    };
+
     const { data, setData, post, processing, errors } = useForm({
-        folio: "",
-        warehouse: "Almacen 1",
+        folio: calculateFolio(initialProduct, initialPlant, initialWarehouse, initialCeldas, initialCreatedAt),
+        warehouse: initialWarehouse,
         cubicle: "",
-        plant_origin: "UREA 1",
-        created_at: new Date().toISOString().substring(0, 16), // datetime-local format
+        plant_origin: initialPlant,
+        product: initialProduct,
+        celdas: initialCeldas,
+        observations: "",
+        created_at: initialCreatedAt,
     });
+
+    // Keep folio updated if inputs change
+    useEffect(() => {
+        const autoFolio = calculateFolio(
+            data.product,
+            data.plant_origin,
+            data.warehouse,
+            data.celdas,
+            data.created_at
+        );
+        if (data.folio !== autoFolio) {
+            setData("folio", autoFolio);
+        }
+    }, [data.product, data.plant_origin, data.warehouse, data.celdas, data.created_at, consecutives]);
+
+    const updateProduct = (newProduct: string) => {
+        setData((prev) => ({
+            ...prev,
+            product: newProduct,
+            folio: calculateFolio(newProduct, prev.plant_origin, prev.warehouse, prev.celdas, prev.created_at),
+        }));
+    };
+
+    const updatePlant = (newPlant: string) => {
+        setData((prev) => ({
+            ...prev,
+            plant_origin: newPlant,
+            folio: calculateFolio(prev.product, newPlant, prev.warehouse, prev.celdas, prev.created_at),
+        }));
+    };
+
+    const updateWarehouse = (newWarehouse: string) => {
+        setData((prev) => ({
+            ...prev,
+            warehouse: newWarehouse,
+            folio: calculateFolio(prev.product, prev.plant_origin, newWarehouse, prev.celdas, prev.created_at),
+        }));
+    };
+
+    const updateCeldas = (newCeldas: string) => {
+        setData((prev) => ({
+            ...prev,
+            celdas: newCeldas,
+            folio: calculateFolio(prev.product, prev.plant_origin, prev.warehouse, newCeldas, prev.created_at),
+        }));
+    };
+
+    const updateCreatedAt = (newDate: string) => {
+        setData((prev) => ({
+            ...prev,
+            created_at: newDate,
+            folio: calculateFolio(prev.product, prev.plant_origin, prev.warehouse, prev.celdas, newDate),
+        }));
+    };
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
@@ -83,14 +193,20 @@ export default function Create({ auth }: { auth: any }) {
                             </div>
 
                             <div>
-                                <InputLabel value="Nombre del Lote / Folio" className="mb-1 text-gray-700 font-bold" />
+                                <div className="flex items-center justify-between mb-1">
+                                    <InputLabel value="Nombre del Lote / Folio" className="text-gray-700 font-bold" />
+                                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <Sparkles className="w-3 h-3 text-indigo-500" />
+                                        Automático ({getConsecutive(data.warehouse, data.product)})
+                                    </span>
+                                </div>
                                 <div className="relative">
                                     <TextInput
                                         value={data.folio}
-                                        onChange={(e) => setData("folio", e.target.value)}
-                                        className="w-full pl-10 font-bold text-gray-800 focus:border-indigo-500 focus:ring-indigo-500"
-                                        placeholder="Ej: LOTE-2026-001"
-                                        autoFocus
+                                        readOnly
+                                        tabIndex={-1}
+                                        className="w-full pl-10 font-bold font-mono text-indigo-950 bg-gray-100 border-gray-300 cursor-not-allowed select-all focus:border-gray-300 focus:ring-0 shadow-sm"
+                                        placeholder="Generando folio automáticamente..."
                                     />
                                     <Hash className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>
@@ -103,12 +219,44 @@ export default function Create({ auth }: { auth: any }) {
                                     <input
                                         type="datetime-local"
                                         value={data.created_at}
-                                        onChange={(e) => setData("created_at", e.target.value)}
+                                        onChange={(e) => updateCreatedAt(e.target.value)}
                                         className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10"
                                     />
                                     <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>
                                 <InputError message={errors.created_at} className="mt-2" />
+                            </div>
+
+                            {/* Producto */}
+                            <div>
+                                <InputLabel value="Producto" className="mb-1 text-gray-700 font-bold" />
+                                <div className="relative">
+                                    <select
+                                        value={data.product}
+                                        onChange={(e) => updateProduct(e.target.value)}
+                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white font-medium text-gray-800"
+                                    >
+                                        <option value="UA (UREA AGRICOLA)">UA (UREA AGRICOLA)</option>
+                                        <option value="UI (UREA INDUSTRIAL)">UI (UREA INDUSTRIAL)</option>
+                                    </select>
+                                    <Package className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
+                                </div>
+                                <InputError message={errors.product} className="mt-2" />
+                            </div>
+
+                            {/* Celdas */}
+                            <div>
+                                <InputLabel value="Celdas" className="mb-1 text-gray-700 font-bold" />
+                                <div className="relative">
+                                    <TextInput
+                                        value={data.celdas}
+                                        onChange={(e) => updateCeldas(e.target.value)}
+                                        className="w-full pl-10 font-bold text-gray-800 focus:border-indigo-500 focus:ring-indigo-500"
+                                        placeholder="Ej: Celda 1, Celda 2..."
+                                    />
+                                    <Layers className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
+                                </div>
+                                <InputError message={errors.celdas} className="mt-2" />
                             </div>
 
                             {/* Location Info */}
@@ -124,7 +272,7 @@ export default function Create({ auth }: { auth: any }) {
                                 <div className="relative">
                                     <select
                                         value={data.plant_origin}
-                                        onChange={(e) => setData("plant_origin", e.target.value)}
+                                        onChange={(e) => updatePlant(e.target.value)}
                                         className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white"
                                     >
                                         <option value="UREA 1">UREA 1</option>
@@ -140,7 +288,7 @@ export default function Create({ auth }: { auth: any }) {
                                 <div className="relative">
                                     <select
                                         value={data.warehouse}
-                                        onChange={(e) => setData("warehouse", e.target.value)}
+                                        onChange={(e) => updateWarehouse(e.target.value)}
                                         className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white"
                                     >
                                         {[1, 2, 3, 4, 5].map((n) => (
@@ -172,6 +320,25 @@ export default function Create({ auth }: { auth: any }) {
                                     <InputError message={errors.cubicle} className="mt-2" />
                                 </div>
                             )}
+
+                            {/* Observations */}
+                            <div className="md:col-span-2 mt-4">
+                                <h4 className="text-gray-900 font-bold mb-4 flex items-center text-lg border-b pb-2">
+                                    <FileText className="w-5 h-5 mr-2 text-indigo-600" />
+                                    Observaciones
+                                </h4>
+                                <InputLabel value="Observaciones" className="mb-1 text-gray-700 font-bold" />
+                                <div className="relative">
+                                    <textarea
+                                        rows={3}
+                                        value={data.observations}
+                                        onChange={(e) => setData("observations", e.target.value)}
+                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 text-gray-800 placeholder-gray-400"
+                                        placeholder="Ingrese observaciones del lote (se concatenarán en el ticket de báscula)..."
+                                    />
+                                </div>
+                                <InputError message={errors.observations} className="mt-2" />
+                            </div>
 
                         </div>
 

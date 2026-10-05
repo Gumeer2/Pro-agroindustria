@@ -468,7 +468,7 @@ class WeightTicketController extends Controller
             return back()->withErrors(['error' => 'Ticket no encontrado.']);
         }
 
-        $activeLots = \App\Models\Lot::where('status', 'open')->orderBy('created_at', 'desc')->get(['id', 'folio']);
+        $activeLots = \App\Models\Lot::where('status', 'open')->orderBy('created_at', 'desc')->get(['id', 'folio', 'observations']);
         $documenters = \App\Models\User::role('Documentador')->where('is_blocked', false)->orderBy('name')->get(['id', 'name']);
 
         return Inertia::render('Scale/Tickets/Edit', [
@@ -758,6 +758,7 @@ class WeightTicketController extends Controller
                 'cubicle' => $order->shipment_order?->lot?->cubicle ?? $order->cubicle ?? 'N/A',
                 'lot_id' => $assignedLotId,
                 'lot_folio' => $order->shipment_order?->lot?->folio ?? $order->lot?->folio ?? null,
+                'lot_observations' => $order->shipment_order?->lot?->observations ?? $order->weight_ticket?->lot?->observations ?? null,
                 'reference' => $order->reference ?? ($order->request_id ?? ''),
                 'consignee' => $order->consignee ?? ($order->consigned_to ?? ''),
                 'programmed_weight' => $progWeight,
@@ -776,7 +777,7 @@ class WeightTicketController extends Controller
             if ($assignedLotId) {
                 $q->orWhere('id', $assignedLotId);
             }
-        })->orderBy('created_at', 'desc')->get(['id', 'folio', 'warehouse']);
+        })->orderBy('created_at', 'desc')->get(['id', 'folio', 'warehouse', 'observations']);
 
         $documenters = \App\Models\User::role('Documentador')->where('is_blocked', false)->orderBy('name')->get(['id', 'name']);
 
@@ -1268,13 +1269,15 @@ class WeightTicketController extends Controller
                 $secondWeight = $validated['weight'];
                 $net = abs($secondWeight - $firstWeight);
 
+                $assignedLotId = $validated['lot_id'] ?? $order->shipment_order?->lot_id ?? $ticket->lot_id ?? null;
+
                 // Update Ticket
                 $ticket->update([
                     'gross_weight' => $secondWeight,
                     'net_weight' => $net,
                     'weighing_status' => 'completed',
                     'weigh_out_at' => now(),
-                    'lot_id' => $validated['lot_id'] ?? null,
+                    'lot_id' => $assignedLotId,
                     'packaging_type' => $validated['packaging_type'] ?? null,
                     'weighmaster_id' => auth()->id(),
                     'documenter_id' => $validated['documenter_id'] ?? null,
@@ -1338,8 +1341,25 @@ class WeightTicketController extends Controller
 
     public function printTicket($id)
     {
-        $order = LoadingOrder::with(['client', 'product', 'driver', 'vehicle', 'transporter', 'weight_ticket.weighmaster', 'weight_ticket.documenter', 'vessel.client', 'vessel.product', 'shipment_order.client', 'shipment_order.product', 'shipment_order.creator', 'vessel_operator.creator', 'sales_order', 'shipment_order.sales_order'])
-            ->findOrFail($id);
+        $order = LoadingOrder::with([
+            'client',
+            'product',
+            'driver',
+            'vehicle',
+            'transporter',
+            'weight_ticket.weighmaster',
+            'weight_ticket.documenter',
+            'weight_ticket.lot',
+            'vessel.client',
+            'vessel.product',
+            'shipment_order.client',
+            'shipment_order.product',
+            'shipment_order.creator',
+            'shipment_order.lot',
+            'vessel_operator.creator',
+            'sales_order',
+            'shipment_order.sales_order'
+        ])->findOrFail($id);
 
         $ticket = $order->weight_ticket;
 
@@ -1398,6 +1418,27 @@ class WeightTicketController extends Controller
         if ($fullPartText) {
             $cleanObs = trim(str_ireplace(['primera parte', 'segunda parte'], '', $observations), " -,\t\n\r\0\x0B");
             $observations = $cleanObs ? "{$fullPartText} - {$cleanObs}" : $fullPartText;
+        }
+
+        // Lot Observations Logic
+        $lot = $ticket->lot ?? $order->shipment_order?->lot ?? null;
+        if (!$lot) {
+            $lotId = $ticket->lot_id ?? $order->shipment_order?->lot_id ?? null;
+            if ($lotId) {
+                $lot = \App\Models\Lot::find($lotId);
+            }
+        }
+
+        $lotObservations = trim($lot?->observations ?? '');
+        if ($lotObservations !== '') {
+            $currentObs = trim($observations);
+            if ($currentObs !== '') {
+                if (!str_contains(mb_strtoupper($currentObs, 'UTF-8'), mb_strtoupper($lotObservations, 'UTF-8'))) {
+                    $observations = "{$currentObs} - {$lotObservations}";
+                }
+            } else {
+                $observations = $lotObservations;
+            }
         }
 
         // Destination Logic
