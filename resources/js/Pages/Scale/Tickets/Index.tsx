@@ -307,7 +307,7 @@ export default function Index({
                             : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                             }`}
                     >
-                        Ventas (O.E.)
+                        Ticket (O.E)
                     </button>
                     <button
                         onClick={() => {
@@ -318,7 +318,7 @@ export default function Index({
                             : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                             }`}
                     >
-                        Barcos (Descarga)
+                        Ticket Barcos
                     </button>
                 </div>
 

@@ -536,7 +536,7 @@ export default function Dashboard({
                                             categories={categories}
                                             colors={colors}
                                             valueFormatter={(val: any) =>
-                                                `${(val / 1000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} TM`
+                                                `${formatMT(val / 1000)} TM`
                                             }
                                             showAnimation={true}
                                             showLegend={false}
@@ -677,11 +677,9 @@ export default function Dashboard({
                                                                                 "---"}
                                                                         </td>
                                                                         <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-black text-gray-900">
-                                                                            {(
+                                                                            {formatMT(
                                                                                 unit.total_net_weight /
                                                                                 1000
-                                                                            ).toFixed(
-                                                                                3,
                                                                             )}
                                                                         </td>
                                                                     </tr>
@@ -805,11 +803,9 @@ export default function Dashboard({
                                                                                 "---"}
                                                                         </td>
                                                                         <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-black text-gray-900">
-                                                                            {(
+                                                                            {formatMT(
                                                                                 trip.net_weight /
                                                                                 1000
-                                                                            ).toFixed(
-                                                                                3,
                                                                             )}
                                                                         </td>
                                                                     </tr>

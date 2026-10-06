@@ -490,8 +490,13 @@ export default function OeTrackerIndex({
         product_id?: string
     } = {}) => {
         const fromParam = new URLSearchParams(window.location.search).get("from") || filters.from;
+        const targetRoute = filters.module === 'scale'
+            ? route('scale.oe-tracker')
+            : filters.module === 'apt'
+                ? route('apt.oe-tracker')
+                : route('documentation.oe-tracker');
         router.get(
-            route("documentation.oe-tracker"),
+            targetRoute,
             {
                 search: params.search !== undefined ? params.search : search,
                 in_plant: params.in_plant !== undefined ? params.in_plant : inPlant,

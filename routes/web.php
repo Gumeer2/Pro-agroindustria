@@ -145,6 +145,9 @@ Route::middleware('auth')->group(function () {
         Route::patch('/scale/tickets/{id}/cancel', [\App\Http\Controllers\WeightTicketController::class , 'cancelTicket'])->name('scale.tickets.cancel');
         Route::patch('/scale/tickets/{id}/reopen', [\App\Http\Controllers\WeightTicketController::class , 'reopenTicket'])->name('scale.tickets.reopen');
 
+        // OE Tracking in Scale
+        Route::get('/scale/oe-tracker', [\App\Http\Controllers\DocumentationController::class , 'oeTrackerIndex'])->name('scale.oe-tracker');
+
         Route::resource('scale', \App\Http\Controllers\WeightTicketController::class);
 
         // Documentation Module

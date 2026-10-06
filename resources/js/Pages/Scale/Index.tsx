@@ -316,7 +316,7 @@ export default function Index({
             icon: Clock,
             color: "bg-teal-50 text-teal-600",
             hover: "hover:border-teal-500",
-            href: route("documentation.oe-tracker", { module: 'scale' }),
+            href: route("scale.oe-tracker"),
             subtitle: "Monitoreo de Carga"
         },
     ];
