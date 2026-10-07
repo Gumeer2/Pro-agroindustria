@@ -204,6 +204,7 @@ Route::middleware('auth')->group(function () {
         // Gestión de Inventarios (Módulos Principales: Entrada y Salida de Productos, Producción)
         Route::get('/apt/inventory', [\App\Http\Controllers\SupplyInventoryController::class, 'hub'])->name('apt.inventory.index');
         Route::get('/apt/inventory/products-hub', [\App\Http\Controllers\SupplyInventoryController::class, 'productsHub'])->name('apt.inventory.products-hub');
+        Route::get('/apt/inventory/production-hub', [\App\Http\Controllers\SupplyInventoryController::class, 'productionHub'])->name('apt.inventory.production-hub');
         Route::get('/apt/inventory/products', [\App\Http\Controllers\SupplyInventoryController::class, 'products'])->name('apt.inventory.products.index');
         Route::get('/apt/inventory/products/print', [\App\Http\Controllers\SupplyInventoryController::class, 'printProducts'])->name('apt.inventory.products.print');
         Route::get('/apt/inventory/products/group/{type_slug}/{group_number}', [\App\Http\Controllers\SupplyInventoryController::class, 'groupView'])->name('apt.inventory.products.group');
@@ -228,6 +229,15 @@ Route::middleware('auth')->group(function () {
         Route::post('/apt/inventory/urea/initial', [\App\Http\Controllers\UreaInventoryController::class, 'storeInitial'])->name('apt.inventory.urea.initial.store');
         Route::put('/apt/inventory/urea/initial/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'updateInitial'])->name('apt.inventory.urea.initial.update');
         Route::delete('/apt/inventory/urea/initial/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea.initial.destroy');
+
+        // Urea Industrial Inventory Management (Daily Production & Initial Inventory)
+        Route::get('/apt/inventory/urea-industrial', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'index'])->name('apt.inventory.urea-industrial.index');
+        Route::post('/apt/inventory/urea-industrial/daily', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'storeDaily'])->name('apt.inventory.urea-industrial.daily.store');
+        Route::put('/apt/inventory/urea-industrial/daily/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-industrial.daily.update');
+        Route::delete('/apt/inventory/urea-industrial/daily/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-industrial.daily.destroy');
+        Route::post('/apt/inventory/urea-industrial/initial', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'storeInitial'])->name('apt.inventory.urea-industrial.initial.store');
+        Route::put('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-industrial.initial.update');
+        Route::delete('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-industrial.initial.destroy');
 
         // Production Management
         Route::get('/apt/production', [\App\Http\Controllers\AptController::class , 'production'])->name('apt.production');

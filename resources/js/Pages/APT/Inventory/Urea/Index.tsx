@@ -65,6 +65,7 @@ interface Metrics {
     totalDailySacks: number;
     todayProductionTons: number;
     todayProductionSacks: number;
+    totalShippedTons?: number;
     totalStockTons: number;
     totalStockSacks: number;
     byPlant: {
@@ -79,7 +80,10 @@ interface Metrics {
             name: string;
             initial_tons: number;
             daily_tons: number;
+            shipped_tons?: number;
+            total_inflow_tons?: number;
             total_tons: number;
+            available_tons?: number;
         };
     };
 }
@@ -498,11 +502,11 @@ export default function UreaInventoryIndex({
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                     <div className="flex items-center space-x-3">
                         <Link
-                            href={`${route("apt.inventory.index")}${fromParam ? `?from=${fromParam}` : ""}`}
-                            className="inline-flex items-center text-purple-700 hover:text-purple-900 transition-colors bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg border border-purple-200 shadow-xs text-sm font-semibold"
+                            href={typeof route === "function" ? `${route("apt.inventory.production-hub")}${fromParam ? `?from=${fromParam}` : ""}` : `/apt/inventory/production-hub${fromParam ? `?from=${fromParam}` : ""}`}
+                            className="inline-flex items-center text-teal-700 hover:text-teal-900 transition-colors bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-200 shadow-xs text-sm font-semibold"
                         >
                             <ArrowLeft className="w-4 h-4 mr-1.5" />
-                            Volver a Gestión de Inventarios
+                            Volver a Producción
                         </Link>
                     </div>
 
@@ -567,18 +571,18 @@ export default function UreaInventoryIndex({
 
                 {/* Metrics Summary Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-                    {/* Card 1: Stock Total Urea */}
+                    {/* Card 1: Stock Total Disponible Urea */}
                     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
                         <div>
                             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                                Stock Total Urea
+                                Stock Neto Disponible
                             </p>
-                            <h3 className="text-2xl font-black text-gray-900">
+                            <h3 className="text-2xl font-black text-emerald-700">
                                 {formatNumber(metrics?.totalStockTons ?? 0, 2)}{" "}
-                                <span className="text-sm font-semibold text-gray-500">TM</span>
+                                <span className="text-sm font-semibold text-emerald-600">TM</span>
                             </h3>
                             <p className="text-xs text-gray-400 mt-1">
-                                {(metrics?.totalStockSacks ?? 0) > 0 ? `${formatNumber(metrics.totalStockSacks, 0)} sacos aprox.` : "Granel / Envasado"}
+                                {(metrics?.totalStockSacks ?? 0) > 0 ? `${formatNumber(metrics.totalStockSacks, 0)} sacos aprox.` : "Disponible en almacenes"}
                             </p>
                         </div>
                         <div className="p-3.5 bg-emerald-50 rounded-2xl text-emerald-600">
@@ -606,21 +610,21 @@ export default function UreaInventoryIndex({
                         </div>
                     </div>
 
-                    {/* Card 3: Producción Diaria Acumulada */}
+                    {/* Card 3: Embarques Despachados */}
                     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
                         <div>
                             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                                Total Prod. Diaria
+                                Embarques Despachados
                             </p>
-                            <h3 className="text-2xl font-black text-indigo-900">
-                                {formatNumber(metrics?.totalDailyTons ?? 0, 2)}{" "}
-                                <span className="text-sm font-semibold text-gray-500">TM</span>
+                            <h3 className="text-2xl font-black text-rose-700">
+                                {formatNumber(metrics?.totalShippedTons ?? 0, 2)}{" "}
+                                <span className="text-sm font-semibold text-rose-600">TM</span>
                             </h3>
                             <p className="text-xs text-gray-400 mt-1">
-                                Histórico registrado
+                                Salidas completadas (O.E.)
                             </p>
                         </div>
-                        <div className="p-3.5 bg-indigo-50 rounded-2xl text-indigo-600">
+                        <div className="p-3.5 bg-rose-50 rounded-2xl text-rose-600">
                             <Factory className="w-6 h-6" />
                         </div>
                     </div>
@@ -1132,10 +1136,10 @@ export default function UreaInventoryIndex({
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-900 flex items-center">
                                         <Database className="w-5 h-5 mr-2 text-indigo-600" />
-                                        Existencias de Urea Agrícola por Almacén
+                                        Balance y Existencias de Urea Agrícola por Almacén
                                     </h3>
                                     <p className="text-xs text-gray-500 mt-0.5">
-                                        Consolidado de Inventario Inicial + Producción Diaria
+                                        Fórmula: (Inventario Inicial + Producción Diaria) − Embarques Despachados = Stock Neto Disponible
                                     </p>
                                 </div>
                             </div>
@@ -1144,11 +1148,12 @@ export default function UreaInventoryIndex({
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-800 text-white">
                                         <tr>
-                                            <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider">Almacén</th>
-                                            <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider">Inv. Inicial (TM)</th>
-                                            <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider">Prod. Diaria (TM)</th>
-                                            <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider">Total Stock (TM)</th>
-                                            <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider">% Distribución</th>
+                                            <th className="px-5 py-4 text-left text-xs font-bold uppercase tracking-wider">Almacén</th>
+                                            <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider">Inv. Inicial (TM)</th>
+                                            <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider">Prod. Diaria (TM)</th>
+                                            <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-rose-300">Embarques (TM)</th>
+                                            <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-emerald-300">Stock Disponible (TM)</th>
+                                            <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider">% Distribución</th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-100">
@@ -1157,25 +1162,28 @@ export default function UreaInventoryIndex({
                                             const pct = totalStock > 0 ? (wh.total_tons / totalStock) * 100 : 0;
                                             return (
                                                 <tr key={key} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 flex items-center">
+                                                    <td className="px-5 py-4 whitespace-nowrap text-sm font-bold text-gray-900 flex items-center">
                                                         <Database className="w-4 h-4 mr-2 text-gray-400" />
                                                         {wh.name}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-purple-700">
+                                                    <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-medium text-purple-700">
                                                         {formatNumber(wh.initial_tons, 3)} TM
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-emerald-700">
+                                                    <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-medium text-teal-700">
                                                         {formatNumber(wh.daily_tons, 3)} TM
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-black text-gray-900">
+                                                    <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-bold text-rose-600">
+                                                        {formatNumber(wh.shipped_tons ?? 0, 3)} TM
+                                                    </td>
+                                                    <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-black text-emerald-700 bg-emerald-50/40">
                                                         {formatNumber(wh.total_tons, 3)} TM
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-xs font-bold text-gray-600">
+                                                    <td className="px-5 py-4 whitespace-nowrap text-right text-xs font-bold text-gray-600">
                                                         <div className="flex items-center justify-end space-x-2">
-                                                            <div className="w-24 bg-gray-200 rounded-full h-2 overflow-hidden">
+                                                            <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
                                                                 <div
                                                                     className="bg-emerald-600 h-2 rounded-full"
-                                                                    style={{ width: `${Math.min(pct, 100)}%` }}
+                                                                    style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
                                                                 />
                                                             </div>
                                                             <span>{formatNumber(pct, 1)}%</span>
@@ -1184,18 +1192,21 @@ export default function UreaInventoryIndex({
                                                 </tr>
                                             );
                                         })}
-                                        <tr className="bg-gray-50 font-black">
-                                            <td className="px-6 py-4 text-sm text-gray-900">TOTAL GENERAL</td>
-                                            <td className="px-6 py-4 text-right text-sm text-purple-900">
+                                        <tr className="bg-gray-100 font-black border-t-2 border-gray-300">
+                                            <td className="px-5 py-4 text-sm text-gray-900">TOTAL GENERAL</td>
+                                            <td className="px-5 py-4 text-right text-sm text-purple-900">
                                                 {formatNumber(metrics?.totalInitialTons ?? 0, 3)} TM
                                             </td>
-                                            <td className="px-6 py-4 text-right text-sm text-emerald-900">
+                                            <td className="px-5 py-4 text-right text-sm text-teal-900">
                                                 {formatNumber(metrics?.totalDailyTons ?? 0, 3)} TM
                                             </td>
-                                            <td className="px-6 py-4 text-right text-base text-gray-900">
+                                            <td className="px-5 py-4 text-right text-sm text-rose-800">
+                                                {formatNumber(metrics?.totalShippedTons ?? 0, 3)} TM
+                                            </td>
+                                            <td className="px-5 py-4 text-right text-base text-emerald-900 bg-emerald-100/60">
                                                 {formatNumber(metrics?.totalStockTons ?? 0, 3)} TM
                                             </td>
-                                            <td className="px-6 py-4 text-right text-xs text-gray-900">100.0%</td>
+                                            <td className="px-5 py-4 text-right text-xs text-gray-900">100.0%</td>
                                         </tr>
                                     </tbody>
                                 </table>

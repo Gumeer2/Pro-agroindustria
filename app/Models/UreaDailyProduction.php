@@ -17,6 +17,7 @@ class UreaDailyProduction extends Model
         'warehouse',
         'cubicle',
         'plant_origin',
+        'product_type',
         'packaging',
         'quantity_tons',
         'sacks_count',
@@ -25,6 +26,16 @@ class UreaDailyProduction extends Model
         'notes',
         'user_id',
     ];
+
+    public function scopeAgricola($query)
+    {
+        return $query->where('product_type', 'agricola');
+    }
+
+    public function scopeIndustrial($query)
+    {
+        return $query->where('product_type', 'industrial');
+    }
 
     protected $casts = [
         'date' => 'date:Y-m-d',

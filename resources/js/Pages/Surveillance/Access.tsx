@@ -525,7 +525,7 @@ export default function Access({
                         <div>
                             <h2 className="text-3xl font-black text-indigo-900 uppercase tracking-tight flex items-center">
                                 <Scan className="w-8 h-8 mr-3 text-indigo-600" />
-                                Control de Accesos y Entradas
+                                Control de Accesos
                             </h2>
                             <p className="text-gray-500 text-sm font-medium ml-11">
                                 Escaneo de gafete/QR, lista de espera y autorización de entrada a planta
@@ -1169,9 +1169,6 @@ export default function Access({
                                                 Tiempos (Entrada / Salida)
                                             </th>
                                             <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                Orden de Embarque
-                                            </th>
-                                            <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                                 Operador
                                             </th>
                                             <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
@@ -1199,31 +1196,6 @@ export default function Access({
                                                             <span className="w-14 text-xs uppercase font-extrabold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded mr-2">Salió:</span>
                                                             {log.exit_at ? new Date(log.exit_at).toLocaleString() : "N/A"}
                                                         </div>
-                                                    </td>
-                                                    <td className="px-4 py-3.5 text-sm">
-                                                        {orders && orders.length > 0 ? (
-                                                            <div className="space-y-1">
-                                                                {orders.map((o: any) => (
-                                                                    <div key={o.id} className="bg-amber-50/80 border border-amber-200/80 rounded-lg p-1.5 max-w-[240px]">
-                                                                        <div className="flex items-center justify-between gap-1">
-                                                                            <span className="font-mono font-black text-amber-900 text-xs">
-                                                                                {o.folio ?? o.id}
-                                                                            </span>
-                                                                            <span className="text-[10px] uppercase font-bold text-amber-700">
-                                                                                {o.status}
-                                                                            </span>
-                                                                        </div>
-                                                                        <p className="text-[11px] text-gray-600 font-medium truncate mt-0.5" title={o.client?.business_name || o.client?.name || o.client_name || ""}>
-                                                                            {o.client?.business_name || o.client?.name || o.client_name || "N/A"}
-                                                                        </p>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <span className="text-xs text-gray-400 font-medium italic">
-                                                                Sin orden vinculada
-                                                            </span>
-                                                        )}
                                                     </td>
                                                     <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-900">
                                                         <div className="font-bold uppercase text-gray-800">

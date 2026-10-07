@@ -31,8 +31,8 @@ class UreaInventoryController extends Controller
         $tab = $request->input('tab', 'production'); // 'production' | 'initial' | 'summary'
 
         // Base queries
-        $dailyQuery = UreaDailyProduction::with('user');
-        $initialQuery = UreaInitialInventory::with('user');
+        $dailyQuery = UreaDailyProduction::agricola()->with('user');
+        $initialQuery = UreaInitialInventory::agricola()->with('user');
 
         // Filters for Daily Production
         if ($request->filled('search')) {
@@ -81,49 +81,9 @@ class UreaInventoryController extends Controller
         $dailyProductions = $dailyQuery->orderBy('date', 'desc')->orderBy('id', 'desc')->paginate(15)->withQueryString();
         $initialInventories = $initialQuery->orderBy('date', 'desc')->orderBy('id', 'desc')->paginate(15)->withQueryString();
 
-        // Calculate Totals & Summary Metrics
-        $totalInitialTons = (float) UreaInitialInventory::sum('quantity_tons');
-        $totalInitialSacks = (int) UreaInitialInventory::sum('sacks_count');
-
-        $totalDailyTons = (float) UreaDailyProduction::sum('quantity_tons');
-        $totalDailySacks = (int) UreaDailyProduction::sum('sacks_count');
-
-        // Corte operativo a las 5:00 AM:
-        // Antes de las 05:00 hrs corresponde a la jornada operativa del día anterior
-        $operationalDate = now()->hour < 5 ? now()->subDay()->toDateString() : now()->toDateString();
-        $todayProductionTons = (float) UreaDailyProduction::whereDate('date', $operationalDate)->sum('quantity_tons');
-        $todayProductionSacks = (int) UreaDailyProduction::whereDate('date', $operationalDate)->sum('sacks_count');
-
-        $totalStockTons = $totalInitialTons + $totalDailyTons;
-        $totalStockSacks = $totalInitialSacks + $totalDailySacks;
-
-        // Breakdown by Plant Origin
-        $byPlant = [
-            'UREA 1' => [
-                'initial_tons' => (float) UreaInitialInventory::where('plant_origin', 'UREA 1')->sum('quantity_tons'),
-                'daily_tons' => (float) UreaDailyProduction::where('plant_origin', 'UREA 1')->sum('quantity_tons'),
-            ],
-            'UREA 2' => [
-                'initial_tons' => (float) UreaInitialInventory::where('plant_origin', 'UREA 2')->sum('quantity_tons'),
-                'daily_tons' => (float) UreaDailyProduction::where('plant_origin', 'UREA 2')->sum('quantity_tons'),
-            ],
-        ];
-        $byPlant['UREA 1']['total_tons'] = $byPlant['UREA 1']['initial_tons'] + $byPlant['UREA 1']['daily_tons'];
-        $byPlant['UREA 2']['total_tons'] = $byPlant['UREA 2']['initial_tons'] + $byPlant['UREA 2']['daily_tons'];
-
-        // Breakdown by Warehouse (Almacen 1 to 5)
-        $byWarehouse = [];
-        for ($i = 1; $i <= 5; $i++) {
-            $whName = "Almacen {$i}";
-            $initTons = (float) UreaInitialInventory::where('warehouse', $whName)->sum('quantity_tons');
-            $prodTons = (float) UreaDailyProduction::where('warehouse', $whName)->sum('quantity_tons');
-            $byWarehouse[$whName] = [
-                'name' => "Almacén {$i}",
-                'initial_tons' => $initTons,
-                'daily_tons' => $prodTons,
-                'total_tons' => $initTons + $prodTons,
-            ];
-        }
+        // Calculate Totals & Summary Metrics using UreaStockService (subtracts completed shipment orders)
+        $metrics = \App\Services\UreaStockService::getMetrics('agricola');
+        $operationalDate = $metrics['operationalDate'];
 
         // Available lots for folio helper / reference
         $lots = Lot::where('status', 'open')->orderBy('created_at', 'desc')->get(['id', 'folio', 'warehouse', 'cubicle', 'plant_origin']);
@@ -133,19 +93,7 @@ class UreaInventoryController extends Controller
             'operationalDate' => $operationalDate,
             'dailyProductions' => $dailyProductions,
             'initialInventories' => $initialInventories,
-            'metrics' => [
-                'operationalDate' => $operationalDate,
-                'totalInitialTons' => $totalInitialTons,
-                'totalInitialSacks' => $totalInitialSacks,
-                'totalDailyTons' => $totalDailyTons,
-                'totalDailySacks' => $totalDailySacks,
-                'todayProductionTons' => $todayProductionTons,
-                'todayProductionSacks' => $todayProductionSacks,
-                'totalStockTons' => $totalStockTons,
-                'totalStockSacks' => $totalStockSacks,
-                'byPlant' => $byPlant,
-                'byWarehouse' => $byWarehouse,
-            ],
+            'metrics' => $metrics,
             'lots' => $lots,
             'filters' => $request->only(['search', 'warehouse', 'plant_origin', 'date_from', 'date_to', 'shift', 'tab']),
         ]);
@@ -176,6 +124,7 @@ class UreaInventoryController extends Controller
             'warehouse' => $validated['warehouse'],
             'cubicle' => $validated['cubicle'] ?? null,
             'plant_origin' => $validated['plant_origin'],
+            'product_type' => 'agricola',
             'packaging' => $validated['packaging'] ?? 'Granel',
             'quantity_tons' => $validated['quantity_tons'],
             'sacks_count' => $validated['sacks_count'] ?? 0,
@@ -259,6 +208,7 @@ class UreaInventoryController extends Controller
             'warehouse' => $validated['warehouse'],
             'cubicle' => $validated['cubicle'] ?? null,
             'plant_origin' => $validated['plant_origin'],
+            'product_type' => 'agricola',
             'packaging' => $validated['packaging'] ?? 'Granel',
             'quantity_tons' => $validated['quantity_tons'],
             'sacks_count' => $validated['sacks_count'] ?? 0,

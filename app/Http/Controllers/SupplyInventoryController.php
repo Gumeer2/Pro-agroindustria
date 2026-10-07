@@ -130,6 +130,29 @@ class SupplyInventoryController extends Controller
     }
 
     /**
+     * Display the Submodule Hub for "Producción" in Gestión de Inventarios
+     * Shows 4 Cards: Urea Agrícola, Urea Industrial, Urea Importada, DAP
+     */
+    public function productionHub(Request $request)
+    {
+        $agricolaMetrics = \App\Services\UreaStockService::getMetrics('agricola');
+        $industrialMetrics = \App\Services\UreaStockService::getMetrics('industrial');
+
+        return Inertia::render('APT/Inventory/ProductionHub', [
+            'metrics' => [
+                'urea_agricola_total' => $agricolaMetrics['totalStockTons'],
+                'urea_agricola_daily' => $agricolaMetrics['totalDailyTons'],
+                'urea_agricola_initial' => $agricolaMetrics['totalInitialTons'],
+                'urea_agricola_shipped' => $agricolaMetrics['totalShippedTons'],
+                'urea_industrial_total' => $industrialMetrics['totalStockTons'],
+                'urea_industrial_daily' => $industrialMetrics['totalDailyTons'],
+                'urea_industrial_initial' => $industrialMetrics['totalInitialTons'],
+                'urea_industrial_shipped' => $industrialMetrics['totalShippedTons'],
+            ],
+        ]);
+    }
+
+    /**
      * Display the 1st Submodule: "Productos"
      * Contains all 9 Types / Categories in a unified, filtered table with clickable groups.
      */

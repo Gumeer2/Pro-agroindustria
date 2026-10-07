@@ -1268,8 +1268,25 @@ class WeightTicketController extends Controller
                 $firstWeight = $ticket->tare_weight;
                 $secondWeight = $validated['weight'];
                 $net = abs($secondWeight - $firstWeight);
+                $netTons = $net >= 100 ? ($net / 1000) : $net;
 
                 $assignedLotId = $validated['lot_id'] ?? $order->shipment_order?->lot_id ?? $ticket->lot_id ?? null;
+
+                // Determine Warehouse to update in LoadingOrder
+                $finalWarehouse = $order->warehouse;
+                if (!empty($validated['lot_id'])) {
+                    $lot = \App\Models\Lot::find($validated['lot_id']);
+                    if ($lot && $lot->warehouse) {
+                        $finalWarehouse = $lot->warehouse;
+                    }
+                } elseif (!empty($validated['warehouse'])) {
+                    $finalWarehouse = $validated['warehouse'];
+                }
+
+                // VALIDATION: Check that the origin warehouse has sufficient stock available
+                if ($order->shipment_order_id || empty($order->vessel_id)) {
+                    \App\Services\UreaStockService::validateAvailableStock($order, $finalWarehouse, $netTons);
+                }
 
                 // Update Ticket
                 $ticket->update([
@@ -1282,17 +1299,6 @@ class WeightTicketController extends Controller
                     'weighmaster_id' => auth()->id(),
                     'documenter_id' => $validated['documenter_id'] ?? null,
                 ]);
-
-                // Determine Warehouse to update in LoadingOrder
-                $finalWarehouse = $order->warehouse;
-                if (!empty($validated['lot_id'])) {
-                    $lot = \App\Models\Lot::find($validated['lot_id']);
-                    if ($lot && $lot->warehouse) {
-                        $finalWarehouse = $lot->warehouse;
-                    }
-                } elseif (!empty($validated['warehouse'])) {
-                    $finalWarehouse = $validated['warehouse'];
-                }
 
                 // Update Order Status and Warehouse
                 // Ensure reference is updated for Special Vessels
