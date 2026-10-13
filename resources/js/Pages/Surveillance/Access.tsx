@@ -9,7 +9,6 @@ import {
     Clock,
     Truck,
     Search,
-    History,
     FileText,
     LogOut,
     AlertTriangle,
@@ -34,7 +33,7 @@ export default function Access({
     in_plant_count?: number;
     history: any;
 }) {
-    const [activeTab, setActiveTab] = useState<"scan" | "order_entry" | "pending" | "history">("scan");
+    const [activeTab, setActiveTab] = useState<"scan" | "order_entry" | "pending">("scan");
     const [pendingLogs, setPendingLogs] = useState<any[]>(pending_logs);
     const [qrInput, setQrInput] = useState("");
     const [viewingLog, setViewingLog] = useState<any>(null);
@@ -575,17 +574,6 @@ export default function Access({
                                 {pendingLogs.length}
                             </span>
                         </button>
-                        <button
-                            onClick={() => setActiveTab("history")}
-                            className={`flex items-center px-8 py-5 font-bold text-sm uppercase tracking-wider transition-all border-b-4 ${
-                                activeTab === "history"
-                                    ? "border-indigo-600 text-indigo-700 bg-indigo-50/50"
-                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                            }`}
-                        >
-                            <History className={`w-5 h-5 mr-2 ${activeTab === "history" ? "text-indigo-600" : "text-gray-400"}`} />
-                            Historial
-                        </button>
                     </div>
 
                     <div className="bg-white rounded-b-2xl shadow-xl border border-gray-100 p-8 min-h-[550px]">
@@ -598,7 +586,7 @@ export default function Access({
                                     </div>
                                     <h2 className="text-3xl font-black text-gray-900 tracking-tight">Escáner de Acceso</h2>
                                     <p className="text-gray-500 text-lg max-w-md mx-auto">
-                                        Escanea el código QR del operador (Barco o Salida) o ingresa manualmente el ID.
+                                        Escanea el código QR del operador de salida o ingresa manualmente su ID.
                                     </p>
                                 </div>
 
@@ -1160,86 +1148,6 @@ export default function Access({
                             </div>
                         )}
 
-                        {/* Tab: HISTORY */}
-                        {activeTab === "history" && (
-                            <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-lg bg-white">
-                                <table className="w-full divide-y divide-gray-200 text-left">
-                                    <thead className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white">
-                                        <tr>
-                                            <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                Tiempos (Entrada / Salida)
-                                            </th>
-                                            <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                Operador
-                                            </th>
-                                            <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                Unidad
-                                            </th>
-                                            <th className="px-4 py-3.5 text-center text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                Acciones
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-100">
-                                        {history.data.map((log: any) => {
-                                            const orders = log.shipment_orders || log.shipmentOrders || [];
-                                            return (
-                                                <tr key={log.id} className="hover:bg-indigo-50/50 transition-colors duration-200">
-                                                    <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-500">
-                                                        <div className="flex items-center text-emerald-700 font-bold mb-1">
-                                                            <span className="w-14 text-xs uppercase font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded mr-2">Entró:</span>
-                                                            {log.entry_at ? new Date(log.entry_at).toLocaleString() : "N/A"}
-                                                        </div>
-                                                        <div className="flex items-center text-rose-700 font-bold">
-                                                            <span className="w-14 text-xs uppercase font-extrabold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded mr-2">Salió:</span>
-                                                            {log.exit_at ? new Date(log.exit_at).toLocaleString() : "N/A"}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-900">
-                                                        <div className="font-bold uppercase text-gray-800">
-                                                            {log.subject?.operator_name || log.subject?.name}
-                                                        </div>
-                                                        <div className="text-xs text-gray-500 font-medium">
-                                                            {log.subject?.transport_line || log.subject?.transporter_line || "Línea N/A"}
-                                                        </div>
-                                                        {log.subject?.status === "vetoed" && (
-                                                            <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-800 border border-red-200">
-                                                                <AlertTriangle className="w-3 h-3 mr-1" />
-                                                                VETADO
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-500">
-                                                        <div className="flex flex-wrap items-center gap-1.5">
-                                                            <span className="font-mono font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded text-xs border border-gray-200" title="Placa Tracto">
-                                                                T: {log.subject?.tractor_plate || "S/P"}
-                                                            </span>
-                                                            {log.subject?.trailer_plate && (
-                                                                <span className="font-mono font-bold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200" title="Placa Remolque">
-                                                                    R: {log.subject?.trailer_plate}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="text-xs text-gray-500 mt-1">
-                                                            Econ: <span className="font-bold">#{log.subject?.economic_number || "S/N"}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium space-x-2">
-                                                        <button
-                                                            onClick={() => setViewingLog(log)}
-                                                            className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-all shadow-sm inline-flex items-center font-bold text-xs uppercase"
-                                                        >
-                                                            <User className="w-3 h-3 mr-1.5" />
-                                                            Ver
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>

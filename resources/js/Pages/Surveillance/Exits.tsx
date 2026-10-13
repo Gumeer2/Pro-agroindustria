@@ -36,7 +36,6 @@ export default function Exits({
 }) {
     const [inPlantLogs, setInPlantLogs] = useState<any[]>(in_plant);
     const [searchTerm, setSearchTerm] = useState("");
-    const [viewingLog, setViewingLog] = useState<any>(null);
 
     useEffect(() => {
         setInPlantLogs(in_plant);
@@ -338,11 +337,6 @@ export default function Exits({
         return opName.includes(query) || plate.includes(query) || trailerPlate.includes(query) || econ.includes(query) || orders.includes(query);
     });
 
-    const totalWithOrders = inPlantLogs.filter((log) => {
-        const o = log.shipment_orders_data || log.shipment_orders;
-        return o && o.length > 0;
-    }).length;
-
     // Flatten logs so each shipment order gets its own row
     const displayRows = filteredLogs.flatMap((log) => {
         const orders = log.shipment_orders_data || log.shipment_orders;
@@ -426,20 +420,6 @@ export default function Exits({
                                     </p>
                                 </div>
                             </div>
-
-                            <div className="bg-emerald-50 border border-emerald-100 px-4 py-2.5 rounded-2xl flex items-center gap-3">
-                                <div className="p-2 bg-emerald-600 text-white rounded-xl">
-                                    <FileText className="w-4 h-4" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase text-emerald-600 tracking-wider">
-                                        Con Órdenes
-                                    </p>
-                                    <p className="text-lg font-black text-emerald-900 leading-none">
-                                        {totalWithOrders}
-                                    </p>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
@@ -515,9 +495,6 @@ export default function Exits({
                                     <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                         Unidad
                                     </th>
-                                    <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                        Tipo
-                                    </th>
                                     <th className="px-4 py-3.5 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                         Acciones
                                     </th>
@@ -526,7 +503,7 @@ export default function Exits({
                             <tbody className="bg-white divide-y divide-gray-100">
                                 {displayRows.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="px-6 py-16 text-center text-gray-500 bg-gray-50/50">
+                                        <td colSpan={6} className="px-6 py-16 text-center text-gray-500 bg-gray-50/50">
                                             <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                                             <p className="font-bold text-lg text-gray-700">
                                                 No hay operadores en planta {searchTerm ? "que coincidan con la búsqueda." : "actualmente."}
@@ -661,29 +638,9 @@ export default function Exits({
                                                     </div>
                                                 </td>
 
-                                                {/* Column 5: Access Type */}
-                                                <td className="px-4 py-3.5 whitespace-nowrap">
-                                                    <span
-                                                        className={`px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-full uppercase tracking-wide ${
-                                                            log.subject_type?.includes("Vessel")
-                                                                ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                                                : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                                        }`}
-                                                    >
-                                                        {log.subject_type?.includes("Vessel") ? "Barco/Muelle" : "Salida/Doc"}
-                                                    </span>
-                                                </td>
-
-                                                {/* Column 6: Actions */}
+                                                {/* Column 5: Actions */}
                                                 <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium">
                                                     <div className="inline-flex items-center justify-center gap-2">
-                                                        <button
-                                                            onClick={() => setViewingLog(log)}
-                                                            className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-2 rounded-xl transition-all shadow-sm font-bold text-xs uppercase inline-flex items-center gap-1"
-                                                        >
-                                                            <User className="w-3.5 h-3.5" />
-                                                            Detalles
-                                                        </button>
                                                         {!rowCanExit ? (
                                                             <button
                                                                 onClick={() => {
@@ -1077,133 +1034,6 @@ export default function Exits({
                         </button>
                     </div>
                 </form>
-            </Modal>
-
-            {/* === VIEW DETAILS MODAL === */}
-            <Modal show={!!viewingLog} onClose={() => setViewingLog(null)} maxWidth="2xl">
-                <div className="p-6">
-                    <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
-                        <div className="flex items-center">
-                            <div className="bg-indigo-100 p-2 rounded-lg mr-3">
-                                <User className="w-6 h-6 text-indigo-600" />
-                            </div>
-                            <h2 className="text-2xl font-black text-gray-900 uppercase">Detalles del Registro</h2>
-                        </div>
-                        <button
-                            onClick={() => setViewingLog(null)}
-                            className="text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors"
-                        >
-                            <XCircle className="w-6 h-6" />
-                        </button>
-                    </div>
-
-                    {viewingLog && viewingLog.subject && (
-                        <div className="space-y-6">
-                            <div className="bg-gradient-to-br from-indigo-50 to-white rounded-3xl p-6 border border-indigo-100 shadow-md">
-                                <div className="flex items-start space-x-5">
-                                    <div className="h-20 w-20 bg-white rounded-2xl flex items-center justify-center border-2 border-indigo-50 shadow-md flex-shrink-0">
-                                        <Truck className="w-10 h-10 text-indigo-500" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <h3 className="text-2xl font-black text-gray-900 uppercase leading-none mb-2">
-                                            {viewingLog.subject.operator_name || viewingLog.subject.name}
-                                        </h3>
-                                        <div className="inline-block px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold uppercase tracking-widest mb-3">
-                                            {viewingLog.subject.transport_line || viewingLog.subject.transporter_line || "Línea de Transporte"}
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-4 mt-2">
-                                            <div className="bg-white p-3 rounded-xl border border-indigo-50 shadow-sm">
-                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1.5">
-                                                    Placas
-                                                </p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    <div className="flex items-center space-x-1.5 bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
-                                                        <span className="text-[10px] font-bold text-gray-500 uppercase">Tracto:</span>
-                                                        <span className="text-sm font-mono font-black text-gray-900">
-                                                            {viewingLog.subject.tractor_plate || "S/P"}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center space-x-1.5 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
-                                                        <span className="text-[10px] font-bold text-indigo-500 uppercase">Remolque:</span>
-                                                        <span className="text-sm font-mono font-black text-indigo-900">
-                                                            {viewingLog.subject.trailer_plate || "S/R"}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="bg-white p-3 rounded-xl border border-indigo-50">
-                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">
-                                                    Unidad
-                                                </p>
-                                                <p className="text-xs text-gray-800 font-bold">
-                                                    {viewingLog.subject.unit_type || "N/A"} - #{viewingLog.subject.economic_number || "S/N"}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
-                                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">
-                                        Hora de Entrada
-                                    </p>
-                                    <p className="text-lg font-black text-gray-900">
-                                        {new Date(viewingLog.entry_at).toLocaleString()}
-                                    </p>
-                                </div>
-                                <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
-                                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">
-                                        Autorizado Por
-                                    </p>
-                                    <p className="text-base font-bold text-gray-900">
-                                        {viewingLog.user?.name || "Sistema"}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {((viewingLog.shipment_orders_data || viewingLog.shipment_orders)?.length > 0) && (
-                                <div className="p-5 bg-white border border-indigo-100 rounded-2xl shadow-sm">
-                                    <p className="text-xs text-indigo-700 uppercase font-black tracking-wider mb-3 flex items-center">
-                                        <FileText className="w-4 h-4 mr-1.5" />
-                                        Órdenes de Embarque Vinculadas ({(viewingLog.shipment_orders_data || viewingLog.shipment_orders).length})
-                                    </p>
-                                    <div className="space-y-2">
-                                        {(viewingLog.shipment_orders_data || viewingLog.shipment_orders).map((o: any) => (
-                                            <div
-                                                key={o.id}
-                                                className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-center justify-between text-xs"
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-black text-indigo-900 uppercase">
-                                                        Folio: {o.folio ?? o.id}
-                                                    </span>
-                                                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold uppercase text-[10px]">
-                                                        {o.status}
-                                                    </span>
-                                                </div>
-                                                <div className="text-gray-600 font-medium">
-                                                    {o.client?.business_name || o.client?.name || o.client || "N/A"}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="mt-6 flex justify-end">
-                        <button
-                            onClick={() => setViewingLog(null)}
-                            className="bg-gray-100 text-gray-700 font-bold py-2.5 px-6 rounded-xl hover:bg-gray-200 transition-colors uppercase tracking-wide text-xs"
-                        >
-                            Cerrar
-                        </button>
-                    </div>
-                </div>
             </Modal>
         </DashboardLayout>
     );

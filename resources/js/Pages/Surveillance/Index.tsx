@@ -27,7 +27,7 @@ export default function Index({
             title: "Control de Accesos",
             subtitle: "Entradas y Verificación",
             description:
-                "Escaneo de gafete/QR de operadores (Barco y Salidas), lista de espera, registro de motivos de retención y autorización de ingreso a planta.",
+                "Escaneo de gafete/QR de operadores de salida, lista de espera, registro de motivos de retención y autorización de ingreso a planta.",
             icon: Scan,
             href: route("surveillance.access.index"),
             gradient: "from-indigo-600 to-blue-600",

@@ -325,22 +325,43 @@ class SurveillanceController extends Controller
     public function scan(Request $request)
     {
         $rawQr = $request->input('qr');
-        $qr = strtoupper(trim($rawQr));
-        $qr = str_replace(['?', "'", '-'], '_', $qr);
+        $qr = strtoupper(trim($rawQr ?? ''));
+        $normalized = str_replace(['?', "'", '-', '|'], '_', $qr);
 
         $subject = null;
         $type = null;
 
-        if (str_starts_with($qr, 'OP_EXIT') || str_starts_with($qr, 'OP-EXIT')) {
-            $id = (int) filter_var($qr, FILTER_SANITIZE_NUMBER_INT);
+        if (preg_match('/^OP[_\-\s]?EXIT[_\-\s]*(\d+)/i', $normalized, $matches)) {
+            $id = (int) $matches[1];
             $subject = ExitOperator::find($id);
             $type = 'App\Models\ExitOperator';
-        } elseif (str_starts_with($qr, 'OP')) {
-            $id = (int) filter_var($qr, FILTER_SANITIZE_NUMBER_INT);
-            $subject = VesselOperator::with('vessel')->find($id);
-            $type = 'App\Models\VesselOperator';
+        } elseif (str_starts_with($normalized, 'OP_EXIT')) {
+            $id = (int) filter_var($normalized, FILTER_SANITIZE_NUMBER_INT);
+            $subject = ExitOperator::find($id);
+            $type = 'App\Models\ExitOperator';
+        } elseif (str_starts_with($qr, 'OP') || preg_match('/^OP[_\-\s]*(\d+)/i', $normalized)) {
+            // Rejection: Dock/Vessel operators are strictly not permitted in Surveillance
+            return response()->json([
+                'error' => 'Los operadores de muelle no tienen acceso por este módulo de Vigilancia. Solo se permite escanear a operadores de salida.'
+            ], 422);
+        } elseif (is_numeric(trim($rawQr ?? ''))) {
+            $id = (int) trim($rawQr);
+            $subject = ExitOperator::find($id);
+            if ($subject) {
+                $type = 'App\Models\ExitOperator';
+            } else {
+                $vesselOp = VesselOperator::find($id);
+                if ($vesselOp) {
+                    return response()->json([
+                        'error' => 'El ID ingresado corresponde a un operador de muelle. En este módulo de Vigilancia solo se permite registrar a operadores de salida.'
+                    ], 422);
+                }
+                return response()->json(['error' => "Operador de salida con ID {$id} no encontrado."], 404);
+            }
         } else {
-            return response()->json(['error' => "Formato QR no reconocido. Recibido: '{$rawQr}'"], 404);
+            return response()->json([
+                'error' => "Formato no reconocido. Recibido: '{$rawQr}'. Solo se permite escanear códigos QR de operadores de salida (OP_EXIT)."
+            ], 422);
         }
 
         if (!$subject) {
@@ -1158,6 +1179,12 @@ class SurveillanceController extends Controller
                     $subject = $lo->exit_operator;
                     break;
                 }
+                if ($lo->vessel_operator) {
+                    $vName = $lo->vessel_operator->operator_name ?? 'Operador de Muelle';
+                    return response()->json([
+                        'error' => "La orden {$order->folio} está asignada a un operador de muelle ({$vName}). En Vigilancia solo se permite dar entrada a órdenes con operadores de salida."
+                    ], 422);
+                }
             }
         }
 
@@ -1298,6 +1325,11 @@ class SurveillanceController extends Controller
                 if ($lo->exit_operator) {
                     $subject = $lo->exit_operator;
                     break;
+                }
+                if ($lo->vessel_operator) {
+                    return response()->json([
+                        'error' => "La orden {$order->folio} está asignada a un operador de muelle. En Vigilancia solo se permite registrar órdenes con operadores de salida."
+                    ], 422);
                 }
             }
         }
