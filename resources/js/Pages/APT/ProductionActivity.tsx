@@ -50,7 +50,7 @@ export default function ProductionActivity({ auth, registration }: { auth: any; 
                                 <DataField label="Producto" value="Pendiente de asignar" />
                                 <DataField label="Origen" value={lot.plant_origin || "Automático"} />
                                 <DataField label="Disposición" value={lot.warehouse || "Automático"} />
-                                <DataField label="Inicio" value={startedAt.toLocaleDateString("es-MX")} />
+                                <DataField label="Inicio" value={lot.created_at ? new Date(lot.created_at).toLocaleDateString("es-MX") : startedAt.toLocaleDateString("es-MX")} />
                                 <DataField label="Final" value="En proceso" />
                                 <DataField label="Cierre de lote" value="Seleccionar" />
                             </DataSection>

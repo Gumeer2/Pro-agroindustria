@@ -871,13 +871,21 @@ export default function Access({
                                                         </p>
                                                     </div>
 
-                                                    <div className="grid grid-cols-3 gap-3">
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                                         <div>
                                                             <span className="text-[11px] font-black uppercase tracking-wider text-gray-400">
-                                                                Placas
+                                                                Placa Tracto
                                                             </span>
                                                             <p className="font-mono font-bold text-gray-800 text-sm">
                                                                 {scannedOrderData.tractor_plate || scannedSubjectData?.tractor_plate || "S/P"}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[11px] font-black uppercase tracking-wider text-indigo-500">
+                                                                Placa Remolque
+                                                            </span>
+                                                            <p className="font-mono font-bold text-indigo-900 text-sm">
+                                                                {scannedOrderData.trailer_plate || scannedSubjectData?.trailer_plate || "S/R"}
                                                             </p>
                                                         </div>
                                                         <div>
@@ -1021,9 +1029,6 @@ export default function Access({
                                                     Unidad
                                                 </th>
                                                 <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                    Tipo
-                                                </th>
-                                                <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                                     Estado
                                                 </th>
                                                 <th className="px-4 py-3.5 text-center text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
@@ -1034,7 +1039,7 @@ export default function Access({
                                         <tbody className="bg-white divide-y divide-gray-100">
                                             {filteredPendingLogs.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={6} className="px-6 py-16 text-center text-gray-500 bg-gray-50/50">
+                                                    <td colSpan={5} className="px-6 py-16 text-center text-gray-500 bg-gray-50/50">
                                                         <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                                                         <p className="font-medium text-lg">No hay registros pendientes de autorización.</p>
                                                     </td>
@@ -1066,23 +1071,19 @@ export default function Access({
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-3.5 whitespace-nowrap">
-                                                            <div className="text-sm font-bold text-gray-900 font-mono">
-                                                                {log.subject?.tractor_plate || "S/P"}
+                                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                                <span className="font-mono font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded text-xs border border-gray-200" title="Placa Tracto">
+                                                                    T: {log.subject?.tractor_plate || "S/P"}
+                                                                </span>
+                                                                {log.subject?.trailer_plate && (
+                                                                    <span className="font-mono font-bold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200" title="Placa Remolque">
+                                                                        R: {log.subject?.trailer_plate}
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                            <div className="text-xs text-gray-500">
+                                                            <div className="text-xs text-gray-500 mt-1">
                                                                 Econ: <span className="font-bold">{log.subject?.economic_number || "S/N"}</span>
                                                             </div>
-                                                        </td>
-                                                        <td className="px-4 py-3.5 whitespace-nowrap">
-                                                            <span
-                                                                className={`px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-full uppercase tracking-wide ${
-                                                                    log.subject_type.includes("Vessel")
-                                                                        ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                                                        : "bg-green-100 text-green-800 border border-green-200"
-                                                                }`}
-                                                            >
-                                                                {log.subject_type.includes("Vessel") ? "Barco/Muelle" : "Salida/Doc"}
-                                                            </span>
                                                         </td>
                                                         <td className="px-4 py-3.5 whitespace-nowrap">
                                                             <span
@@ -1174,9 +1175,6 @@ export default function Access({
                                             <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                                 Unidad
                                             </th>
-                                            <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                                Tipo
-                                            </th>
                                             <th className="px-4 py-3.5 text-center text-xs font-bold uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                                 Acciones
                                             </th>
@@ -1212,23 +1210,19 @@ export default function Access({
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3.5 whitespace-nowrap text-sm text-gray-500">
-                                                        <div className="font-mono font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded inline-block">
-                                                            {log.subject?.tractor_plate || "S/P"}
+                                                        <div className="flex flex-wrap items-center gap-1.5">
+                                                            <span className="font-mono font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded text-xs border border-gray-200" title="Placa Tracto">
+                                                                T: {log.subject?.tractor_plate || "S/P"}
+                                                            </span>
+                                                            {log.subject?.trailer_plate && (
+                                                                <span className="font-mono font-bold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200" title="Placa Remolque">
+                                                                    R: {log.subject?.trailer_plate}
+                                                                </span>
+                                                            )}
                                                         </div>
-                                                        <div className="text-xs text-gray-500 mt-0.5">
+                                                        <div className="text-xs text-gray-500 mt-1">
                                                             Econ: <span className="font-bold">#{log.subject?.economic_number || "S/N"}</span>
                                                         </div>
-                                                    </td>
-                                                    <td className="px-4 py-3.5 whitespace-nowrap">
-                                                        <span
-                                                            className={`px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-full uppercase tracking-wide ${
-                                                                log.subject_type.includes("Vessel")
-                                                                    ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                                                    : "bg-green-100 text-green-800 border border-green-200"
-                                                            }`}
-                                                        >
-                                                            {log.subject_type.includes("Vessel") ? "Barco" : "Salida"}
-                                                        </span>
                                                     </td>
                                                     <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium space-x-2">
                                                         <button
@@ -1444,13 +1438,22 @@ export default function Access({
 
                                         <div className="grid grid-cols-2 gap-6 mt-2">
                                             <div className="bg-white/80 p-3 rounded-xl border border-indigo-50 shadow-sm">
-                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">
+                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1.5">
                                                     Placas
                                                 </p>
                                                 <div className="flex flex-wrap gap-2">
-                                                    <span className="bg-gray-100 px-2 py-1 rounded text-sm font-mono font-bold text-gray-900 border border-gray-200">
-                                                        {viewingLog.subject.tractor_plate}
-                                                    </span>
+                                                    <div className="flex items-center space-x-1.5 bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
+                                                        <span className="text-[10px] font-bold text-gray-500 uppercase">Tracto:</span>
+                                                        <span className="text-sm font-mono font-black text-gray-900">
+                                                            {viewingLog.subject.tractor_plate || "S/P"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center space-x-1.5 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                                                        <span className="text-[10px] font-bold text-indigo-500 uppercase">Remolque:</span>
+                                                        <span className="text-sm font-mono font-black text-indigo-900">
+                                                            {viewingLog.subject.trailer_plate || "S/R"}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div className="bg-white/80 p-3 rounded-xl border border-indigo-50 shadow-sm">

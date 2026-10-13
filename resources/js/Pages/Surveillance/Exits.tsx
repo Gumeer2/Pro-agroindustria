@@ -329,12 +329,13 @@ export default function Exits({
 
         const opName = (log.subject?.operator_name || log.subject?.name || "").toLowerCase();
         const plate = (log.subject?.tractor_plate || "").toLowerCase();
+        const trailerPlate = (log.subject?.trailer_plate || "").toLowerCase();
         const econ = (log.subject?.economic_number || "").toLowerCase();
         const orders = (log.shipment_orders_data || log.shipment_orders || [])
             .map((o: any) => (o.folio || o.id || "").toLowerCase())
             .join(" ");
 
-        return opName.includes(query) || plate.includes(query) || econ.includes(query) || orders.includes(query);
+        return opName.includes(query) || plate.includes(query) || trailerPlate.includes(query) || econ.includes(query) || orders.includes(query);
     });
 
     const totalWithOrders = inPlantLogs.filter((log) => {
@@ -645,8 +646,15 @@ export default function Exits({
 
                                                 {/* Column 4: Vehicle Unit */}
                                                 <td className="px-4 py-3.5 whitespace-nowrap">
-                                                    <div className="text-sm font-black text-gray-900 font-mono bg-gray-100 px-2 py-0.5 rounded-md inline-block border border-gray-200">
-                                                        {log.subject?.tractor_plate || "S/P"}
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        <span className="text-xs font-black text-gray-900 font-mono bg-gray-100 px-2 py-0.5 rounded-md inline-block border border-gray-200" title="Placa Tracto">
+                                                            T: {log.subject?.tractor_plate || "S/P"}
+                                                        </span>
+                                                        {log.subject?.trailer_plate && (
+                                                            <span className="text-xs font-black text-indigo-900 font-mono bg-indigo-50 px-2 py-0.5 rounded-md inline-block border border-indigo-200" title="Placa Remolque">
+                                                                R: {log.subject?.trailer_plate}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="text-xs text-gray-500 mt-1">
                                                         Econ: <span className="font-bold text-gray-800">{log.subject?.economic_number || "S/N"}</span>
@@ -728,8 +736,14 @@ export default function Exits({
                                 <span className="font-bold text-gray-800 uppercase">
                                     {orderModalLog?.subject?.operator_name || orderModalLog?.subject?.name}
                                 </span>{" "}
-                                | Placas:{" "}
-                                <span className="font-bold text-gray-800">{orderModalLog?.subject?.tractor_plate}</span>
+                                | Tracto:{" "}
+                                <span className="font-bold text-gray-800">{orderModalLog?.subject?.tractor_plate || "S/P"}</span>
+                                {orderModalLog?.subject?.trailer_plate && (
+                                    <>
+                                        {" "}| Remolque:{" "}
+                                        <span className="font-bold text-indigo-700">{orderModalLog?.subject?.trailer_plate}</span>
+                                    </>
+                                )}
                             </p>
                         </div>
                         <button onClick={() => setOrderModalLog(null)} className="text-gray-400 hover:text-gray-600">
@@ -876,9 +890,16 @@ export default function Exits({
                                         <p className="text-lg font-black text-gray-900 uppercase">
                                             {exitModalItems[0]?.log?.subject?.operator_name || exitModalItems[0]?.log?.subject?.name || "N/A"}
                                         </p>
-                                        <span className="text-xs font-mono font-black bg-white px-2.5 py-1 rounded-lg border border-slate-300 text-indigo-900">
-                                            Placas: {exitModalItems[0]?.log?.subject?.tractor_plate || "S/P"}
-                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-mono font-black bg-white px-2.5 py-1 rounded-lg border border-slate-300 text-gray-900" title="Placa Tracto">
+                                                T: {exitModalItems[0]?.log?.subject?.tractor_plate || "S/P"}
+                                            </span>
+                                            {exitModalItems[0]?.log?.subject?.trailer_plate && (
+                                                <span className="text-xs font-mono font-black bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 text-indigo-900" title="Placa Remolque">
+                                                    R: {exitModalItems[0]?.log?.subject?.trailer_plate}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     <p className="text-xs text-slate-500 font-medium">
                                         Línea: <span className="font-bold text-slate-700">{exitModalItems[0]?.log?.subject?.transport_line || exitModalItems[0]?.log?.subject?.transporter_line || "N/A"}</span> | Econ: <span className="font-bold text-slate-700">{exitModalItems[0]?.log?.subject?.economic_number || "S/N"}</span>
@@ -915,9 +936,16 @@ export default function Exits({
                                                     {item.order ? `Folio: ${item.order.folio ?? item.order.id}` : "Sin orden vinculada"}
                                                 </span>
                                             </div>
-                                            <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                                                {item.log.subject?.tractor_plate || "S/P"}
-                                            </span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="font-mono text-[11px] text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                                                    T: {item.log.subject?.tractor_plate || "S/P"}
+                                                </span>
+                                                {item.log.subject?.trailer_plate && (
+                                                    <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                                                        R: {item.log.subject?.trailer_plate}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -1085,13 +1113,24 @@ export default function Exits({
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4 mt-2">
-                                            <div className="bg-white p-3 rounded-xl border border-indigo-50">
-                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">
+                                            <div className="bg-white p-3 rounded-xl border border-indigo-50 shadow-sm">
+                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1.5">
                                                     Placas
                                                 </p>
-                                                <span className="bg-gray-100 px-2 py-0.5 rounded text-sm font-mono font-bold text-gray-900 border border-gray-200">
-                                                    {viewingLog.subject.tractor_plate}
-                                                </span>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <div className="flex items-center space-x-1.5 bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
+                                                        <span className="text-[10px] font-bold text-gray-500 uppercase">Tracto:</span>
+                                                        <span className="text-sm font-mono font-black text-gray-900">
+                                                            {viewingLog.subject.tractor_plate || "S/P"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center space-x-1.5 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                                                        <span className="text-[10px] font-bold text-indigo-500 uppercase">Remolque:</span>
+                                                        <span className="text-sm font-mono font-black text-indigo-900">
+                                                            {viewingLog.subject.trailer_plate || "S/R"}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div className="bg-white p-3 rounded-xl border border-indigo-50">
                                                 <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">

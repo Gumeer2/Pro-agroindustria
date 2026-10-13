@@ -1169,6 +1169,7 @@
                             data-origin="{{ $lot->plant_origin ?: '—' }}"
                             data-warehouse="{{ $lot->warehouse ?: '—' }}"
                             data-status="{{ $lot->pivot?->status ?: 'open' }}"
+                            data-start="{{ optional($lot->created_at)->format('d/m/Y') ?: '—' }}"
                             {{ ($activeLot?->id ?? null) == $lot->id ? 'selected' : '' }}>{{ $lot->folio }}</option>
                     @empty
                         <option value="">—</option>
@@ -1178,7 +1179,7 @@
             <label class="field">Producto<input data-activity-product readonly value="{{ preg_match('/-UI(?:[-(]|$)/i', (string) $activeLot?->folio) ? 'UREA INDUSTRIAL' : (preg_match('/-UA(?:[-(]|$)/i', (string) $activeLot?->folio) ? 'UREA AGRICOLA' : '—') }}"></label>
             <label class="field">Origen<input data-activity-origin readonly value="{{ $activeLot?->plant_origin ?: '—' }}"></label>
             <label class="field">Disposición<input data-activity-warehouse readonly value="{{ $activeLot?->warehouse ?: '—' }}"></label>
-            <label class="field">Inicio<input readonly value="{{ optional(optional($registration)->started_at)->format('d/m/Y') ?: '—' }}"></label>
+            <label class="field">Inicio<input data-activity-start readonly value="{{ optional($activeLot?->created_at)->format('d/m/Y') ?: (optional(optional($registration)->started_at)->format('d/m/Y') ?: '—') }}"></label>
             <label class="field">Final<input readonly value="{{ $registration ? 'EN PROCESO' : '—' }}"></label>
             <label class="field">Status de Producción
                 <input data-production-close-status
@@ -1483,6 +1484,7 @@
         const activityProduct = document.querySelector('[data-activity-product]');
         const activityOrigin = document.querySelector('[data-activity-origin]');
         const activityWarehouse = document.querySelector('[data-activity-warehouse]');
+        const activityStart = document.querySelector('[data-activity-start]');
         const productionCloseStatus = document.querySelector('[data-production-close-status]');
         const closeProductionLotButton = document.querySelector('[data-close-production-lot]');
         const reopenProductionLotButton = document.querySelector('[data-reopen-production-lot]');
@@ -1536,6 +1538,7 @@
             if (activityProduct) activityProduct.value = option.dataset.product || '—';
             if (activityOrigin) activityOrigin.value = option.dataset.origin || '—';
             if (activityWarehouse) activityWarehouse.value = option.dataset.warehouse || '—';
+            if (activityStart) activityStart.value = option.dataset.start || '—';
             if (productionCloseStatus) {
                 const isClosed = option.dataset.status === 'closed';
                 productionCloseStatus.value = isClosed ? 'Cerrado' : 'Abierto';

@@ -124,6 +124,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/surveillance/veto', [\App\Http\Controllers\SurveillanceController::class , 'vetoIndex'])->name('surveillance.veto');
         Route::get('/surveillance/operators/search', [\App\Http\Controllers\SurveillanceController::class , 'searchOperators'])->name('surveillance.operators.search');
         Route::post('/surveillance/operators/{id}/veto', [\App\Http\Controllers\SurveillanceController::class , 'vetoOperator'])->name('surveillance.operators.veto');
+        Route::post('/surveillance/operators/{id}/unveto', [\App\Http\Controllers\SurveillanceController::class , 'unvetoOperator'])->name('surveillance.operators.unveto');
 
         // Scale Module
         Route::get('/scale/entry-mp', [\App\Http\Controllers\WeightTicketController::class , 'createEntry'])->name('scale.entry-mp');

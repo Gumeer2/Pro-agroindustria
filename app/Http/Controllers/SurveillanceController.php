@@ -8,6 +8,7 @@ use App\Models\ExitOperator;
 use App\Models\ShipmentOrder;
 use App\Models\Client;
 use App\Models\Product;
+use App\Models\OperatorVetoLog;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Carbon\Carbon;
@@ -743,9 +744,77 @@ class SurveillanceController extends Controller
         return back()->with('success', "Salida registrada exitosamente para {$processedCount} elemento(s).");
     }
 
-    public function vetoIndex()
+    public function vetoIndex(Request $request)
     {
-        return Inertia::render('Surveillance/VetoOperator');
+        // 1. Fetch currently vetoed operators (ExitOperator and VesselOperator)
+        $vetoedExitOperators = ExitOperator::with('vetoedByUser')
+            ->where('status', 'vetoed')
+            ->orderBy('vetoed_at', 'desc')
+            ->orderBy('updated_at', 'desc')
+            ->get()
+            ->map(fn($op) => $this->formatExitOperator($op));
+
+        $vetoedVesselOperators = VesselOperator::with('vetoedByUser')
+            ->where('status', 'vetoed')
+            ->orderBy('vetoed_at', 'desc')
+            ->orderBy('updated_at', 'desc')
+            ->get()
+            ->map(fn($vo) => $this->formatVesselOperator($vo));
+
+        $allVetoed = $vetoedExitOperators->concat($vetoedVesselOperators)->values();
+
+        // 2. Query history logs with filters
+        $historyQuery = OperatorVetoLog::with('user')->orderBy('created_at', 'desc');
+
+        if ($request->filled('action') && in_array($request->action, ['vetoed', 'unvetoed'])) {
+            $historyQuery->where('action', $request->action);
+        }
+
+        if ($request->filled('history_search')) {
+            $term = trim($request->history_search);
+            $historyQuery->where(function ($q) use ($term) {
+                $q->where('operator_name', 'like', "%{$term}%")
+                  ->orWhere('tractor_plate', 'like', "%{$term}%")
+                  ->orWhere('trailer_plate', 'like', "%{$term}%")
+                  ->orWhere('transport_line', 'like', "%{$term}%")
+                  ->orWhere('economic_number', 'like', "%{$term}%")
+                  ->orWhere('license', 'like', "%{$term}%")
+                  ->orWhere('reason', 'like', "%{$term}%")
+                  ->orWhereHas('user', function ($uq) use ($term) {
+                      $uq->where('name', 'like', "%{$term}%");
+                  });
+            });
+        }
+
+        if ($request->filled('date_from')) {
+            $historyQuery->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $historyQuery->whereDate('created_at', '<=', $request->date_to);
+        }
+
+        $historyLogs = $historyQuery->paginate(15)->withQueryString();
+
+        // 3. Stats for dashboard counters
+        $stats = [
+            'active_vetoed_count' => $allVetoed->count(),
+            'total_history_count' => OperatorVetoLog::count(),
+            'total_vetoes'        => OperatorVetoLog::where('action', 'vetoed')->count(),
+            'total_unvetoes'      => OperatorVetoLog::where('action', 'unvetoed')->count(),
+        ];
+
+        return Inertia::render('Surveillance/VetoOperator', [
+            'vetoed_operators' => $allVetoed,
+            'history_logs'     => $historyLogs,
+            'stats'            => $stats,
+            'filters'          => [
+                'action'         => $request->action ?? 'all',
+                'history_search' => $request->history_search ?? '',
+                'date_from'      => $request->date_from ?? '',
+                'date_to'        => $request->date_to ?? '',
+            ],
+        ]);
     }
 
     public function searchOperators(Request $request)
@@ -757,9 +826,23 @@ class SurveillanceController extends Controller
 
         // If explicitly searching "vetado" or "vetados", return vetoed operators
         if (in_array(mb_strtolower($queryText, 'UTF-8'), ['vetado', 'vetados', 'vetar'])) {
-            $vetoedOps = ExitOperator::where('status', 'vetoed')->orderBy('updated_at', 'desc')->limit(20)->get();
-            if ($vetoedOps->isNotEmpty()) {
-                return response()->json($vetoedOps);
+            $vetoedExit = ExitOperator::with(['vetoedByUser', 'unvetoedByUser'])
+                ->where('status', 'vetoed')
+                ->orderBy('updated_at', 'desc')
+                ->limit(20)
+                ->get()
+                ->map(fn($op) => $this->formatExitOperator($op));
+
+            $vetoedVessel = VesselOperator::with(['vetoedByUser', 'unvetoedByUser'])
+                ->where('status', 'vetoed')
+                ->orderBy('updated_at', 'desc')
+                ->limit(20)
+                ->get()
+                ->map(fn($vo) => $this->formatVesselOperator($vo));
+
+            $combined = $vetoedExit->concat($vetoedVessel)->values();
+            if ($combined->isNotEmpty()) {
+                return response()->json($combined);
             }
         }
 
@@ -775,53 +858,55 @@ class SurveillanceController extends Controller
         }
 
         if ($cleanId !== null && $cleanId > 0) {
-            $exactOperator = ExitOperator::find($cleanId);
+            $exactOperator = ExitOperator::with(['vetoedByUser', 'unvetoedByUser'])->find($cleanId);
             if ($exactOperator) {
-                return response()->json([$exactOperator]);
+                return response()->json([$this->formatExitOperator($exactOperator)]);
             }
         }
 
         // Search in ExitOperator by fields (both active and vetoed)
-        $operators = ExitOperator::where(function ($q) use ($queryText, $cleanId) {
-            if ($cleanId !== null && $cleanId > 0) {
-                $q->orWhere('id', $cleanId);
-            }
-            $q->orWhere('name', 'like', "%{$queryText}%")
-              ->orWhere('tractor_plate', 'like', "%{$queryText}%")
-              ->orWhere('trailer_plate', 'like', "%{$queryText}%")
-              ->orWhere('economic_number', 'like', "%{$queryText}%")
-              ->orWhere('license', 'like', "%{$queryText}%")
-              ->orWhere('transport_line', 'like', "%{$queryText}%")
-              ->orWhere('real_transport_line', 'like', "%{$queryText}%");
-        })
-        ->orderByRaw("CASE WHEN name = ? THEN 0 WHEN status = 'vetoed' THEN 1 ELSE 2 END", [$queryText])
-        ->orderBy('updated_at', 'desc')
-        ->limit(10)
-        ->get();
+        $operators = ExitOperator::with(['vetoedByUser', 'unvetoedByUser'])
+            ->where(function ($q) use ($queryText, $cleanId) {
+                if ($cleanId !== null && $cleanId > 0) {
+                    $q->orWhere('id', $cleanId);
+                }
+                $q->orWhere('name', 'like', "%{$queryText}%")
+                  ->orWhere('tractor_plate', 'like', "%{$queryText}%")
+                  ->orWhere('trailer_plate', 'like', "%{$queryText}%")
+                  ->orWhere('economic_number', 'like', "%{$queryText}%")
+                  ->orWhere('license', 'like', "%{$queryText}%")
+                  ->orWhere('transport_line', 'like', "%{$queryText}%")
+                  ->orWhere('real_transport_line', 'like', "%{$queryText}%");
+            })
+            ->orderByRaw("CASE WHEN name = ? THEN 0 WHEN status = 'vetoed' THEN 1 ELSE 2 END", [$queryText])
+            ->orderBy('updated_at', 'desc')
+            ->limit(10)
+            ->get();
 
         if ($operators->isNotEmpty()) {
-            return response()->json($operators);
+            return response()->json($operators->map(fn($op) => $this->formatExitOperator($op)));
         }
 
         // Fallback to VesselOperator
         if ($cleanId !== null && $cleanId > 0) {
-            $vesselExact = VesselOperator::find($cleanId);
+            $vesselExact = VesselOperator::with(['vetoedByUser', 'unvetoedByUser'])->find($cleanId);
             if ($vesselExact) {
                 return response()->json([$this->formatVesselOperator($vesselExact)]);
             }
         }
 
-        $vesselOps = VesselOperator::where(function ($q) use ($queryText) {
-            $q->where('operator_name', 'like', "%{$queryText}%")
-              ->orWhere('tractor_plate', 'like', "%{$queryText}%")
-              ->orWhere('trailer_plate', 'like', "%{$queryText}%")
-              ->orWhere('license', 'like', "%{$queryText}%")
-              ->orWhere('economic_number', 'like', "%{$queryText}%");
-        })
-        ->orderByRaw("CASE WHEN status = 'vetoed' THEN 0 ELSE 1 END")
-        ->orderBy('updated_at', 'desc')
-        ->limit(10)
-        ->get();
+        $vesselOps = VesselOperator::with(['vetoedByUser', 'unvetoedByUser'])
+            ->where(function ($q) use ($queryText) {
+                $q->where('operator_name', 'like', "%{$queryText}%")
+                  ->orWhere('tractor_plate', 'like', "%{$queryText}%")
+                  ->orWhere('trailer_plate', 'like', "%{$queryText}%")
+                  ->orWhere('license', 'like', "%{$queryText}%")
+                  ->orWhere('economic_number', 'like', "%{$queryText}%");
+            })
+            ->orderByRaw("CASE WHEN status = 'vetoed' THEN 0 ELSE 1 END")
+            ->orderBy('updated_at', 'desc')
+            ->limit(10)
+            ->get();
 
         if ($vesselOps->isNotEmpty()) {
             return response()->json($vesselOps->map(fn($vo) => $this->formatVesselOperator($vo)));
@@ -830,42 +915,160 @@ class SurveillanceController extends Controller
         return response()->json([]);
     }
 
-    private function formatVesselOperator($vo)
+    private function formatExitOperator($op)
     {
         return [
-            'id' => $vo->id,
-            'name' => $vo->operator_name ?? $vo->name ?? '',
-            'license' => $vo->license ?? '',
-            'transport_line' => $vo->transporter_line ?? $vo->transport_line ?? '',
-            'real_transport_line' => $vo->real_transporter_line ?? $vo->real_transport_line ?? '',
-            'economic_number' => $vo->economic_number ?? '',
-            'unit_type' => $vo->unit_type ?? '',
-            'brand_model' => $vo->brand_model ?? '',
-            'tractor_plate' => $vo->tractor_plate ?? '',
-            'trailer_plate' => $vo->trailer_plate ?? '',
-            'policy' => $vo->policy ?? '',
-            'validity' => $vo->validity ?? '',
-            'status' => $vo->status ?? 'active',
+            'id'                  => $op->id,
+            'type'                => 'exit',
+            'name'                => $op->name,
+            'license'             => $op->license ?? '',
+            'transport_line'      => $op->transport_line ?? '',
+            'real_transport_line' => $op->real_transport_line ?? '',
+            'economic_number'     => $op->economic_number ?? '',
+            'unit_type'           => $op->unit_type ?? '',
+            'brand_model'         => $op->brand_model ?? '',
+            'tractor_plate'       => $op->tractor_plate ?? '',
+            'trailer_plate'       => $op->trailer_plate ?? '',
+            'policy'              => $op->policy ?? '',
+            'validity'            => $op->validity ? (is_string($op->validity) ? $op->validity : $op->validity->format('Y-m-d')) : '',
+            'status'              => $op->status ?? 'active',
+            'veto_reason'         => $op->veto_reason ?? '',
+            'vetoed_at'           => $op->vetoed_at ? Carbon::parse($op->vetoed_at)->format('Y-m-d H:i:s') : null,
+            'vetoed_by_name'      => $op->vetoedByUser?->name ?? null,
+            'unveto_reason'       => $op->unveto_reason ?? '',
+            'unvetoed_at'         => $op->unvetoed_at ? Carbon::parse($op->unvetoed_at)->format('Y-m-d H:i:s') : null,
+            'unvetoed_by_name'    => $op->unvetoedByUser?->name ?? null,
         ];
     }
 
-    public function vetoOperator($id)
+    private function formatVesselOperator($vo)
     {
-        $operator = ExitOperator::find($id);
-        if ($operator) {
-            $operator->status = 'vetoed';
-            $operator->save();
-            return back();
+        return [
+            'id'                  => $vo->id,
+            'type'                => 'vessel',
+            'name'                => $vo->operator_name ?? $vo->name ?? '',
+            'license'             => $vo->license ?? '',
+            'transport_line'      => $vo->transporter_line ?? $vo->transport_line ?? '',
+            'real_transport_line' => $vo->real_transporter_line ?? $vo->real_transport_line ?? '',
+            'economic_number'     => $vo->economic_number ?? '',
+            'unit_type'           => $vo->unit_type ?? '',
+            'brand_model'         => $vo->brand_model ?? '',
+            'tractor_plate'       => $vo->tractor_plate ?? '',
+            'trailer_plate'       => $vo->trailer_plate ?? '',
+            'policy'              => $vo->policy ?? '',
+            'validity'            => $vo->validity ? (is_string($vo->validity) ? $vo->validity : $vo->validity->format('Y-m-d')) : '',
+            'status'              => $vo->status ?? 'active',
+            'veto_reason'         => $vo->veto_reason ?? '',
+            'vetoed_at'           => $vo->vetoed_at ? Carbon::parse($vo->vetoed_at)->format('Y-m-d H:i:s') : null,
+            'vetoed_by_name'      => $vo->vetoedByUser?->name ?? null,
+            'unveto_reason'       => $vo->unveto_reason ?? '',
+            'unvetoed_at'         => $vo->unvetoed_at ? Carbon::parse($vo->unvetoed_at)->format('Y-m-d H:i:s') : null,
+            'unvetoed_by_name'    => $vo->unvetoedByUser?->name ?? null,
+        ];
+    }
+
+    public function vetoOperator(Request $request, $id)
+    {
+        $request->validate([
+            'reason' => 'nullable|string|max:1000',
+            'type'   => 'nullable|string|in:exit,vessel',
+        ]);
+
+        $reason = trim($request->input('reason', '')) ?: 'Veto administrativo';
+        $userId = auth()->id();
+        $now = Carbon::now();
+
+        $operator = null;
+        $type = $request->input('type');
+
+        if ($type === 'vessel') {
+            $operator = VesselOperator::find($id);
+        } elseif ($type === 'exit') {
+            $operator = ExitOperator::find($id);
+        } else {
+            $operator = ExitOperator::find($id) ?: VesselOperator::find($id);
         }
 
-        $vesselOperator = VesselOperator::find($id);
-        if ($vesselOperator) {
-            $vesselOperator->status = 'vetoed';
-            $vesselOperator->save();
-            return back();
+        if (!$operator) {
+            return back()->with('error', 'Operador no encontrado.');
         }
 
-        abort(404, 'Operador no encontrado.');
+        $opName = $operator->name ?? $operator->operator_name ?? 'Operador';
+
+        $operator->status = 'vetoed';
+        $operator->veto_reason = $reason;
+        $operator->vetoed_at = $now;
+        $operator->vetoed_by = $userId;
+        $operator->save();
+
+        OperatorVetoLog::create([
+            'operator_id'     => $operator->id,
+            'operator_type'   => get_class($operator),
+            'operator_name'   => $opName,
+            'license'         => $operator->license ?? null,
+            'tractor_plate'   => $operator->tractor_plate ?? null,
+            'trailer_plate'   => $operator->trailer_plate ?? null,
+            'transport_line'  => $operator->transport_line ?? $operator->transporter_line ?? null,
+            'economic_number' => $operator->economic_number ?? null,
+            'action'          => 'vetoed',
+            'reason'          => $reason,
+            'user_id'         => $userId,
+            'created_at'      => $now,
+        ]);
+
+        return back()->with('success', "El operador {$opName} ha sido VETADO exitosamente.");
+    }
+
+    public function unvetoOperator(Request $request, $id)
+    {
+        $request->validate([
+            'reason' => 'nullable|string|max:1000',
+            'type'   => 'nullable|string|in:exit,vessel',
+        ]);
+
+        $reason = trim($request->input('reason', '')) ?: 'Retiro de veto autorizado';
+        $userId = auth()->id();
+        $now = Carbon::now();
+
+        $operator = null;
+        $type = $request->input('type');
+
+        if ($type === 'vessel') {
+            $operator = VesselOperator::find($id);
+        } elseif ($type === 'exit') {
+            $operator = ExitOperator::find($id);
+        } else {
+            $operator = ExitOperator::find($id) ?: VesselOperator::find($id);
+        }
+
+        if (!$operator) {
+            return back()->with('error', 'Operador no encontrado.');
+        }
+
+        $opName = $operator->name ?? $operator->operator_name ?? 'Operador';
+
+        $operator->status = 'active';
+        $operator->unveto_reason = $reason;
+        $operator->unvetoed_at = $now;
+        $operator->unvetoed_by = $userId;
+        $operator->save();
+
+        OperatorVetoLog::create([
+            'operator_id'     => $operator->id,
+            'operator_type'   => get_class($operator),
+            'operator_name'   => $opName,
+            'license'         => $operator->license ?? null,
+            'tractor_plate'   => $operator->tractor_plate ?? null,
+            'trailer_plate'   => $operator->trailer_plate ?? null,
+            'transport_line'  => $operator->transport_line ?? $operator->transporter_line ?? null,
+            'economic_number' => $operator->economic_number ?? null,
+            'action'          => 'unvetoed',
+            'reason'          => $reason,
+            'user_id'         => $userId,
+            'created_at'      => $now,
+        ]);
+
+        return back()->with('success', "Se ha retirado el veto al operador {$opName} exitosamente. Su estatus ahora es ACTIVO.");
     }
 
     /**
@@ -1017,6 +1220,7 @@ class SurveillanceController extends Controller
             'origin'         => $order->origin?->name ?? 'N/A',
             'operator_name'  => $order->operator_name ?? $subject->name,
             'tractor_plate'  => $order->tractor_plate ?? $subject->tractor_plate,
+            'trailer_plate'  => $order->trailer_plate ?? $subject->trailer_plate,
             'economic_number'=> $order->economic_number ?? $order->unit_number ?? $subject->economic_number,
             'transport_line' => $order->transport_company ?? $subject->transport_line,
         ];

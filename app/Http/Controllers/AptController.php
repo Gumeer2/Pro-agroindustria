@@ -46,7 +46,7 @@ class AptController extends Controller
         }
 
         if ($request->boolean('activity')) {
-            $registrationQuery = \App\Models\ProductionShiftStart::with(['user:id,name', 'lot:id,folio,plant_origin,warehouse', 'lots:id,folio,plant_origin,warehouse'])
+            $registrationQuery = \App\Models\ProductionShiftStart::with(['user:id,name', 'lot:id,folio,plant_origin,warehouse,created_at', 'lots:id,folio,plant_origin,warehouse,created_at'])
                 ->where('shift', $request->input('shift'))
                 ->where('lot_id', $request->input('lot'));
 
@@ -201,7 +201,7 @@ class AptController extends Controller
         $this->ensureProductionActivityTable();
         $authUser = auth()->user();
         $isJefeOrAdmin = $this->isWarehouseChief($authUser);
-        $registrationQuery = \App\Models\ProductionShiftStart::with(['user:id,name', 'lot:id,folio,plant_origin,warehouse', 'lots:id,folio,plant_origin,warehouse']);
+        $registrationQuery = \App\Models\ProductionShiftStart::with(['user:id,name', 'lot:id,folio,plant_origin,warehouse,created_at', 'lots:id,folio,plant_origin,warehouse,created_at']);
 
         $registration = null;
         if ($request->filled('shift_id')) {
@@ -456,7 +456,7 @@ class AptController extends Controller
     {
         $this->ensureProductionActivityTable();
         $authUser = auth()->user();
-        $registrationQuery = \App\Models\ProductionShiftStart::with(['user:id,name', 'lot:id,folio,plant_origin,warehouse', 'lots:id,folio,plant_origin,warehouse']);
+        $registrationQuery = \App\Models\ProductionShiftStart::with(['user:id,name', 'lot:id,folio,plant_origin,warehouse,created_at', 'lots:id,folio,plant_origin,warehouse,created_at']);
 
         $registration = null;
         if ($request->filled('shift_id')) {
