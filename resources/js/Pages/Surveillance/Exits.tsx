@@ -342,6 +342,17 @@ export default function Exits({
         return orders && orders.length > 0;
     }).length;
 
+    // Track operators that currently have orders linked
+    const operatorIdsWithOrders = new Set(
+        inPlantLogs
+            .filter((l) => {
+                const o = l.shipment_orders_data || l.shipment_orders;
+                return o && o.length > 0;
+            })
+            .map((l) => l.subject_id || l.subject?.id)
+            .filter(Boolean)
+    );
+
     // Flatten logs so each shipment order gets its own row
     const displayRows = filteredLogs.flatMap((log) => {
         const orders = log.shipment_orders_data || log.shipment_orders;
@@ -352,6 +363,13 @@ export default function Exits({
                 order,
             }));
         }
+
+        // If this operator already has an entry with an order, do not duplicate with an empty row
+        const opId = log.subject_id || log.subject?.id;
+        if (opId && operatorIdsWithOrders.has(opId)) {
+            return [];
+        }
+
         return [{
             rowKey: `${log.id}-no-order`,
             log,

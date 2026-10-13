@@ -129,6 +129,21 @@ class SurveillanceController extends Controller
      */
     public function exitsIndex()
     {
+        // Clean up duplicate empty logs for operators who already have an in-plant entry with orders
+        $inPlantWithOrdersOpIds = AccessLog::where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->whereHas('shipmentOrders')
+            ->pluck('subject_id')
+            ->toArray();
+
+        if (!empty($inPlantWithOrdersOpIds)) {
+            AccessLog::where('status', 'in_plant')
+                ->whereNull('exit_at')
+                ->whereIn('subject_id', $inPlantWithOrdersOpIds)
+                ->whereDoesntHave('shipmentOrders')
+                ->delete();
+        }
+
         $logs = AccessLog::with([
             'subject',
             'user',
@@ -1266,19 +1281,45 @@ class SurveillanceController extends Controller
             ->where('status', 'pending')
             ->delete();
 
-        // Automatically create in_plant AccessLog with current timestamp
-        $now = Carbon::now();
-        $log = AccessLog::create([
-            'subject_id'       => $subject->id,
-            'subject_type'     => $type,
-            'status'           => 'in_plant',
-            'entry_at'         => $now,
-            'checklist_passed' => true,
-            'user_id'          => auth()->id(),
-            'notes'            => "Entrada registrada mediante escaneo de orden de embarque {$order->folio}",
-        ]);
+        // Check if operator already has an active in_plant log (e.g. from access QR scan)
+        $existingOpLog = AccessLog::where('subject_id', $subject->id)
+            ->where('subject_type', $type)
+            ->where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->first();
 
-        $log->shipmentOrders()->sync([$order->id]);
+        $now = Carbon::now();
+
+        if ($existingOpLog) {
+            $log = $existingOpLog;
+            $existingOrderIds = $log->shipmentOrders()->pluck('shipment_orders.id')->toArray();
+            $mergedOrderIds = array_slice(array_unique(array_merge($existingOrderIds, [$order->id])), 0, 3);
+            $log->shipmentOrders()->sync($mergedOrderIds);
+            $notes = $log->notes ? ($log->notes . " | Orden vinculada: {$order->folio}") : "Entrada registrada con orden {$order->folio}";
+            $log->update(['notes' => $notes]);
+        } else {
+            // Automatically create in_plant AccessLog with current timestamp
+            $log = AccessLog::create([
+                'subject_id'       => $subject->id,
+                'subject_type'     => $type,
+                'status'           => 'in_plant',
+                'entry_at'         => $now,
+                'checklist_passed' => true,
+                'user_id'          => auth()->id(),
+                'notes'            => "Entrada registrada mediante escaneo de orden de embarque {$order->folio}",
+            ]);
+
+            $log->shipmentOrders()->sync([$order->id]);
+        }
+
+        // Clean up any other empty in-plant logs for this operator so they never appear twice
+        AccessLog::where('subject_id', $subject->id)
+            ->where('subject_type', $type)
+            ->where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->where('id', '!=', $log->id)
+            ->whereDoesntHave('shipmentOrders')
+            ->delete();
 
         return response()->json([
             'success'          => true,
@@ -1392,19 +1433,45 @@ class SurveillanceController extends Controller
             ->where('status', 'pending')
             ->delete();
 
-        // Create new in_plant AccessLog directly with entry timestamp NOW
-        $now = Carbon::now();
-        $log = AccessLog::create([
-            'subject_id'       => $subject->id,
-            'subject_type'     => $type,
-            'status'           => 'in_plant',
-            'entry_at'         => $now,
-            'checklist_passed' => true,
-            'user_id'          => auth()->id(),
-            'notes'            => $request->notes ?? "Entrada registrada mediante orden de embarque {$order->folio}",
-        ]);
+        // Check if operator already has an active in_plant log (e.g. from access QR scan)
+        $existingOpLog = AccessLog::where('subject_id', $subject->id)
+            ->where('subject_type', $type)
+            ->where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->first();
 
-        $log->shipmentOrders()->sync($orderIds);
+        $now = Carbon::now();
+
+        if ($existingOpLog) {
+            $log = $existingOpLog;
+            $existingOrderIds = $log->shipmentOrders()->pluck('shipment_orders.id')->toArray();
+            $mergedOrderIds = array_slice(array_unique(array_merge($existingOrderIds, $orderIds)), 0, 3);
+            $log->shipmentOrders()->sync($mergedOrderIds);
+            $notes = $request->notes ?? ($log->notes ? ($log->notes . " | Orden vinculada: {$order->folio}") : "Entrada con orden {$order->folio}");
+            $log->update(['notes' => $notes]);
+        } else {
+            // Create new in_plant AccessLog directly with entry timestamp NOW
+            $log = AccessLog::create([
+                'subject_id'       => $subject->id,
+                'subject_type'     => $type,
+                'status'           => 'in_plant',
+                'entry_at'         => $now,
+                'checklist_passed' => true,
+                'user_id'          => auth()->id(),
+                'notes'            => $request->notes ?? "Entrada registrada mediante orden de embarque {$order->folio}",
+            ]);
+
+            $log->shipmentOrders()->sync($orderIds);
+        }
+
+        // Clean up any other empty in-plant logs for this operator so they never appear twice
+        AccessLog::where('subject_id', $subject->id)
+            ->where('subject_type', $type)
+            ->where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->where('id', '!=', $log->id)
+            ->whereDoesntHave('shipmentOrders')
+            ->delete();
 
         return response()->json([
             'success'  => true,
