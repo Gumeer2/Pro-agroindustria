@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/Layouts/DashboardLayout";
-import { Head, useForm, router } from "@inertiajs/react";
+import { Head, useForm, router, Link } from "@inertiajs/react";
 import {
     Scale,
     Truck,
@@ -10,6 +10,7 @@ import {
     Warehouse,
     Box,
     ArrowRight,
+    ArrowLeft,
     Search,
     Camera,
     X,
@@ -25,6 +26,8 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import { useScale } from "@/Contexts/ScaleContext";
 import ReferenceDropdown from "@/Components/ReferenceDropdown";
+import ActiveScaleIndicator from "@/Components/ActiveScaleIndicator";
+import ScaleModal from "@/Components/ScaleModal";
 
 export default function ExitMP({
     auth,
@@ -46,14 +49,38 @@ export default function ExitMP({
     const [selectedOriginId, setSelectedOriginId] = useState<number | string>("");
     const isSearchingRef = useRef(false);
 
+    // Active Scale State
+    const [scaleId, setScaleId] = useState<number>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem("selected_scale_id");
+            if (saved) return parseInt(saved);
+        }
+        return active_scale_id || 1;
+    });
+    const [showScaleModal, setShowScaleModal] = useState(false);
+
+    const handleScaleSelect = (id: number) => {
+        setScaleId(id);
+        setData("scale_id", id);
+        localStorage.setItem("selected_scale_id", id.toString());
+        if (typeof document !== 'undefined') {
+            document.cookie = `selected_scale_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
+        }
+        setShowScaleModal(false);
+    };
+
     // State for Weighing
     const { weight, isConnected, connectScale, setManualWeight } = useScale();
     const [capturedWeight, setCapturedWeight] = useState<number | null>(null);
 
+    const initialScaleId = typeof window !== 'undefined' && localStorage.getItem("selected_scale_id")
+        ? parseInt(localStorage.getItem("selected_scale_id")!)
+        : (active_scale_id || 1);
+
     const { data, setData, post, processing, errors } = useForm({
         shipment_order_id: order?.id || "",
         weight: "", // Second Weight
-        scale_id: active_scale_id, // Exit Scale
+        scale_id: initialScaleId, // Exit Scale
         lot_id: order?.lot_id ? order.lot_id.toString() : "",
         packaging_type: "N/A",
         warehouse: order?.is_external_warehouse 
@@ -63,6 +90,13 @@ export default function ExitMP({
         reference: order?.reference || "",
         documenter_id: "",
     });
+
+    useEffect(() => {
+        const saved = localStorage.getItem("selected_scale_id");
+        const current = saved ? parseInt(saved) : (active_scale_id || 1);
+        setScaleId(current);
+        setData("scale_id", current);
+    }, [active_scale_id]);
 
     useEffect(() => {
         if (capturedWeight !== null) {
@@ -171,7 +205,7 @@ export default function ExitMP({
                 // We could just set state, but full page reload is safer for state reset
                 router.visit(
                     route("scale.exit", res.id) +
-                    `?scale_id=${active_scale_id}`,
+                    `?scale_id=${scaleId}`,
                 );
             } else {
                 alert(
@@ -197,7 +231,21 @@ export default function ExitMP({
                 header="Báscula - Salida / Destare"
             >
                 <Head title="Buscar Salida" />
-                <div className="max-w-xl mx-auto py-12 px-4">
+                <div className="max-w-xl mx-auto py-12 px-4 space-y-4">
+                    <div className="flex justify-between items-center">
+                        <Link
+                            href={route("scale.index", { scale_id: scaleId })}
+                            className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium"
+                        >
+                            <ArrowLeft className="w-4 h-4 mr-1" />
+                            Volver
+                        </Link>
+                        <ActiveScaleIndicator 
+                            scaleId={scaleId} 
+                            onClick={() => setShowScaleModal(true)} 
+                        />
+                    </div>
+
                     <div className="bg-white p-8 rounded-2xl shadow-lg text-center">
                         <div className="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
                             <Search className="w-10 h-10 text-indigo-600" />
@@ -272,6 +320,14 @@ export default function ExitMP({
                         </div>
                     </div>
                 </div>
+
+                {showScaleModal && (
+                    <ScaleModal
+                        currentScale={scaleId}
+                        onSelect={handleScaleSelect}
+                        onClose={() => setShowScaleModal(false)}
+                    />
+                )}
             </DashboardLayout>
         );
     }
@@ -293,6 +349,21 @@ export default function ExitMP({
             <Head title="Salida Báscula" />
 
             <div className="py-8 max-w-7xl mx-auto px-4 space-y-8">
+                {/* Header Bar */}
+                <div className="flex justify-between items-center">
+                    <Link
+                        href={route("scale.index", { scale_id: scaleId })}
+                        className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium"
+                    >
+                        <ArrowLeft className="w-4 h-4 mr-1" />
+                        Volver
+                    </Link>
+                    <ActiveScaleIndicator 
+                        scaleId={scaleId} 
+                        onClick={() => setShowScaleModal(true)} 
+                    />
+                </div>
+
                 {/* Step Indicator / Process Flow */}
                 <div className="flex items-center justify-center gap-4 mb-2">
                     <div className="flex items-center gap-2">
@@ -706,6 +777,14 @@ export default function ExitMP({
                     </div>
                 </form>
             </div>
+
+            {showScaleModal && (
+                <ScaleModal
+                    currentScale={scaleId}
+                    onSelect={handleScaleSelect}
+                    onClose={() => setShowScaleModal(false)}
+                />
+            )}
         </DashboardLayout>
     );
 }

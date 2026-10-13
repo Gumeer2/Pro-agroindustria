@@ -643,7 +643,7 @@ class WeightTicketController extends Controller
 
     public function createEntry(Request $request)
     {
-        $scaleId = $request->query('scale_id', 1); // Default to 1 if not provided
+        $scaleId = $request->query('scale_id') ?? $request->cookie('selected_scale_id') ?? 1;
 
         $burreoVessels = Vessel::with(['client', 'product'])
             ->where('status', 'active')
@@ -664,7 +664,7 @@ class WeightTicketController extends Controller
 
     public function createEntrySale(Request $request)
     {
-        $scaleId = $request->query('scale_id', 1);
+        $scaleId = $request->query('scale_id') ?? $request->cookie('selected_scale_id') ?? 1;
 
         $pendingShipmentOrders = \App\Models\ShipmentOrder::whereDoesntHave('weight_ticket', function ($q) {
             $q->where('weighing_status', '!=', 'cancelled');
@@ -781,9 +781,11 @@ class WeightTicketController extends Controller
 
         $documenters = \App\Models\User::role('Documentador')->where('is_blocked', false)->orderBy('name')->get(['id', 'name']);
 
+        $scaleId = $request->input('scale_id') ?? $request->cookie('selected_scale_id') ?? 1;
+
         return Inertia::render('Scale/ExitMP', [
             'order' => $orderData,
-            'active_scale_id' => (int) $request->input('scale_id', 1),
+            'active_scale_id' => (int) $scaleId,
             'active_lots' => $activeLots,
             'documenters' => $documenters,
         ]);
@@ -1115,7 +1117,7 @@ class WeightTicketController extends Controller
                 $vesselId = !empty($validated['vessel_id']) ? $validated['vessel_id'] : null;
                 $productId = !empty($validated['product_id']) ? $validated['product_id'] : null;
                 $clientId = !empty($validated['client_id']) ? $validated['client_id'] : 1;
-                $scaleId = !empty($validated['scale_id']) ? $validated['scale_id'] : null;
+                $scaleId = !empty($validated['scale_id']) ? $validated['scale_id'] : ($request->cookie('selected_scale_id') ? (int) $request->cookie('selected_scale_id') : 1);
                 $exitOperatorId = !empty($validated['exit_operator_id']) ? $validated['exit_operator_id'] : null;
                 $vesselOperatorId = !empty($validated['vessel_operator_id']) ? $validated['vessel_operator_id'] : null;
 
@@ -1230,6 +1232,7 @@ class WeightTicketController extends Controller
             'observations' => 'nullable|string|max:1000',
             'reference' => 'nullable|string|max:255',
             'documenter_id' => 'required|exists:users,id',
+            'scale_id' => 'nullable|integer',
         ]);
 
         try {
@@ -1288,8 +1291,7 @@ class WeightTicketController extends Controller
                     \App\Services\UreaStockService::validateAvailableStock($order, $finalWarehouse, $netTons);
                 }
 
-                // Update Ticket
-                $ticket->update([
+                $ticketUpdate = [
                     'gross_weight' => $secondWeight,
                     'net_weight' => $net,
                     'weighing_status' => 'completed',
@@ -1298,7 +1300,16 @@ class WeightTicketController extends Controller
                     'packaging_type' => $validated['packaging_type'] ?? null,
                     'weighmaster_id' => auth()->id(),
                     'documenter_id' => $validated['documenter_id'] ?? null,
-                ]);
+                ];
+
+                if (!empty($validated['scale_id'])) {
+                    $ticketUpdate['scale_id'] = $validated['scale_id'];
+                } elseif ($request->cookie('selected_scale_id')) {
+                    $ticketUpdate['scale_id'] = (int) $request->cookie('selected_scale_id');
+                }
+
+                // Update Ticket
+                $ticket->update($ticketUpdate);
 
                 // Update Order Status and Warehouse
                 // Ensure reference is updated for Special Vessels

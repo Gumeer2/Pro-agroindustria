@@ -33,6 +33,7 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import { useScale } from "@/Contexts/ScaleContext";
 import ActiveScaleIndicator from "@/Components/ActiveScaleIndicator";
+import ScaleModal from "@/Components/ScaleModal";
 
 interface BurreoUnitType {
     unit_type: string;
@@ -76,6 +77,26 @@ export default function EntryMP({
     const [orderDetails, setOrderDetails] = useState<any>(null);
     const isSearchingRef = useRef(false);
 
+    // Active Scale State
+    const [scaleId, setScaleId] = useState<number>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem("selected_scale_id");
+            if (saved) return parseInt(saved);
+        }
+        return active_scale_id || 1;
+    });
+    const [showScaleModal, setShowScaleModal] = useState(false);
+
+    const handleScaleSelect = (id: number) => {
+        setScaleId(id);
+        setData("scale_id", id);
+        localStorage.setItem("selected_scale_id", id.toString());
+        if (typeof document !== 'undefined') {
+            document.cookie = `selected_scale_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
+        }
+        setShowScaleModal(false);
+    };
+
     // Burreo Averages State
     const [burreoVesselsData, setBurreoVesselsData] = useState<BurreoVesselStats[]>(burreo_vessels || []);
     const [selectedBurreoVesselId, setSelectedBurreoVesselId] = useState<string>(
@@ -84,10 +105,14 @@ export default function EntryMP({
     const [isRefreshingStats, setIsRefreshingStats] = useState(false);
     const [isApplying, setIsApplying] = useState(false);
 
+    const initialScaleId = typeof window !== 'undefined' && localStorage.getItem("selected_scale_id")
+        ? parseInt(localStorage.getItem("selected_scale_id")!)
+        : (active_scale_id || 1);
+
     const { data, setData, post, processing, errors, reset } = useForm({
         shipment_order_id: "",
         vessel_id: "",
-        scale_id: active_scale_id,
+        scale_id: initialScaleId,
 
         // Manual / Derived
         client_id: "",
@@ -117,7 +142,10 @@ export default function EntryMP({
     });
 
     useEffect(() => {
-        setData("scale_id", active_scale_id);
+        const saved = localStorage.getItem("selected_scale_id");
+        const current = saved ? parseInt(saved) : (active_scale_id || 1);
+        setScaleId(current);
+        setData("scale_id", current);
     }, [active_scale_id]);
 
     // Sync Weight to Form
@@ -399,7 +427,8 @@ export default function EntryMP({
 
                         {/* Scale Indicator */}
                         <ActiveScaleIndicator 
-                            scaleId={active_scale_id} 
+                            scaleId={scaleId} 
+                            onClick={() => setShowScaleModal(true)}
                             className="bg-indigo-900/50 border-indigo-700/50"
                         />
                     </div>
@@ -1010,6 +1039,14 @@ export default function EntryMP({
                     </div>
                 </div>
             </div>
+
+            {showScaleModal && (
+                <ScaleModal
+                    currentScale={scaleId}
+                    onSelect={handleScaleSelect}
+                    onClose={() => setShowScaleModal(false)}
+                />
+            )}
         </DashboardLayout>
     );
 }

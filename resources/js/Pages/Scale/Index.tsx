@@ -23,74 +23,9 @@ import {
 import { useState, useEffect } from "react";
 import Pagination from "@/Components/Pagination";
 import ActiveScaleIndicator from "@/Components/ActiveScaleIndicator";
+import ScaleModal from "@/Components/ScaleModal";
 
 import Swal from "sweetalert2";
-
-const ScaleModal = ({
-    onSelect,
-    currentScale,
-    onClose,
-}: {
-    onSelect: (id: number) => void;
-    currentScale: number;
-    onClose: () => void;
-}) => {
-    return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
-                <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 p-8 text-white relative">
-                    <button
-                        onClick={onClose}
-                        className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-full transition-colors"
-                    >
-                        <X className="w-6 h-6" />
-                    </button>
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md">
-                            <Scale className="w-8 h-8" />
-                        </div>
-                        <div>
-                            <h3 className="text-2xl font-black">Seleccionar Báscula</h3>
-                            <p className="text-indigo-100 text-sm font-medium">Báscula de trabajo activa</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-8">
-                    <div className="space-y-4">
-                        {[1, 2, 3].map((id) => (
-                            <button
-                                key={id}
-                                onClick={() => onSelect(id)}
-                                className={`w-full group relative flex items-center justify-between p-6 rounded-2xl border-2 transition-all duration-200 ${currentScale === id
-                                        ? "border-indigo-600 bg-indigo-50"
-                                        : "border-gray-100 hover:border-indigo-200 hover:bg-gray-50"
-                                    }`}
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className={`p-4 rounded-xl transition-colors ${currentScale === id
-                                            ? "bg-indigo-600 text-white"
-                                            : "bg-gray-100 text-gray-400 group-hover:bg-indigo-100 group-hover:text-indigo-600"
-                                        }`}>
-                                        <span className="text-xl font-black">{id}</span>
-                                    </div>
-                                    <div className="text-left">
-                                        <div className="font-black text-gray-900 text-lg">BASCULA 0{id}</div>
-                                    </div>
-                                </div>
-                                {currentScale === id && (
-                                    <div className="bg-indigo-600 text-white p-2 rounded-full shadow-lg shadow-indigo-200">
-                                        <CheckCircle2 className="w-5 h-5" />
-                                    </div>
-                                )}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 const Timer = ({ entryAt }: { entryAt: string }) => {
     const [time, setTime] = useState("");
@@ -159,7 +94,13 @@ export default function Index({
     filters?: { client_id: string, product_id: string, warehouse: string, presentation: string, search: string, tab: string };
 }) {
     // Persistent scale ID logic
-    const [scaleId, setScaleId] = useState<number>(1);
+    const [scaleId, setScaleId] = useState<number>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem("selected_scale_id");
+            if (saved) return parseInt(saved);
+        }
+        return 1;
+    });
     const [showScaleModal, setShowScaleModal] = useState(false);
     const [viewMode, setViewMode] = useState<"menu" | "table">("menu");
     // State for Operation Type (Venta vs Barco) - Linked to Server Filters
@@ -180,6 +121,11 @@ export default function Index({
         if (saved) {
             currentScaleId = parseInt(saved);
             setScaleId(currentScaleId);
+        }
+
+        // Keep cookie synced
+        if (typeof document !== 'undefined' && currentScaleId) {
+            document.cookie = `selected_scale_id=${currentScaleId}; path=/; max-age=31536000; SameSite=Lax`;
         }
 
         // If scale_id is not in URL, and we have a saved one (or default), refresh to sync with server
@@ -264,6 +210,9 @@ export default function Index({
     const handleScaleSelect = (id: number) => {
         setScaleId(id);
         localStorage.setItem("selected_scale_id", id.toString());
+        if (typeof document !== 'undefined') {
+            document.cookie = `selected_scale_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
+        }
         setShowScaleModal(false);
 
         // Notify server about scale change to refresh the list

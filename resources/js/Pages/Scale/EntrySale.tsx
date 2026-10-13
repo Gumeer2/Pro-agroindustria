@@ -24,6 +24,7 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import { useScale } from "@/Contexts/ScaleContext";
 import ActiveScaleIndicator from "@/Components/ActiveScaleIndicator";
+import ScaleModal from "@/Components/ScaleModal";
 
 export default function EntrySale({
     auth,
@@ -42,9 +43,33 @@ export default function EntrySale({
     const [showCamera, setShowCamera] = useState(false);
     const isSearchingRef = useRef(false);
 
+    // Active Scale State
+    const [scaleId, setScaleId] = useState<number>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem("selected_scale_id");
+            if (saved) return parseInt(saved);
+        }
+        return active_scale_id || 1;
+    });
+    const [showScaleModal, setShowScaleModal] = useState(false);
+
+    const handleScaleSelect = (id: number) => {
+        setScaleId(id);
+        setData("scale_id", id);
+        localStorage.setItem("selected_scale_id", id.toString());
+        if (typeof document !== 'undefined') {
+            document.cookie = `selected_scale_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
+        }
+        setShowScaleModal(false);
+    };
+
+    const initialScaleId = typeof window !== 'undefined' && localStorage.getItem("selected_scale_id")
+        ? parseInt(localStorage.getItem("selected_scale_id")!)
+        : (active_scale_id || 1);
+
     const { data, setData, post, processing, errors, reset } = useForm({
         shipment_order_id: "", // Maps to LoadingOrder ID
-        scale_id: active_scale_id,
+        scale_id: initialScaleId,
 
         // Snapshot / Display Fields (Read Only)
         provider: "",
@@ -76,7 +101,10 @@ export default function EntrySale({
     const [lockedFull, setLockedFull] = useState(false);
 
     useEffect(() => {
-        setData("scale_id", active_scale_id);
+        const saved = localStorage.getItem("selected_scale_id");
+        const current = saved ? parseInt(saved) : (active_scale_id || 1);
+        setScaleId(current);
+        setData("scale_id", current);
     }, [active_scale_id]);
 
     // Sync Weight to Form
@@ -305,7 +333,8 @@ export default function EntrySale({
 
                         {/* Scale Indicator */}
                         <ActiveScaleIndicator 
-                            scaleId={active_scale_id} 
+                            scaleId={scaleId} 
+                            onClick={() => setShowScaleModal(true)}
                             className="bg-blue-900/50 border-blue-700/50"
                         />
                     </div>
@@ -692,6 +721,14 @@ export default function EntrySale({
                     </div>
                 </form>
             </div>
+
+            {showScaleModal && (
+                <ScaleModal
+                    currentScale={scaleId}
+                    onSelect={handleScaleSelect}
+                    onClose={() => setShowScaleModal(false)}
+                />
+            )}
         </DashboardLayout>
     );
 }
