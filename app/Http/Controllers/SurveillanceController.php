@@ -22,7 +22,12 @@ class SurveillanceController extends Controller
     public function index()
     {
         $pendingCount = AccessLog::whereIn('status', ['pending', 'rejected'])->count();
-        $inPlantCount = AccessLog::where('status', 'in_plant')->whereNull('exit_at')->count();
+        $inPlantCount = AccessLog::where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->whereHas('shipmentOrders', function ($q) {
+                $q->whereNotIn('shipment_orders.status', ['closed']);
+            })
+            ->count();
         $vetoedCount = ExitOperator::where('status', 'vetoed')->count();
 
         return Inertia::render('Surveillance/Index', [
@@ -44,6 +49,9 @@ class SurveillanceController extends Controller
 
         $inPlantCount = AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
+            ->whereHas('shipmentOrders', function ($q) {
+                $q->whereNotIn('shipment_orders.status', ['closed']);
+            })
             ->count();
 
         return Inertia::render('Surveillance/Access', [

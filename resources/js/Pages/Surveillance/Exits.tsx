@@ -337,6 +337,11 @@ export default function Exits({
         return opName.includes(query) || plate.includes(query) || trailerPlate.includes(query) || econ.includes(query) || orders.includes(query);
     });
 
+    const inPlantWithOrdersCount = inPlantLogs.filter((log) => {
+        const orders = log.shipment_orders_data || log.shipment_orders;
+        return orders && orders.length > 0;
+    }).length;
+
     // Flatten logs so each shipment order gets its own row
     const displayRows = filteredLogs.flatMap((log) => {
         const orders = log.shipment_orders_data || log.shipment_orders;
@@ -416,7 +421,7 @@ export default function Exits({
                                         En Planta
                                     </p>
                                     <p className="text-lg font-black text-indigo-900 leading-none">
-                                        {inPlantLogs.length}
+                                        {inPlantWithOrdersCount}
                                     </p>
                                 </div>
                             </div>
