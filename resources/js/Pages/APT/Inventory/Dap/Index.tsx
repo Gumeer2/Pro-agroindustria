@@ -223,6 +223,7 @@ export default function DapInventoryIndex({
     const [scaleCubicle, setScaleCubicle] = useState("");
     const [scaleNotes, setScaleNotes] = useState("");
     const [scaleDate, setScaleDate] = useState("");
+    const [scaleQuantityTons, setScaleQuantityTons] = useState("");
     const [isSubmittingScale, setIsSubmittingScale] = useState(false);
 
     // Draft (Calado) Modal States
@@ -428,6 +429,7 @@ export default function DapInventoryIndex({
         setScaleCubicle("");
         setScaleNotes("");
         setScaleDate(getOperationalDate());
+        setScaleQuantityTons("");
         setIsScaleModalOpen(true);
     };
 
@@ -450,9 +452,9 @@ export default function DapInventoryIndex({
                 if (t.suggested_cubicle) {
                     setScaleCubicle(t.suggested_cubicle);
                 }
-                if (t.date) {
-                    setScaleDate(t.date);
-                }
+                // Use current operational date so entry counts for today's reception
+                setScaleDate(getOperationalDate());
+                setScaleQuantityTons(String(t.net_weight_tons ?? ""));
                 setScaleNotes(`Entrada por Báscula - Ticket: ${t.folio} | Producto: ${t.product_name} | Chofer: ${t.driver_name} (${t.plates})`);
             } else {
                 Swal.fire({
@@ -477,6 +479,8 @@ export default function DapInventoryIndex({
         if (!ticketData) return;
 
         setIsSubmittingScale(true);
+        const finalTons = parseFloat(scaleQuantityTons) > 0 ? parseFloat(scaleQuantityTons) : (ticketData.net_weight_tons || 0);
+
         router.post(
             route("apt.inventory.dap.daily.store"),
             {
@@ -486,7 +490,8 @@ export default function DapInventoryIndex({
                 cubicle: scaleCubicle || null,
                 plant_origin: ticketData.vessel_name || ticketData.product_name || "PLANTA DAP",
                 packaging: "Granel",
-                quantity_tons: ticketData.net_weight_tons,
+                quantity_tons: finalTons,
+                sacks_count: 1, // 1 ticket de báscula = 1 viaje
                 notes: scaleNotes,
                 supervisor_name: auth?.user?.name || "Báscula",
             },
@@ -495,10 +500,11 @@ export default function DapInventoryIndex({
                     setIsScaleModalOpen(false);
                     setTicketData(null);
                     setScaleQrInput("");
+                    setScaleQuantityTons("");
                     Swal.fire({
                         icon: "success",
                         title: "¡Entrada Registrada por Báscula!",
-                        html: `<b>${ticketData.net_weight_tons} TM</b> registradas en <b>${scaleWarehouse}</b>${scaleCubicle ? ` (Cubículo ${scaleCubicle})` : ""}.`,
+                        html: `<b>${finalTons} TM</b> registradas en <b>${scaleWarehouse}</b>${scaleCubicle ? ` (Cubículo ${scaleCubicle})` : ""}.`,
                         timer: 2200,
                         showConfirmButton: false,
                     });
@@ -1612,30 +1618,51 @@ export default function DapInventoryIndex({
                                             </div>
                                         </div>
 
-                                        {/* Highlighted Net Weight (Locked) */}
-                                        <div className="bg-amber-600/30 border border-amber-400/40 rounded-xl p-3.5 flex items-center justify-between">
+                                        {/* Highlighted Net Weight & Quantity Input */}
+                                        <div className="bg-amber-600/30 border border-amber-400/40 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                             <div className="flex items-center space-x-2">
                                                 <Scale className="w-5 h-5 text-amber-300" />
                                                 <div>
                                                     <span className="text-xs font-bold text-amber-200 block">
                                                         PESO BÁSCULA (PESO NETO)
                                                     </span>
-                                                    <span className="text-[10px] text-amber-300 flex items-center">
-                                                        🔒 Solo lectura · Calculado directamente de báscula
+                                                    <span className="text-[11px] text-amber-200">
+                                                        {ticketData.net_weight_kg ? Number(ticketData.net_weight_kg).toLocaleString("es-MX") : (Number(ticketData.net_weight_tons) * 1000).toLocaleString("es-MX")} kg = {ticketData.net_weight_tons} TM
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="text-right">
-                                                <span className="text-2xl font-black text-white">
-                                                    {ticketData.net_weight_tons}{" "}
-                                                    <span className="text-sm font-extrabold text-amber-200">TM</span>
-                                                </span>
+                                            <div className="flex items-center space-x-2 bg-white/10 rounded-lg p-1.5 border border-amber-400/30">
+                                                <label className="text-xs font-bold text-amber-200 whitespace-nowrap pl-1">Cantidad a Ingresar:</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.001"
+                                                    min="0.001"
+                                                    required
+                                                    value={scaleQuantityTons}
+                                                    onChange={(e) => setScaleQuantityTons(e.target.value)}
+                                                    className="w-32 py-1 px-2.5 rounded-lg bg-white text-gray-900 font-black text-right text-sm focus:ring-amber-500 focus:border-amber-500 border-0"
+                                                />
+                                                <span className="text-xs font-black text-amber-200 pr-1">TM</span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Warehouse & Cubicle Form */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {/* Warehouse, Date & Cubicle Form */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">
+                                                Fecha de Recepción <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={scaleDate}
+                                                onChange={(e) => setScaleDate(e.target.value)}
+                                                className="w-full rounded-xl border-gray-300 text-sm bg-white font-medium text-gray-900 focus:ring-amber-500 focus:border-amber-500"
+                                            />
+                                            <p className="text-[10px] text-gray-400 mt-0.5">Corte recepción (5:00 AM)</p>
+                                        </div>
+
                                         <div>
                                             <label className="block text-xs font-bold text-gray-700 mb-1">
                                                 Almacén Destino <span className="text-red-500">*</span>
@@ -1672,7 +1699,7 @@ export default function DapInventoryIndex({
                                             </select>
                                         </div>
 
-                                        <div className="sm:col-span-2">
+                                        <div className="sm:col-span-3">
                                             <label className="block text-xs font-bold text-gray-700 mb-1">
                                                 Notas / Observaciones
                                             </label>

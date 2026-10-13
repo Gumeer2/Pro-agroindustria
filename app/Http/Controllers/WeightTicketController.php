@@ -769,6 +769,12 @@ class WeightTicketController extends Controller
                 'observations' => $order->observations ?? '',
                 'is_external_warehouse' => (bool) ($order->vessel?->is_external_warehouse ?? false),
                 'has_chief_foreman' => (bool) ($order->vessel?->has_chief_foreman ?? false),
+                'vessel_id' => $order->vessel_id,
+                'vessel_name' => $order->vessel?->name,
+                'vessel_operation_type' => $order->vessel_operator_trip?->operation_type 
+                    ?? $order->vessel?->operation_type 
+                    ?? $order->vessel?->service_type 
+                    ?? 'Descarga',
             ];
         }
 
@@ -1231,7 +1237,7 @@ class WeightTicketController extends Controller
             'warehouse' => 'nullable|string',
             'observations' => 'nullable|string|max:1000',
             'reference' => 'nullable|string|max:255',
-            'documenter_id' => 'required|exists:users,id',
+            'documenter_id' => 'nullable|exists:users,id',
             'scale_id' => 'nullable|integer',
         ]);
 
@@ -1254,7 +1260,12 @@ class WeightTicketController extends Controller
                 }
 
                 // Validate Warehouse assignment if needed (mostly for Imports)
-                if (!$order->shipment_order_id && empty($order->warehouse)) {
+                $isVesselDischarge = $order->vessel_id && (
+                    strtolower($order->vessel_operator_trip?->operation_type ?? '') === 'descarga' ||
+                    strtolower($order->vessel?->service_type ?? '') === 'descarga' ||
+                    strtolower($order->vessel?->operation_type ?? '') === 'descarga'
+                );
+                if (!$order->shipment_order_id && empty($order->warehouse) && !$isVesselDischarge) {
                     // Bypass for external warehouse vessels
                     if (!$order->vessel || !$order->vessel->is_external_warehouse) {
                         throw new \Exception("ALERTA: No se puede destarar sin haber asignado Almacén en el módulo APT.");

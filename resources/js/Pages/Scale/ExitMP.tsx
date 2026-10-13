@@ -73,6 +73,11 @@ export default function ExitMP({
     const { weight, isConnected, connectScale, setManualWeight } = useScale();
     const [capturedWeight, setCapturedWeight] = useState<number | null>(null);
 
+    // Vessel & Operation Type logic (Carga / Descarga)
+    const isVessel = order?.type === 'vessel' || !!order?.vessel_id;
+    const vesselOp = (order?.vessel_operation_type || 'Descarga').toLowerCase();
+    const isVesselDischarge = isVessel && vesselOp === 'descarga';
+
     const initialScaleId = typeof window !== 'undefined' && localStorage.getItem("selected_scale_id")
         ? parseInt(localStorage.getItem("selected_scale_id")!)
         : (active_scale_id || 1);
@@ -595,9 +600,12 @@ export default function ExitMP({
 
                         {/* Order Info */}
                         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                            <h3 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b border-gray-100">
-                                Detalles de la Carga
-                            </h3>
+                            <div className="mb-4 pb-2 border-b border-gray-100">
+                                <h3 className="text-lg font-bold text-gray-800">
+                                    {isVesselDischarge ? "Detalles de la Descarga" : "Detalles de la Carga"}
+                                </h3>
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* OE Folio — solo para Tipo Venta (PRIMERO) */}
                                 {order.type === 'sale' && order.oe_folio && (
@@ -621,18 +629,24 @@ export default function ExitMP({
                                         {order.product}
                                     </div>
                                 </div>
-                                <div>
-                                    <InputLabel value="Peso Programado" />
-                                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 font-bold text-blue-800">
-                                        {order.programmed_weight ? `${Number(order.programmed_weight).toLocaleString()} ${order.type === 'sale' ? 'TM' : 'kg'}` : 'N/A'}
-                                    </div>
-                                </div>
-                                <div>
-                                    <InputLabel value="Consignado a" />
-                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-600">
-                                        {order.consignee || "N/A"}
-                                    </div>
-                                </div>
+
+                                {/* Ocultar Peso Programado y Consignado a cuando sea Descarga de Barco */}
+                                {!isVesselDischarge && (
+                                    <>
+                                        <div>
+                                            <InputLabel value="Peso Programado" />
+                                            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 font-bold text-blue-800">
+                                                {order.programmed_weight ? `${Number(order.programmed_weight).toLocaleString()} ${order.type === 'sale' ? 'TM' : 'kg'}` : 'N/A'}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <InputLabel value="Consignado a" />
+                                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-600">
+                                                {order.consignee || "N/A"}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Observaciones — solo para Tipo Venta */}
                                 {order.type === 'sale' && (
@@ -653,95 +667,97 @@ export default function ExitMP({
                                     </div>
                                 )}
 
-                                {/* New Dropdowns */}
-                                <div className="space-y-4 pt-4 border-t border-gray-100 md:col-span-2">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-1">
-                                            <InputLabel value="LOTE" className="text-indigo-600 font-black" />
-                                            <select
-                                                value={data.lot_id}
-                                                onChange={e => {
-                                                    const selectedLotId = e.target.value;
-                                                    const matchingLot = active_lots.find((l: any) => l.id?.toString() === selectedLotId?.toString());
-                                                    setData(prev => ({
-                                                        ...prev,
-                                                        lot_id: selectedLotId,
-                                                        warehouse: matchingLot?.warehouse || prev.warehouse
-                                                    }));
-                                                }}
-                                                disabled={!!order?.lot_id || order?.is_external_warehouse}
-                                                className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!order?.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
-                                            >
-                                                <option value="">{order?.is_external_warehouse ? 'N/A (EXTERNO)' : 'N/A'}</option>
-                                                {active_lots.map((lot: any) => (
-                                                    <option key={lot.id} value={lot.id?.toString()}>{lot.folio}</option>
-                                                ))}
-                                            </select>
-                                            {(() => {
-                                                const currentLot = active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString()) || (order?.lot_observations ? { observations: order.lot_observations } : null);
-                                                return currentLot?.observations ? (
-                                                    <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1 mt-1">
-                                                        <span className="font-bold">Obs. del Lote:</span> {currentLot.observations}
-                                                    </p>
-                                                ) : null;
-                                            })()}
-                                        </div>
-
-                                        <div className="space-y-1">
-                                            <div className="flex justify-between items-center">
-                                                <InputLabel value="ALMACÉN" className="text-indigo-600 font-black" />
-                                                {data.lot_id && (
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase">Auto por Lote</span>
-                                                )}
+                                {/* New Dropdowns: LOTE, ALMACÉN, ENVASE, DOCUMENTADOR — Ocultar si es Descarga de Barco */}
+                                {!isVesselDischarge && (
+                                    <div className="space-y-4 pt-4 border-t border-gray-100 md:col-span-2">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-1">
+                                                <InputLabel value="LOTE" className="text-indigo-600 font-black" />
+                                                <select
+                                                    value={data.lot_id}
+                                                    onChange={e => {
+                                                        const selectedLotId = e.target.value;
+                                                        const matchingLot = active_lots.find((l: any) => l.id?.toString() === selectedLotId?.toString());
+                                                        setData(prev => ({
+                                                            ...prev,
+                                                            lot_id: selectedLotId,
+                                                            warehouse: matchingLot?.warehouse || prev.warehouse
+                                                        }));
+                                                    }}
+                                                    disabled={!!order?.lot_id || order?.is_external_warehouse}
+                                                    className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!order?.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
+                                                >
+                                                    <option value="">{order?.is_external_warehouse ? 'N/A (EXTERNO)' : 'N/A'}</option>
+                                                    {active_lots.map((lot: any) => (
+                                                        <option key={lot.id} value={lot.id?.toString()}>{lot.folio}</option>
+                                                    ))}
+                                                </select>
+                                                {(() => {
+                                                    const currentLot = active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString()) || (order?.lot_observations ? { observations: order.lot_observations } : null);
+                                                    return currentLot?.observations ? (
+                                                        <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1 mt-1">
+                                                            <span className="font-bold">Obs. del Lote:</span> {currentLot.observations}
+                                                        </p>
+                                                    ) : null;
+                                                })()}
                                             </div>
-                                            <select
-                                                value={data.lot_id ? (active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString())?.warehouse || data.warehouse || "") : data.warehouse}
-                                                onChange={e => setData("warehouse", e.target.value)}
-                                                disabled={!!data.lot_id || order?.is_external_warehouse}
-                                                className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!data.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
-                                            >
-                                                <option value="">{order?.is_external_warehouse ? 'ALMACÉN CLIENTE' : 'Seleccionar Almacén...'}</option>
-                                                <option value="Almacen 1">Almacen 1</option>
-                                                <option value="Almacen 2">Almacen 2</option>
-                                                <option value="Almacen 3">Almacen 3</option>
-                                                <option value="Almacen 4">Almacen 4</option>
-                                                <option value="Almacen 5">Almacen 5</option>
-                                            </select>
-                                        </div>
 
-                                        <div className="space-y-1">
-                                            <InputLabel value="ENVASE" className="text-indigo-600 font-black" />
-                                            <select
-                                                value={data.packaging_type}
-                                                onChange={e => setData("packaging_type", e.target.value)}
-                                                disabled={order?.presentation === 'GRANEL'}
-                                                className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${order?.presentation === 'GRANEL' ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'}`}
-                                            >
-                                                <option value="N/A">N/A</option>
-                                                <option value="PRO-AGRO">PRO-AGRO</option>
-                                                <option value="FERTINAL">FERTINAL</option>
-                                            </select>
-                                        </div>
+                                            <div className="space-y-1">
+                                                <div className="flex justify-between items-center">
+                                                    <InputLabel value="ALMACÉN" className="text-indigo-600 font-black" />
+                                                    {data.lot_id && (
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase">Auto por Lote</span>
+                                                    )}
+                                                </div>
+                                                <select
+                                                    value={data.lot_id ? (active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString())?.warehouse || data.warehouse || "") : data.warehouse}
+                                                    onChange={e => setData("warehouse", e.target.value)}
+                                                    disabled={!!data.lot_id || order?.is_external_warehouse}
+                                                    className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!data.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
+                                                >
+                                                    <option value="">{order?.is_external_warehouse ? 'ALMACÉN CLIENTE' : 'Seleccionar Almacén...'}</option>
+                                                    <option value="Almacen 1">Almacen 1</option>
+                                                    <option value="Almacen 2">Almacen 2</option>
+                                                    <option value="Almacen 3">Almacen 3</option>
+                                                    <option value="Almacen 4">Almacen 4</option>
+                                                    <option value="Almacen 5">Almacen 5</option>
+                                                </select>
+                                            </div>
 
-                                        <div className="space-y-1">
-                                            <InputLabel value="DOCUMENTADOR (FIRMA)" className="text-green-600 font-black" />
-                                            <select
-                                                value={data.documenter_id}
-                                                onChange={e => setData("documenter_id", e.target.value)}
-                                                required
-                                                className="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold"
-                                            >
-                                                <option value="">Seleccionar Documentador...</option>
-                                                {documenters.map((doc: any) => (
-                                                    <option key={doc.id} value={doc.id}>{doc.name}</option>
-                                                ))}
-                                            </select>
-                                            <p className="text-[10px] text-gray-400 mt-1 font-semibold uppercase tracking-wider">
-                                                * El elegido aparecerá en el ticket para firma
-                                            </p>
+                                            <div className="space-y-1">
+                                                <InputLabel value="ENVASE" className="text-indigo-600 font-black" />
+                                                <select
+                                                    value={data.packaging_type}
+                                                    onChange={e => setData("packaging_type", e.target.value)}
+                                                    disabled={order?.presentation === 'GRANEL'}
+                                                    className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${order?.presentation === 'GRANEL' ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'}`}
+                                                >
+                                                    <option value="N/A">N/A</option>
+                                                    <option value="PRO-AGRO">PRO-AGRO</option>
+                                                    <option value="FERTINAL">FERTINAL</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <InputLabel value="DOCUMENTADOR (FIRMA)" className="text-green-600 font-black" />
+                                                <select
+                                                    value={data.documenter_id}
+                                                    onChange={e => setData("documenter_id", e.target.value)}
+                                                    required={!isVesselDischarge}
+                                                    className="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold"
+                                                >
+                                                    <option value="">Seleccionar Documentador...</option>
+                                                    {documenters.map((doc: any) => (
+                                                        <option key={doc.id} value={doc.id}>{doc.name}</option>
+                                                    ))}
+                                                </select>
+                                                <p className="text-[10px] text-gray-400 mt-1 font-semibold uppercase tracking-wider">
+                                                    * El elegido aparecerá en el ticket para firma
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                         </div>
 

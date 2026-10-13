@@ -53581,3 +53581,33 @@ Did you mean one of these?
 [stacktrace]
 #0 {main}
 "} 
+[2026-10-13 09:29:39] local.ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'folio' in 'where clause' (Connection: mysql, SQL: select * from `weight_tickets` where `folio` = TK-31089 or `id` = 31089 limit 1) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'folio' in 'where clause' (Connection: mysql, SQL: select * from `weight_tickets` where `folio` = TK-31089 or `id` = 31089 limit 1) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select * from `...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select * from `...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select * from `...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php(343): Illuminate/Database/Eloquent/Builder->get(Array)
+#9 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/53767993-f34d-427a-b3ea-313099b368a4/scratch/check_metrics.php(6): Illuminate/Database/Eloquent/Builder->first()
+#10 {main}
+
+[previous exception] [object] (PDOException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'folio' in 'where clause' at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:407)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): PDO->prepare('select * from `...')
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select * from `...', Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select * from `...', Array, Object(Closure))
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select * from `...', Array, Object(Closure))
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select * from `...', Array, true)
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#9 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#10 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php(343): Illuminate/Database/Eloquent/Builder->get(Array)
+#11 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/53767993-f34d-427a-b3ea-313099b368a4/scratch/check_metrics.php(6): Illuminate/Database/Eloquent/Builder->first()
+#12 {main}
+"} 

@@ -1380,11 +1380,12 @@ class SupplyInventoryController extends Controller
         }
 
         $ticketFolio = $ticket->ticket_number ?: ($lo?->folio ?: ($so?->folio ?: ('TK-' . $ticket->id)));
-        $date = now()->toDateString();
+        $operationalDate = now()->hour < 5 ? now()->subDay()->toDateString() : now()->toDateString();
+        $ticketDate = now()->toDateString();
         if ($ticket->weigh_out_at) {
-            $date = is_string($ticket->weigh_out_at) ? substr($ticket->weigh_out_at, 0, 10) : $ticket->weigh_out_at->toDateString();
+            $ticketDate = is_string($ticket->weigh_out_at) ? substr($ticket->weigh_out_at, 0, 10) : $ticket->weigh_out_at->toDateString();
         } elseif ($ticket->weigh_in_at) {
-            $date = is_string($ticket->weigh_in_at) ? substr($ticket->weigh_in_at, 0, 10) : $ticket->weigh_in_at->toDateString();
+            $ticketDate = is_string($ticket->weigh_in_at) ? substr($ticket->weigh_in_at, 0, 10) : $ticket->weigh_in_at->toDateString();
         }
 
         return response()->json([
@@ -1394,6 +1395,7 @@ class SupplyInventoryController extends Controller
                 'folio' => $ticketFolio,
                 'order_folio' => $lo?->folio ?: ($so?->folio ?: null),
                 'net_weight_tons' => round($netTons, 3),
+                'net_weight_kg' => round($net, 2),
                 'gross_weight_tons' => round($grossTons, 3),
                 'tare_weight_tons' => round($tareTons, 3),
                 'driver_name' => $driver,
@@ -1402,7 +1404,8 @@ class SupplyInventoryController extends Controller
                 'product_name' => $product,
                 'suggested_warehouse' => $suggestedWarehouse,
                 'suggested_cubicle' => $suggestedCubicle,
-                'date' => $date,
+                'date' => $operationalDate,
+                'ticket_date' => $ticketDate,
             ],
         ]);
     }
