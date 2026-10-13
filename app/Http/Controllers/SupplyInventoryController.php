@@ -137,6 +137,8 @@ class SupplyInventoryController extends Controller
     {
         $agricolaMetrics = \App\Services\UreaStockService::getMetrics('agricola');
         $industrialMetrics = \App\Services\UreaStockService::getMetrics('industrial');
+        $importadaMetrics = \App\Services\UreaStockService::getMetrics('importada');
+        $dapMetrics = \App\Services\UreaStockService::getMetrics('dap');
 
         return Inertia::render('APT/Inventory/ProductionHub', [
             'metrics' => [
@@ -148,6 +150,14 @@ class SupplyInventoryController extends Controller
                 'urea_industrial_daily' => $industrialMetrics['totalDailyTons'],
                 'urea_industrial_initial' => $industrialMetrics['totalInitialTons'],
                 'urea_industrial_shipped' => $industrialMetrics['totalShippedTons'],
+                'urea_importada_total' => $importadaMetrics['totalStockTons'],
+                'urea_importada_daily' => $importadaMetrics['totalDailyTons'],
+                'urea_importada_initial' => $importadaMetrics['totalInitialTons'],
+                'urea_importada_shipped' => $importadaMetrics['totalShippedTons'],
+                'dap_total' => $dapMetrics['totalStockTons'],
+                'dap_daily' => $dapMetrics['totalDailyTons'],
+                'dap_initial' => $dapMetrics['totalInitialTons'],
+                'dap_shipped' => $dapMetrics['totalShippedTons'],
             ],
         ]);
     }
@@ -351,7 +361,11 @@ class SupplyInventoryController extends Controller
                   ->orWhere('item_code', 'like', "%{$search}%")
                   ->orWhere('reference_document', 'like', "%{$search}%")
                   ->orWhere('responsible_person', 'like', "%{$search}%")
-                  ->orWhere('location', 'like', "%{$search}%");
+                  ->orWhere('location', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  ->orWhereHas('item', function ($iq) use ($search) {
+                      $iq->where('notes', 'like', "%{$search}%");
+                  });
             });
         }
 
@@ -426,7 +440,7 @@ class SupplyInventoryController extends Controller
 
         // All active products for dropdown
         $availableProducts = SupplyInventoryItem::orderBy('type_id')->orderBy('name')->get([
-            'id', 'name', 'code', 'type_name', 'type_slug', 'group_name', 'group_number', 'unit', 'stock', 'unit_cost', 'location'
+            'id', 'name', 'code', 'type_name', 'type_slug', 'group_name', 'group_number', 'unit', 'stock', 'unit_cost', 'location', 'notes', 'description'
         ]);
 
         $types = SupplyInventoryCatalog::getTypes();
@@ -607,7 +621,11 @@ class SupplyInventoryController extends Controller
                   ->orWhere('reference_document', 'like', "%{$search}%")
                   ->orWhere('responsible_person', 'like', "%{$search}%")
                   ->orWhere('destination_area', 'like', "%{$search}%")
-                  ->orWhere('location', 'like', "%{$search}%");
+                  ->orWhere('location', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  ->orWhereHas('item', function ($iq) use ($search) {
+                      $iq->where('notes', 'like', "%{$search}%");
+                  });
             });
         }
 
@@ -685,7 +703,7 @@ class SupplyInventoryController extends Controller
 
         $availableProducts = SupplyInventoryItem::where('stock', '>', 0)
             ->orderBy('type_id')->orderBy('name')->get([
-                'id', 'name', 'code', 'type_name', 'type_slug', 'group_name', 'group_number', 'unit', 'stock', 'unit_cost', 'location'
+                'id', 'name', 'code', 'type_name', 'type_slug', 'group_name', 'group_number', 'unit', 'stock', 'unit_cost', 'location', 'notes', 'description'
             ]);
 
         $types = SupplyInventoryCatalog::getTypes();
@@ -1039,7 +1057,10 @@ class SupplyInventoryController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('item_name', 'like', "%{$search}%")
                     ->orWhere('item_code', 'like', "%{$search}%")
-                    ->orWhere('reference_document', 'like', "%{$search}%");
+                    ->orWhere('reference_document', 'like', "%{$search}%")
+                    ->orWhere('responsible_person', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhereHas('item', fn($iq) => $iq->where('notes', 'like', "%{$search}%"));
             });
         }
 
@@ -1109,7 +1130,10 @@ class SupplyInventoryController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('item_name', 'like', "%{$search}%")
                     ->orWhere('item_code', 'like', "%{$search}%")
-                    ->orWhere('reference_document', 'like', "%{$search}%");
+                    ->orWhere('reference_document', 'like', "%{$search}%")
+                    ->orWhere('responsible_person', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhereHas('item', fn($iq) => $iq->where('notes', 'like', "%{$search}%"));
             });
         }
 
@@ -1176,6 +1200,210 @@ class SupplyInventoryController extends Controller
         return Inertia::render('APT/Inventory/Products/PrintProducts', [
             'items' => $items,
             'mode' => $mode,
+        ]);
+    }
+
+    /**
+     * Look up weight ticket information by QR code or folio for inventory entries.
+     */
+    public function scanTicketInfo(Request $request)
+    {
+        $request->validate([
+            'qr' => 'required|string',
+        ]);
+
+        $rawQr = trim($request->input('qr'));
+        $cleanQr = preg_replace('/^(folio:\s*|ticket:\s*|qr:\s*|tkt:\s*)/i', '', $rawQr);
+        $cleanQr = trim($cleanQr);
+
+        // 1. Try finding WeightTicket directly by ID or folio or operator
+        $ticket = null;
+
+        if ($cleanQr === 'latest' || $cleanQr === 'auto' || empty($cleanQr)) {
+            $ticket = \App\Models\WeightTicket::with(['loadingOrder.vessel', 'loadingOrder.product', 'loadingOrder.driver', 'loadingOrder.vehicle', 'shipmentOrder.driver', 'shipmentOrder.vehicle', 'lot'])
+                ->where('weighing_status', 'completed')
+                ->where('net_weight', '>', 0)
+                ->whereHas('loadingOrder', fn($q) => $q->whereNotNull('vessel_id'))
+                ->latest()
+                ->first();
+        } elseif (str_starts_with($cleanQr, 'OP ')) {
+            $parts = explode('|', substr($cleanQr, 3));
+            $operatorId = $parts[0] ?? null;
+            if ($operatorId) {
+                $ticket = \App\Models\WeightTicket::with(['loadingOrder.vessel', 'loadingOrder.product', 'loadingOrder.driver', 'loadingOrder.vehicle', 'shipmentOrder.driver', 'shipmentOrder.vehicle', 'lot'])
+                    ->whereHas('loadingOrder', fn($q) => $q->where('vessel_operator_id', $operatorId))
+                    ->latest()
+                    ->first();
+            }
+        }
+
+        if (!$ticket) {
+            $ticket = \App\Models\WeightTicket::with(['loadingOrder.vessel', 'loadingOrder.product', 'loadingOrder.driver', 'loadingOrder.vehicle', 'shipmentOrder.driver', 'shipmentOrder.vehicle', 'lot'])
+                ->where(function ($q) use ($cleanQr, $rawQr) {
+                    $q->where('ticket_number', $cleanQr)
+                      ->orWhere('ticket_number', $rawQr)
+                      ->orWhere('ticket_number', 'TK-' . $cleanQr)
+                      ->orWhere('ticket_number', 'B-' . $cleanQr);
+
+                    if (is_numeric($cleanQr)) {
+                        $q->orWhere('id', (int) $cleanQr);
+                    }
+
+                    $q->orWhereHas('loadingOrder', function ($lo) use ($cleanQr, $rawQr) {
+                        $lo->where('folio', $cleanQr)->orWhere('folio', $rawQr);
+                        if (strlen($cleanQr) === 36) {
+                            $lo->orWhere('id', $cleanQr);
+                        }
+                    });
+
+                    $q->orWhereHas('shipmentOrder', function ($so) use ($cleanQr, $rawQr) {
+                        $so->where('folio', $cleanQr)->orWhere('folio', $rawQr);
+                        if (strlen($cleanQr) === 36) {
+                            $so->orWhere('id', $cleanQr);
+                        }
+                    });
+                })
+                ->latest()
+                ->first();
+        }
+
+        if (!$ticket) {
+            $loadingOrder = \App\Models\LoadingOrder::with(['vessel', 'product', 'driver', 'vehicle', 'weight_ticket'])
+                ->where('folio', $cleanQr)
+                ->orWhere('folio', $rawQr);
+
+            if (strlen($cleanQr) === 36) {
+                $loadingOrder->orWhere('id', $cleanQr);
+            }
+
+            $loadingOrder = $loadingOrder->latest()->first();
+
+            if ($loadingOrder) {
+                $ticket = $loadingOrder->weight_ticket;
+            }
+        }
+
+        if (!$ticket) {
+            $shipmentOrder = \App\Models\ShipmentOrder::with(['vessel', 'driver', 'vehicle', 'items.product', 'weight_ticket'])
+                ->where('folio', $cleanQr)
+                ->orWhere('folio', $rawQr);
+
+            if (strlen($cleanQr) === 36) {
+                $shipmentOrder->orWhere('id', $cleanQr);
+            }
+
+            $shipmentOrder = $shipmentOrder->latest()->first();
+
+            if ($shipmentOrder) {
+                $ticket = $shipmentOrder->weight_ticket;
+            }
+        }
+
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se encontró ningún ticket de báscula ni orden asociada al código QR escaneado.',
+            ], 404);
+        }
+
+        // Calculate Net Weight in TM
+        $net = (float) $ticket->net_weight;
+        $netTons = $net >= 100 ? ($net / 1000) : $net;
+        $gross = (float) $ticket->gross_weight;
+        $grossTons = $gross >= 100 ? ($gross / 1000) : $gross;
+        $tare = (float) $ticket->tare_weight;
+        $tareTons = $tare >= 100 ? ($tare / 1000) : $tare;
+
+        $lo = $ticket->loadingOrder;
+        $so = $ticket->shipmentOrder ?? $lo?->shipment_order;
+
+        $driver = 'Conductor';
+        if (!empty($lo?->operator_name)) {
+            $driver = $lo->operator_name;
+        } elseif ($lo && is_object($lo->driver) && !empty($lo->driver->name)) {
+            $driver = $lo->driver->name;
+        } elseif ($lo && is_string($lo->driver) && !empty($lo->driver)) {
+            $driver = $lo->driver;
+        } elseif ($so && is_object($so->driver) && !empty($so->driver->name)) {
+            $driver = $so->driver->name;
+        } elseif ($so && is_string($so->driver) && !empty($so->driver)) {
+            $driver = $so->driver;
+        }
+
+        $plates = '-';
+        if (!empty($lo?->tractor_plate)) {
+            $plates = $lo->tractor_plate;
+        } elseif ($lo && is_object($lo->vehicle) && !empty($lo->vehicle->plate_number)) {
+            $plates = $lo->vehicle->plate_number;
+        } elseif ($so && is_object($so->vehicle) && !empty($so->vehicle->plate_number)) {
+            $plates = $so->vehicle->plate_number;
+        } elseif (!empty($ticket->plates)) {
+            $plates = $ticket->plates;
+        }
+
+        $vessel = 'Buque / Muelle';
+        if ($lo && is_object($lo->vessel) && !empty($lo->vessel->name)) {
+            $vessel = $lo->vessel->name;
+        } elseif ($lo && is_string($lo->vessel) && !empty($lo->vessel)) {
+            $vessel = $lo->vessel;
+        } elseif ($so && is_object($so->vessel) && !empty($so->vessel->name)) {
+            $vessel = $so->vessel->name;
+        } elseif ($so && is_string($so->vessel) && !empty($so->vessel)) {
+            $vessel = $so->vessel;
+        } elseif (!empty($lo?->origin)) {
+            $vessel = $lo->origin;
+        }
+
+        $product = 'Fertilizante';
+        if ($lo && is_object($lo->product) && !empty($lo->product->name)) {
+            $product = $lo->product->name;
+        } elseif ($lo && is_string($lo->product) && !empty($lo->product)) {
+            $product = $lo->product;
+        } elseif ($so && is_object($so->product) && !empty($so->product->name)) {
+            $product = $so->product->name;
+        } elseif ($so && $so->items && $so->items->first() && is_object($so->items->first()->product)) {
+            $product = $so->items->first()->product->name ?? 'Fertilizante';
+        }
+
+        $suggestedWarehouse = 'Almacen 1';
+        if (!empty($lo?->warehouse)) {
+            $suggestedWarehouse = $lo->warehouse;
+        } elseif (!empty($so?->warehouse)) {
+            $suggestedWarehouse = $so->warehouse;
+        }
+
+        $suggestedCubicle = '';
+        if (!empty($lo?->cubicle)) {
+            $suggestedCubicle = $lo->cubicle;
+        } elseif (!empty($so?->cubicle)) {
+            $suggestedCubicle = $so->cubicle;
+        }
+
+        $ticketFolio = $ticket->ticket_number ?: ($lo?->folio ?: ($so?->folio ?: ('TK-' . $ticket->id)));
+        $date = now()->toDateString();
+        if ($ticket->weigh_out_at) {
+            $date = is_string($ticket->weigh_out_at) ? substr($ticket->weigh_out_at, 0, 10) : $ticket->weigh_out_at->toDateString();
+        } elseif ($ticket->weigh_in_at) {
+            $date = is_string($ticket->weigh_in_at) ? substr($ticket->weigh_in_at, 0, 10) : $ticket->weigh_in_at->toDateString();
+        }
+
+        return response()->json([
+            'success' => true,
+            'ticket' => [
+                'id' => $ticket->id,
+                'folio' => $ticketFolio,
+                'order_folio' => $lo?->folio ?: ($so?->folio ?: null),
+                'net_weight_tons' => round($netTons, 3),
+                'gross_weight_tons' => round($grossTons, 3),
+                'tare_weight_tons' => round($tareTons, 3),
+                'driver_name' => $driver,
+                'plates' => $plates,
+                'vessel_name' => $vessel,
+                'product_name' => $product,
+                'suggested_warehouse' => $suggestedWarehouse,
+                'suggested_cubicle' => $suggestedCubicle,
+                'date' => $date,
+            ],
         ]);
     }
 }

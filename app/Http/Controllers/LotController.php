@@ -112,21 +112,28 @@ class LotController extends Controller
 
     public function store(Request $request)
     {
+        $folioRules = ['required', 'string'];
+        if (trim(strtoupper((string)$request->folio)) !== 'N/A') {
+            $folioRules[] = Rule::unique('lots', 'folio');
+        }
+
         $validated = $request->validate([
-            'folio' => 'required|string|unique:lots,folio',
+            'folio' => $folioRules,
             'warehouse' => 'required|string',
             'cubicle' => 'nullable|string',
-            'plant_origin' => ['required', Rule::in(['UREA 1', 'UREA 2'])],
+            'plant_origin' => ['required', Rule::in(['UREA 1', 'UREA 2', 'N/A', 'IMPORTACION'])],
             'product' => 'nullable|string',
             'celdas' => 'nullable|string',
             'created_at' => 'nullable|date', // For manual override
             'observations' => 'nullable|string',
+        ], [
+            'folio.unique' => 'Ya existe un lote con este folio (' . $request->folio . ').',
         ]);
 
         $lot = Lot::create([
             'folio' => $validated['folio'],
             'warehouse' => $validated['warehouse'],
-            'cubicle' => $validated['cubicle'],
+            'cubicle' => $validated['cubicle'] ?? null,
             'plant_origin' => $validated['plant_origin'],
             'product' => $validated['product'] ?? null,
             'celdas' => $validated['celdas'] ?? null,
@@ -148,21 +155,28 @@ class LotController extends Controller
 
     public function update(Request $request, Lot $lot)
     {
+        $folioRules = ['required', 'string'];
+        if (trim(strtoupper((string)$request->folio)) !== 'N/A') {
+            $folioRules[] = Rule::unique('lots', 'folio')->ignore($lot->id);
+        }
+
         $validated = $request->validate([
-            'folio' => ['required', 'string', Rule::unique('lots')->ignore($lot->id)],
+            'folio' => $folioRules,
             'warehouse' => 'required|string',
             'cubicle' => 'nullable|string',
-            'plant_origin' => ['required', Rule::in(['UREA 1', 'UREA 2'])],
+            'plant_origin' => ['required', Rule::in(['UREA 1', 'UREA 2', 'N/A', 'IMPORTACION'])],
             'product' => 'nullable|string',
             'celdas' => 'nullable|string',
             'created_at' => 'nullable|date',
             'observations' => 'nullable|string',
+        ], [
+            'folio.unique' => 'Ya existe un lote con este folio (' . $request->folio . ').',
         ]);
 
         $lot->update([
             'folio' => $validated['folio'],
             'warehouse' => $validated['warehouse'],
-            'cubicle' => $validated['cubicle'],
+            'cubicle' => $validated['cubicle'] ?? null,
             'plant_origin' => $validated['plant_origin'],
             'product' => $validated['product'] ?? null,
             'celdas' => $validated['celdas'] ?? null,

@@ -182,6 +182,7 @@ Route::middleware('auth')->group(function () {
         // Print Routes
         Route::get('/documentation/shipment-orders/{id}/print', [\App\Http\Controllers\DocumentationController::class , 'printOrder'])->name('documentation.orders.print');
         Route::get('/documentation/shipment-orders/{id}/print-instruction', [\App\Http\Controllers\DocumentationController::class , 'printInstruction'])->name('documentation.orders.print-instruction');
+        Route::get('/documentation/shipment-orders/{id}/print-data', [\App\Http\Controllers\DocumentationController::class , 'orderPrintData'])->name('documentation.orders.print-data');
 
         // APT Module
         Route::get('/apt/qr', [\App\Http\Controllers\AptController::class , 'qrPrint'])->name('apt.qr');
@@ -220,6 +221,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/apt/inventory/supply/{type_slug}', [\App\Http\Controllers\SupplyInventoryController::class, 'store'])->name('apt.inventory.supply.store');
         Route::put('/apt/inventory/supply/{type_slug}/{id}', [\App\Http\Controllers\SupplyInventoryController::class, 'update'])->name('apt.inventory.supply.update');
         Route::delete('/apt/inventory/supply/{type_slug}/{id}', [\App\Http\Controllers\SupplyInventoryController::class, 'destroy'])->name('apt.inventory.supply.destroy');
+        Route::post('/apt/inventory/scan-ticket-info', [\App\Http\Controllers\SupplyInventoryController::class, 'scanTicketInfo'])->name('apt.inventory.scan-ticket-info');
 
         // Urea Agrícola Inventory Management (Daily Production & Initial Inventory)
         Route::get('/apt/inventory/urea', [\App\Http\Controllers\UreaInventoryController::class, 'index'])->name('apt.inventory.urea.index');
@@ -238,6 +240,26 @@ Route::middleware('auth')->group(function () {
         Route::post('/apt/inventory/urea-industrial/initial', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'storeInitial'])->name('apt.inventory.urea-industrial.initial.store');
         Route::put('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-industrial.initial.update');
         Route::delete('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-industrial.initial.destroy');
+
+        // Urea Importada Inventory Management (Daily Reception & Initial Inventory)
+        Route::get('/apt/inventory/urea-importada', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'index'])->name('apt.inventory.urea-importada.index');
+        Route::post('/apt/inventory/urea-importada/daily', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'storeDaily'])->name('apt.inventory.urea-importada.daily.store');
+        Route::post('/apt/inventory/urea-importada/batch-draft', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'storeBatchDraft'])->name('apt.inventory.urea-importada.batch-draft');
+        Route::put('/apt/inventory/urea-importada/daily/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-importada.daily.update');
+        Route::delete('/apt/inventory/urea-importada/daily/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-importada.daily.destroy');
+        Route::post('/apt/inventory/urea-importada/initial', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'storeInitial'])->name('apt.inventory.urea-importada.initial.store');
+        Route::put('/apt/inventory/urea-importada/initial/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-importada.initial.update');
+        Route::delete('/apt/inventory/urea-importada/initial/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-importada.initial.destroy');
+
+        // DAP (Fosfato Diamónico) Inventory Management (Daily Production & Initial Inventory)
+        Route::get('/apt/inventory/dap', [\App\Http\Controllers\DapInventoryController::class, 'index'])->name('apt.inventory.dap.index');
+        Route::post('/apt/inventory/dap/daily', [\App\Http\Controllers\DapInventoryController::class, 'storeDaily'])->name('apt.inventory.dap.daily.store');
+        Route::post('/apt/inventory/dap/batch-draft', [\App\Http\Controllers\DapInventoryController::class, 'storeBatchDraft'])->name('apt.inventory.dap.batch-draft');
+        Route::put('/apt/inventory/dap/daily/{id}', [\App\Http\Controllers\DapInventoryController::class, 'updateDaily'])->name('apt.inventory.dap.daily.update');
+        Route::delete('/apt/inventory/dap/daily/{id}', [\App\Http\Controllers\DapInventoryController::class, 'destroyDaily'])->name('apt.inventory.dap.daily.destroy');
+        Route::post('/apt/inventory/dap/initial', [\App\Http\Controllers\DapInventoryController::class, 'storeInitial'])->name('apt.inventory.dap.initial.store');
+        Route::put('/apt/inventory/dap/initial/{id}', [\App\Http\Controllers\DapInventoryController::class, 'updateInitial'])->name('apt.inventory.dap.initial.update');
+        Route::delete('/apt/inventory/dap/initial/{id}', [\App\Http\Controllers\DapInventoryController::class, 'destroyInitial'])->name('apt.inventory.dap.initial.destroy');
 
         // Production Management
         Route::get('/apt/production', [\App\Http\Controllers\AptController::class , 'production'])->name('apt.production');

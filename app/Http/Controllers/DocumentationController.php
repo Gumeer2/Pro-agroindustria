@@ -584,12 +584,11 @@ class DocumentationController extends Controller
     }
 
     /**
-     * Print the Shipment Order (Orden de Embarque) in legacy format.
+     * Format Shipment Order with all print relationships and calculated fields.
      */
-    public function printOrder($id)
+    public function formatOrderForPrint(ShipmentOrder $order): array
     {
-        $order = ShipmentOrder::with(['client', 'sales_order.client', 'product', 'vessel', 'transporter', 'driver', 'vehicle', 'origin', 'scale_operator', 'shipment_destination'])
-            ->findOrFail($id);
+        $order->loadMissing(['client', 'sales_order.client', 'product', 'vessel', 'transporter', 'driver', 'vehicle', 'origin', 'scale_operator', 'shipment_destination', 'items.product', 'lot']);
 
         // Fallback for scale_name if scale_operator exists
         if (empty($order->scale_name) && $order->scale_operator) {
@@ -602,7 +601,6 @@ class DocumentationController extends Controller
         }
 
         // Patch: If plates are missing, try to find them from the Operator registry (ExitOperator)
-        // Check ExitOperator first as per searchOperators method
         if (empty($order->tractor_plate) || empty($order->trailer_plate) || $order->tractor_plate === 'N/A') {
             $operator = \App\Models\ExitOperator::where('name', $order->operator_name)->first();
 
@@ -613,15 +611,12 @@ class DocumentationController extends Controller
                 if (empty($order->trailer_plate) || $order->trailer_plate === 'N/A') {
                     $order->trailer_plate = $operator->trailer_plate;
                 }
-                // Optional: Unit Type
                 if (empty($order->unit_type)) {
                     $order->unit_type = $operator->unit_type;
                 }
-                // Optional: License
                 if (empty($order->license_number)) {
                     $order->license_number = $operator->license;
                 }
-                // Optional: Economic
                 if (empty($order->economic_number)) {
                     $order->economic_number = $operator->economic_number;
                 }
@@ -636,7 +631,6 @@ class DocumentationController extends Controller
             $productCode = $order->product->code;
             $productText = $order->product->name;
         } elseif ($productText) {
-            // Regex to strip "- XX KG"
             $cleanProductText = trim(preg_replace('/-\s*\d+\s*KG/i', '', $productText));
             $p = \App\Models\Product::where('name', $productText)
                 ->orWhere('name', $cleanProductText)
@@ -655,13 +649,37 @@ class DocumentationController extends Controller
             $productText = trim(preg_replace('/-\s*\d+\s*KG/i', '', $productText));
         }
 
+        return $order->toArray() + [
+            'product_code' => $productCode,
+            'product_text' => $productText,
+            'destination' => $order->destination ?: ($order->shipment_destination?->name ?: null),
+            'scale_name' => $order->scale_name ?? $order->scale_operator?->name ?? null,
+            'client_name' => $order->client?->business_name ?? $order->client?->name ?? 'N/A',
+            'operator_name' => $order->operator_name ?? 'N/A',
+        ];
+    }
+
+    /**
+     * Print the Shipment Order (Orden de Embarque) in legacy format.
+     */
+    public function printOrder($id)
+    {
+        $order = ShipmentOrder::findOrFail($id);
+
         return Inertia::render('Documentation/Orders/Print', [
-            'order' => $order->toArray() + [
-                'product_code' => $productCode,
-                'product_text' => $productText,
-                'destination' => $order->destination ?: ($order->shipment_destination?->name ?: null),
-                'scale_name' => $order->scale_name ?? $order->scale_operator?->name ?? null,
-            ]
+            'order' => $this->formatOrderForPrint($order),
+        ]);
+    }
+
+    /**
+     * Return JSON data of shipment order formatted for printing templates.
+     */
+    public function orderPrintData(string $id)
+    {
+        $order = ShipmentOrder::findOrFail($id);
+
+        return response()->json([
+            'order' => $this->formatOrderForPrint($order),
         ]);
     }
 
@@ -1609,17 +1627,7 @@ class DocumentationController extends Controller
         }
 
         return response()->json([
-            'order' => [
-                'id' => $order->id,
-                'folio' => $order->folio,
-                'operator_name' => $order->operator_name,
-                'tractor_plate' => $order->tractor_plate,
-                'trailer_plate' => $order->trailer_plate,
-                'client' => $order->client?->business_name ?? $order->client?->name,
-                'product' => $order->product ?? $order->items->first()?->product?->name,
-                'warehouse' => $order->warehouse
-                    ?: $order->loadingOrders->firstWhere('warehouse', '!=', null)?->warehouse,
-            ],
+            'order' => $this->formatOrderForPrint($order),
         ]);
     }
 
@@ -1677,6 +1685,7 @@ class DocumentationController extends Controller
         return response()->json([
             'message' => 'Embarque guardado correctamente.',
             'administrator' => $administrator,
+            'order' => $this->formatOrderForPrint($order->fresh()),
         ]);
     }
 
@@ -1740,7 +1749,7 @@ class DocumentationController extends Controller
         return [
             'id' => $order->id,
             'lot_id' => $order->lot_id,
-            'warehouse' => $order->warehouse ?: $order->lot?->warehouse,
+            'warehouse' => $order->lot?->warehouse ?: $order->warehouse,
             'cubicle' => $order->lot?->cubicle,
             'lot_folio' => $order->lot?->folio,
             'folio' => $order->folio,

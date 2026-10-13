@@ -1,6 +1,6 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link } from "@inertiajs/react";
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
     ArrowLeft,
     Camera,
@@ -21,12 +21,17 @@ import {
     UserRound,
     Warehouse,
     X,
+    Layers,
+    Scale,
+    Sliders,
 } from "lucide-react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import { Dialog, Menu, Transition } from "@headlessui/react";
 import LoadingAssistantDropdown from "@/Components/LoadingAssistantDropdown";
 import QrScannerModal from "@/Components/QrScannerModal";
+import EnvasadoraSamplingModal from "@/Components/EnvasadoraSamplingModal";
+import ShipmentDocumentsPrintModal from "@/Components/ShipmentDocumentsPrintModal";
 
 interface Lot {
     id: number;
@@ -344,13 +349,68 @@ export default function ShipmentProcess({
 
     // Form fields
     const [warehouse, setWarehouse] = useState<string>(() => `Almacen ${selectedWarehouseId}`);
-    const [selectedLotId, setSelectedLotId] = useState<string>(lots[0]?.id?.toString() || "");
+    const [selectedLotId, setSelectedLotId] = useState<string>("");
     const [squadLeader, setSquadLeader] = useState<string>(squad_leaders[0] || "");
     const [loadingAssistant, setLoadingAssistant] = useState<string>("");
+    const [stowageCount, setStowageCount] = useState<string>("");
     const [isSaving, setIsSaving] = useState(false);
 
-    // Success Modal
+    const totalSamples = useMemo(() => {
+        const estibas = parseFloat(stowageCount);
+        if (!estibas || isNaN(estibas) || estibas <= 0) return "";
+        const text = `${scannedOrder?.product || ""} ${scannedOrder?.presentation || ""} ${scannedOrder?.sacks_count || ""}`.toUpperCase();
+        const sackWeight = text.includes("50KG") || text.includes("50 KG") ? 50 : 25;
+        const samples = sackWeight === 50 ? 20 : 40;
+        return samples.toString();
+    }, [stowageCount, scannedOrder]);
+
+    const suggestedSamplesPerStowage = useMemo(() => {
+        const estibas = parseFloat(stowageCount);
+        const samples = parseFloat(totalSamples);
+        if (!estibas || isNaN(estibas) || estibas <= 0 || !samples || isNaN(samples) || samples <= 0) return "";
+        const result = samples / estibas;
+        if (Number.isInteger(result)) {
+            return result.toString();
+        }
+        return parseFloat(result.toFixed(2)).toString();
+    }, [stowageCount, totalSamples]);
+
+    // Success Modal & Sampling Modal & Print Documents Modal
     const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [isSamplingModalOpen, setIsSamplingModalOpen] = useState(false);
+    const [activeSamplingOrder, setActiveSamplingOrder] = useState<any>(null);
+    const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+    const [printOrderData, setPrintOrderData] = useState<any>(null);
+    const [printSamplesData, setPrintSamplesData] = useState<any[]>([]);
+
+    const handleOpenPrintModal = async (itemId: string | number) => {
+        try {
+            const response = await axios.get(route("documentation.orders.print-data", itemId));
+            if (response.data?.order) {
+                setPrintOrderData(response.data.order);
+                setPrintSamplesData([]);
+                setIsPrintModalOpen(true);
+            }
+        } catch (e) {
+            console.error("Error loading print data:", e);
+            Swal.fire({
+                icon: "error",
+                title: "Error",
+                text: "No se pudieron cargar los datos del documento.",
+                confirmButtonColor: "#4f46e5",
+            });
+        }
+    };
+
+    const handleOpenPrintModalFromSampling = (samples: any[]) => {
+        setPrintSamplesData(samples);
+        if (activeSamplingOrder) {
+            setPrintOrderData(activeSamplingOrder);
+        } else if (scannedOrder) {
+            setPrintOrderData(scannedOrder);
+        }
+        setIsPrintModalOpen(true);
+    };
 
     // Table search filter
     const [historySearch, setHistorySearch] = useState("");
@@ -367,6 +427,7 @@ export default function ShipmentProcess({
             localStorage.removeItem("shipment_process_selected_cubicle");
         }
         setWarehouse(`Almacen ${warehouseId}`);
+        setSelectedLotId("");
     };
 
     useEffect(() => {
@@ -442,6 +503,7 @@ export default function ShipmentProcess({
         setScannedOrder(null);
         setSearchQr("");
         setWarehouse(`Almacen ${selectedWarehouseId}`);
+        setStowageCount("");
         setCurrentStep(1);
     };
 
@@ -472,7 +534,7 @@ export default function ShipmentProcess({
         setIsSaving(true);
 
         try {
-            await axios.post(route("documentation.shipment-orders.save-loading"), {
+            const response = await axios.post(route("documentation.shipment-orders.save-loading"), {
                 shipment_order_id: scannedOrder.id,
                 lot_id: selectedLotId,
                 warehouse: warehouse || `Almacen ${selectedWarehouseId}`,
@@ -480,12 +542,17 @@ export default function ShipmentProcess({
                 loading_assistant: loadingAssistant || null,
             });
 
-            // Show custom success modal matching Image 3
-            setShowSuccessModal(true);
+            const savedOrder = response.data?.order || scannedOrder;
+
+            // Open the Sampling Modal (Estibas y gráfica)
+            setActiveSamplingOrder(savedOrder);
+            setPrintOrderData(savedOrder);
+            setIsSamplingModalOpen(true);
 
             // Refresh list & reset to step 1
             setScannedOrder(null);
             setSearchQr("");
+            setStowageCount("");
             setCurrentStep(1);
             await refreshHistory();
         } catch (error: any) {
@@ -577,6 +644,14 @@ export default function ShipmentProcess({
         const itemWhNum = normalizeWarehouseNumber(item.warehouse);
         if (itemWhNum !== null && itemWhNum !== selectedWarehouseId) {
             return false;
+        }
+
+        // Extra check: if lot_folio explicitly specifies APT{X}, it must match the selected warehouse
+        if (item.lot_folio) {
+            const matchApt = item.lot_folio.match(/APT(\d+)/i);
+            if (matchApt && parseInt(matchApt[1], 10) !== selectedWarehouseId) {
+                return false;
+            }
         }
 
         // Cubicle filter (Almacén 5 specific cubicle)
@@ -969,6 +1044,110 @@ export default function ShipmentProcess({
                                             className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-700 font-medium shadow-sm cursor-not-allowed"
                                         />
                                     </div>
+
+                                    {/* Bloque Destacado: Configuración de Estibas y Muestreo */}
+                                    <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/60 via-slate-50 to-emerald-50/40 rounded-2xl border border-indigo-100/90 p-5 md:p-6 shadow-sm">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-indigo-100/70">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm">
+                                                    <Layers className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-sm font-bold text-gray-900">
+                                                        Control de Estibas y Plan de Muestreo
+                                                    </h4>
+                                                    <p className="text-xs text-gray-500">
+                                                        Distribución y cálculo dinámico de muestras para control en envasadoras
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className="self-start sm:self-auto inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-800">
+                                                Muestreo Calidad
+                                            </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {/* Número de Estibas */}
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                                                    Número de Estibas
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        step="1"
+                                                        value={stowageCount}
+                                                        onChange={(e) => setStowageCount(e.target.value)}
+                                                        placeholder="Ej. 20"
+                                                        className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 pr-20 text-gray-900 font-semibold shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
+                                                    />
+                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                        <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-1 rounded-md border border-gray-200">
+                                                            Estibas
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-[11px] text-gray-500 mt-1">
+                                                    Cantidad de estibas en la unidad
+                                                </p>
+                                            </div>
+
+                                            {/* N. Muestras */}
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                    <span>N° Total Muestras</span>
+                                                    <span className="text-[10px] text-indigo-600 font-normal lowercase bg-indigo-50 px-1.5 py-0.5 rounded">
+                                                        automático
+                                                    </span>
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        readOnly
+                                                        value={totalSamples}
+                                                        placeholder="Calculando..."
+                                                        className="w-full rounded-xl border border-indigo-100 bg-white/80 px-4 py-3 pr-20 text-indigo-900 font-bold shadow-sm cursor-not-allowed"
+                                                    />
+                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-200">
+                                                            Sacos
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-[11px] text-gray-500 mt-1">
+                                                    Base 40 sacos (25kg) o 20 sacos (50kg)
+                                                </p>
+                                            </div>
+
+                                            {/* Muestras Sugeridas Por Estiba */}
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                    <span>Muestras / Estiba</span>
+                                                    <span className="text-[10px] text-emerald-600 font-normal lowercase bg-emerald-50 px-1.5 py-0.5 rounded">
+                                                        sugerido
+                                                    </span>
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        readOnly
+                                                        value={suggestedSamplesPerStowage}
+                                                        placeholder="Calculando..."
+                                                        className="w-full rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 pr-24 text-emerald-900 font-bold shadow-sm cursor-not-allowed"
+                                                    />
+                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                        <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
+                                                            Muestras/Est.
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <p className="text-[11px] text-gray-500 mt-1">
+                                                    Total Muestras ÷ N° Estibas
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Submit & Back Buttons */}
@@ -1096,7 +1275,7 @@ export default function ShipmentProcess({
                                                         leaveFrom="transform opacity-100 scale-100"
                                                         leaveTo="transform opacity-0 scale-95"
                                                     >
-                                                        <Menu.Items className="absolute left-0 z-50 mt-1 w-40 origin-top-left rounded-xl bg-white p-1 shadow-lg ring-1 ring-black/5 focus:outline-none text-xs">
+                                                        <Menu.Items className="absolute left-0 z-50 mt-1 w-48 origin-top-left rounded-xl bg-white p-1 shadow-lg ring-1 ring-black/5 focus:outline-none text-xs">
                                                             <Menu.Item>
                                                                 {({ active }) => (
                                                                     <a
@@ -1110,6 +1289,23 @@ export default function ShipmentProcess({
                                                                         <Printer className="w-3.5 h-3.5" />
                                                                         Imprimir OE
                                                                     </a>
+                                                                )}
+                                                            </Menu.Item>
+                                                            <Menu.Item>
+                                                                {({ active }) => (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setActiveSamplingOrder(row);
+                                                                            setIsSamplingModalOpen(true);
+                                                                        }}
+                                                                        className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
+                                                                            active ? "bg-indigo-600 text-white" : "text-gray-700"
+                                                                        }`}
+                                                                    >
+                                                                        <Settings className="w-3.5 h-3.5" />
+                                                                        Muestreo Envasadora
+                                                                    </button>
                                                                 )}
                                                             </Menu.Item>
                                                         </Menu.Items>
@@ -1206,6 +1402,15 @@ export default function ShipmentProcess({
                                                             Finalizar
                                                         </button>
                                                     )}
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleOpenPrintModal(row.id)}
+                                                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center justify-center"
+                                                        title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
+                                                    >
+                                                        <Printer className="w-3.5 h-3.5" />
+                                                    </button>
 
                                                     <button
                                                         type="button"
@@ -1325,6 +1530,23 @@ export default function ShipmentProcess({
                     </div>
                 </Dialog>
             </Transition.Root>
+            {/* Modal de Muestreo de Envasadora (Acción) */}
+            <EnvasadoraSamplingModal
+                isOpen={isSamplingModalOpen}
+                onClose={() => setIsSamplingModalOpen(false)}
+                order={activeSamplingOrder}
+                stowageCount={stowageCount}
+                totalSamplesCount={parseInt(totalSamples) || 40}
+                onOpenPrintDocuments={handleOpenPrintModalFromSampling}
+            />
+
+            {/* Modal de Impresión de Documentos (GLS-AP-FO-003 y GLS-AP-FO-002) */}
+            <ShipmentDocumentsPrintModal
+                isOpen={isPrintModalOpen}
+                onClose={() => setIsPrintModalOpen(false)}
+                order={printOrderData}
+                samples={printSamplesData}
+            />
         </DashboardLayout>
     );
 }

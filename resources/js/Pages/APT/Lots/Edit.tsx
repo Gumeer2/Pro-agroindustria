@@ -122,11 +122,21 @@ export default function Edit({ auth, lot }: { auth: any; lot: any }) {
                                 <div className="relative">
                                     <select
                                         value={data.product}
-                                        onChange={(e) => setData("product", e.target.value)}
+                                        onChange={(e) => {
+                                            const newProd = e.target.value;
+                                            const isImport = newProd?.toUpperCase().includes("IMPORTAC") || newProd === "N/A";
+                                            setData((prev) => ({
+                                                ...prev,
+                                                product: newProd,
+                                                plant_origin: isImport ? "N/A" : (prev.plant_origin === "N/A" ? "UREA 1" : prev.plant_origin),
+                                                celdas: isImport ? "" : prev.celdas,
+                                            }));
+                                        }}
                                         className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white font-medium text-gray-800"
                                     >
                                         <option value="UA (UREA AGRICOLA)">UA (UREA AGRICOLA)</option>
                                         <option value="UI (UREA INDUSTRIAL)">UI (UREA INDUSTRIAL)</option>
+                                        <option value="PRODUCTO DE IMPORTACION">PRODUCTO DE IMPORTACION</option>
                                     </select>
                                     <Package className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>
@@ -166,6 +176,7 @@ export default function Edit({ auth, lot }: { auth: any; lot: any }) {
                                     >
                                         <option value="UREA 1">UREA 1</option>
                                         <option value="UREA 2">UREA 2</option>
+                                        <option value="N/A">N/A</option>
                                     </select>
                                     <Factory className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>

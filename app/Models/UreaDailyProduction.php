@@ -37,6 +37,16 @@ class UreaDailyProduction extends Model
         return $query->where('product_type', 'industrial');
     }
 
+    public function scopeImportada($query)
+    {
+        return $query->where('product_type', 'importada');
+    }
+
+    public function scopeDap($query)
+    {
+        return $query->where('product_type', 'dap');
+    }
+
     protected $casts = [
         'date' => 'date:Y-m-d',
         'quantity_tons' => 'decimal:3',

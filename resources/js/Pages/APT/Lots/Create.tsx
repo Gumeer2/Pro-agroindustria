@@ -38,6 +38,12 @@ export default function Create({
     const initialProduct = "UA (UREA AGRICOLA)";
     const initialCeldas = "";
 
+    const isImportProduct = (productVal: string) => {
+        if (!productVal) return false;
+        const p = productVal.toUpperCase();
+        return p.includes("IMPORTAC") || p === "N/A";
+    };
+
     const getConsecutive = (warehouseVal: string, productVal: string) => {
         const prodCode = productVal?.includes("UI") ? "UI" : "UA";
         const whData = consecutives ? consecutives[warehouseVal] : null;
@@ -57,6 +63,9 @@ export default function Create({
         celdasVal: string,
         dateVal: string
     ) => {
+        if (isImportProduct(productVal)) {
+            return "N/A";
+        }
         const dateObj = dateVal ? new Date(dateVal) : new Date();
         const year = isNaN(dateObj.getFullYear()) ? new Date().getFullYear() : dateObj.getFullYear();
         const plantCode = plantVal === "UREA 2" ? "U2" : "U1";
@@ -95,10 +104,15 @@ export default function Create({
     }, [data.product, data.plant_origin, data.warehouse, data.celdas, data.created_at, consecutives]);
 
     const updateProduct = (newProduct: string) => {
+        const isImport = isImportProduct(newProduct);
+        const newPlant = isImport ? "N/A" : (data.plant_origin === "N/A" ? "UREA 1" : data.plant_origin);
+        const newCeldas = isImport ? "" : data.celdas;
         setData((prev) => ({
             ...prev,
             product: newProduct,
-            folio: calculateFolio(newProduct, prev.plant_origin, prev.warehouse, prev.celdas, prev.created_at),
+            plant_origin: newPlant,
+            celdas: newCeldas,
+            folio: calculateFolio(newProduct, newPlant, prev.warehouse, newCeldas, prev.created_at),
         }));
     };
 
@@ -195,10 +209,17 @@ export default function Create({
                             <div>
                                 <div className="flex items-center justify-between mb-1">
                                     <InputLabel value="Nombre del Lote / Folio" className="text-gray-700 font-bold" />
-                                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                        <Sparkles className="w-3 h-3 text-indigo-500" />
-                                        Automático ({getConsecutive(data.warehouse, data.product)})
-                                    </span>
+                                    {isImportProduct(data.product) ? (
+                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <Sparkles className="w-3 h-3 text-amber-500" />
+                                            Lote N/A ({data.warehouse})
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <Sparkles className="w-3 h-3 text-indigo-500" />
+                                            Automático ({getConsecutive(data.warehouse, data.product)})
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="relative">
                                     <TextInput
@@ -238,6 +259,7 @@ export default function Create({
                                     >
                                         <option value="UA (UREA AGRICOLA)">UA (UREA AGRICOLA)</option>
                                         <option value="UI (UREA INDUSTRIAL)">UI (UREA INDUSTRIAL)</option>
+                                        <option value="PRODUCTO DE IMPORTACION">PRODUCTO DE IMPORTACION</option>
                                     </select>
                                     <Package className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>
@@ -251,8 +273,9 @@ export default function Create({
                                     <TextInput
                                         value={data.celdas}
                                         onChange={(e) => updateCeldas(e.target.value)}
-                                        className="w-full pl-10 font-bold text-gray-800 focus:border-indigo-500 focus:ring-indigo-500"
-                                        placeholder="Ej: Celda 1, Celda 2..."
+                                        disabled={isImportProduct(data.product)}
+                                        className={`w-full pl-10 font-bold text-gray-800 focus:border-indigo-500 focus:ring-indigo-500 ${isImportProduct(data.product) ? "bg-gray-100 text-gray-400 cursor-not-allowed" : ""}`}
+                                        placeholder={isImportProduct(data.product) ? "No aplica para importación" : "Ej: Celda 1, Celda 2..."}
                                     />
                                     <Layers className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>
@@ -273,10 +296,18 @@ export default function Create({
                                     <select
                                         value={data.plant_origin}
                                         onChange={(e) => updatePlant(e.target.value)}
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white"
+                                        disabled={isImportProduct(data.product)}
+                                        className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white ${isImportProduct(data.product) ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}`}
                                     >
-                                        <option value="UREA 1">UREA 1</option>
-                                        <option value="UREA 2">UREA 2</option>
+                                        {isImportProduct(data.product) ? (
+                                            <option value="N/A">N/A</option>
+                                        ) : (
+                                            <>
+                                                <option value="UREA 1">UREA 1</option>
+                                                <option value="UREA 2">UREA 2</option>
+                                                <option value="N/A">N/A</option>
+                                            </>
+                                        )}
                                     </select>
                                     <Factory className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>

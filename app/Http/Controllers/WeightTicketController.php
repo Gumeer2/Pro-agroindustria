@@ -1335,6 +1335,74 @@ class WeightTicketController extends Controller
                         \App\Services\BurreoWeightService::applyUnitAverage($order->vessel_id, $order->unit_type);
                     }
                 }
+
+                // Automatic Registration in Daily Reception for Vessel Scale Entries (Urea Importada)
+                if ($order->vessel_id && $netTons > 0) {
+                    $vessel = $order->vessel;
+                    $prodType = \App\Services\UreaStockService::resolveProductType($order->product?->name ?? $vessel?->product?->name ?? $vessel?->name);
+
+                    if (!$prodType || $prodType === 'importada') {
+                        $targetWh = $finalWarehouse ?: ($order->warehouse ?: 'Almacen 1');
+                        $targetCubicle = $order->cubicle ?: null;
+                        $vesselName = $vessel?->name ?? 'BUQUE / MUELLE';
+                        $ticketNumber = $ticket->ticket_number;
+
+                        $alreadyExists = \App\Models\UreaDailyProduction::importada()
+                            ->where(function ($q) use ($ticketNumber, $order) {
+                                $q->where('notes', 'like', "%Ticket: {$ticketNumber}%")
+                                  ->orWhere('notes', 'like', "%Folio: {$order->folio}%");
+                            })
+                            ->exists();
+
+                        if (!$alreadyExists) {
+                            \App\Models\UreaDailyProduction::create([
+                                'date' => now()->format('Y-m-d'),
+                                'shift' => 'Turno 1',
+                                'warehouse' => $targetWh,
+                                'cubicle' => $targetCubicle,
+                                'plant_origin' => $vesselName,
+                                'product_type' => 'importada',
+                                'packaging' => 'Granel',
+                                'quantity_tons' => round($netTons, 3),
+                                'sacks_count' => 0,
+                                'lot_folio' => null,
+                                'supervisor_name' => auth()->user()?->name ?? 'Báscula',
+                                'notes' => "Entrada por Báscula - Ticket: {$ticketNumber} | Buque: {$vesselName} | Chofer: {$order->operator_name} ({$order->tractor_plate})",
+                                'user_id' => auth()->id(),
+                            ]);
+                        }
+                    } elseif ($prodType === 'dap') {
+                        $targetWh = $finalWarehouse ?: ($order->warehouse ?: 'Almacen 1');
+                        $targetCubicle = $order->cubicle ?: null;
+                        $vesselName = $vessel?->name ?? 'BUQUE / MUELLE';
+                        $ticketNumber = $ticket->ticket_number;
+
+                        $alreadyExists = \App\Models\UreaDailyProduction::dap()
+                            ->where(function ($q) use ($ticketNumber, $order) {
+                                $q->where('notes', 'like', "%Ticket: {$ticketNumber}%")
+                                  ->orWhere('notes', 'like', "%Folio: {$order->folio}%");
+                            })
+                            ->exists();
+
+                        if (!$alreadyExists) {
+                            \App\Models\UreaDailyProduction::create([
+                                'date' => now()->format('Y-m-d'),
+                                'shift' => 'Turno 1',
+                                'warehouse' => $targetWh,
+                                'cubicle' => $targetCubicle,
+                                'plant_origin' => $vesselName,
+                                'product_type' => 'dap',
+                                'packaging' => 'Granel',
+                                'quantity_tons' => round($netTons, 3),
+                                'sacks_count' => 0,
+                                'lot_folio' => null,
+                                'supervisor_name' => auth()->user()?->name ?? 'Báscula',
+                                'notes' => "Entrada por Báscula - Ticket: {$ticketNumber} | Buque: {$vesselName} | Chofer: {$order->operator_name} ({$order->tractor_plate})",
+                                'user_id' => auth()->id(),
+                            ]);
+                        }
+                    }
+                }
             });
 
             return redirect()->route('scale.ticket.print', ['id' => $validated['shipment_order_id']])->with('success', 'Salida registrada correctamente.');

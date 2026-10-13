@@ -66,6 +66,8 @@ interface ProductOption {
     stock: number;
     unit_cost: number;
     location?: string;
+    notes?: string;
+    description?: string;
 }
 
 interface ExitStagedItem {
@@ -204,7 +206,9 @@ export default function ExitsIndex({
                 p.code.toLowerCase().includes(term) ||
                 p.name.toLowerCase().includes(term) ||
                 (p.type_name && p.type_name.toLowerCase().includes(term)) ||
-                (p.group_name && p.group_name.toLowerCase().includes(term))
+                (p.group_name && p.group_name.toLowerCase().includes(term)) ||
+                (p.notes && p.notes.toLowerCase().includes(term)) ||
+                (p.description && p.description.toLowerCase().includes(term))
             )
             .slice(0, 10);
     }, [availableProducts, productSearch]);
@@ -560,7 +564,7 @@ export default function ExitsIndex({
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && handleFilterChange({ search })}
-                                placeholder="Buscar por producto, clave, folio de vale o solicitante..."
+                                placeholder="Buscar por producto, clave, observaciones, folio de vale o solicitante..."
                                 className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                             />
                         </div>
@@ -945,8 +949,8 @@ export default function ExitsIndex({
                                                                             {p.name}
                                                                         </span>
                                                                     </div>
-                                                                    <div className="text-[11px] text-gray-500 mt-0.5">
-                                                                        {p.type_name} • Grupo: {p.group_name}
+                                                                    <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                                                                        {p.type_name} • Grupo: {p.group_name}{p.description ? ` • Desc: ${p.description}` : ""}{p.notes ? ` • Obs: ${p.notes}` : ""}
                                                                     </div>
                                                                 </div>
                                                                 <div className="text-right shrink-0">

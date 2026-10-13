@@ -26,6 +26,14 @@ interface Props {
         urea_industrial_daily?: number;
         urea_industrial_initial?: number;
         urea_industrial_shipped?: number;
+        urea_importada_total?: number;
+        urea_importada_daily?: number;
+        urea_importada_initial?: number;
+        urea_importada_shipped?: number;
+        dap_total?: number;
+        dap_daily?: number;
+        dap_initial?: number;
+        dap_shipped?: number;
     };
 }
 
@@ -111,11 +119,12 @@ export default function ProductionHub({ auth, metrics }: Props) {
             accentColor: "text-purple-600",
             buttonBg: "bg-purple-50/60 group-hover:bg-purple-100/80 text-purple-600 group-hover:text-purple-700",
             description: "Recepción, balance de descarga de buques y control de existencias de Urea Importada en almacenes.",
-            specialModuleLabel: "Módulo especial",
-            specialModuleValue: "Recepción y Balance",
+            specialModuleLabel: "Stock Disponible",
+            specialModuleValue: metrics?.urea_importada_total !== undefined ? `${Number(metrics.urea_importada_total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM` : "0.00 TM",
             secondaryLabel: "Origen:",
             secondaryValue: "Barco / Muelle",
-            active: false,
+            href: typeof route === "function" ? route("apt.inventory.urea-importada.index") + "?tab=production" : "/apt/inventory/urea-importada?tab=production",
+            active: true,
         },
         {
             id: "dap",
@@ -129,11 +138,12 @@ export default function ProductionHub({ auth, metrics }: Props) {
             accentColor: "text-amber-600",
             buttonBg: "bg-amber-50/60 group-hover:bg-amber-100/80 text-amber-600 group-hover:text-amber-700",
             description: "Gestión y seguimiento de producción, almacenamiento y despacho de Fosfato Diamónico (DAP).",
-            specialModuleLabel: "Módulo especial",
-            specialModuleValue: "Fosfato Diamónico",
+            specialModuleLabel: "Stock Disponible",
+            specialModuleValue: metrics?.dap_total !== undefined ? `${Number(metrics.dap_total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM` : "0.00 TM",
             secondaryLabel: "Presentación:",
             secondaryValue: "Granel / Envasado",
-            active: false,
+            href: typeof route === "function" ? route("apt.inventory.dap.index") + "?tab=production" : "/apt/inventory/dap?tab=production",
+            active: true,
         },
     ];
 

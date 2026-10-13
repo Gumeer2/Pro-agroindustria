@@ -62,6 +62,14 @@ class UreaStockService
             return 'industrial';
         }
 
+        if (str_contains($upper, 'IMPORTADA') || str_contains($upper, 'IMPORTACION') || str_contains($upper, 'IMPORTACIÓN')) {
+            return 'importada';
+        }
+
+        if (str_contains($upper, 'DAP') || str_contains($upper, 'DIAMONICO') || str_contains($upper, 'DIAMÓNICO')) {
+            return 'dap';
+        }
+
         return null;
     }
 
@@ -226,10 +234,10 @@ class UreaStockService
             return 0.0;
         }
 
-        $isAgricola = strtolower($productType) === 'agricola';
+        $type = strtolower($productType);
 
-        $initialQuery = $isAgricola ? UreaInitialInventory::agricola() : UreaInitialInventory::industrial();
-        $dailyQuery = $isAgricola ? UreaDailyProduction::agricola() : UreaDailyProduction::industrial();
+        $initialQuery = UreaInitialInventory::where('product_type', $type);
+        $dailyQuery = UreaDailyProduction::where('product_type', $type);
 
         $initialTons = (float) $initialQuery->where('warehouse', $warehouseKey)->sum('quantity_tons');
         $dailyTons = (float) $dailyQuery->where('warehouse', $warehouseKey)->sum('quantity_tons');
@@ -243,28 +251,28 @@ class UreaStockService
     }
 
     /**
-     * Comprehensive Metrics for Dashboard (Urea Agrícola or Urea Industrial).
+     * Comprehensive Metrics for Dashboard (Urea Agrícola, Industrial, Importada, DAP).
      */
     public static function getMetrics(string $productType): array
     {
-        $isAgricola = strtolower($productType) === 'agricola';
+        $type = strtolower($productType);
 
         // 1. Initial Inventory
-        $initialQuery = $isAgricola ? UreaInitialInventory::agricola() : UreaInitialInventory::industrial();
+        $initialQuery = UreaInitialInventory::where('product_type', $type);
         $totalInitialTons = (float) $initialQuery->sum('quantity_tons');
         $totalInitialSacks = (int) $initialQuery->sum('sacks_count');
 
         // 2. Daily Production
-        $dailyQuery = $isAgricola ? UreaDailyProduction::agricola() : UreaDailyProduction::industrial();
+        $dailyQuery = UreaDailyProduction::where('product_type', $type);
         $totalDailyTons = (float) $dailyQuery->sum('quantity_tons');
         $totalDailySacks = (int) $dailyQuery->sum('sacks_count');
 
         // Operational date cutoff at 5:00 AM
         $operationalDate = now()->hour < 5 ? now()->subDay()->toDateString() : now()->toDateString();
-        $todayProductionTons = (float) ($isAgricola ? UreaDailyProduction::agricola() : UreaDailyProduction::industrial())
+        $todayProductionTons = (float) UreaDailyProduction::where('product_type', $type)
             ->whereDate('date', $operationalDate)
             ->sum('quantity_tons');
-        $todayProductionSacks = (int) ($isAgricola ? UreaDailyProduction::agricola() : UreaDailyProduction::industrial())
+        $todayProductionSacks = (int) UreaDailyProduction::where('product_type', $type)
             ->whereDate('date', $operationalDate)
             ->sum('sacks_count');
 
@@ -277,26 +285,42 @@ class UreaStockService
         $totalStockTons = round($totalProducedAndInitial - $totalShippedTons, 2);
         $totalStockSacks = $totalInitialSacks + $totalDailySacks;
 
-        // 5. Breakdown by Plant Origin
-        $byPlant = [
-            'UREA 1' => [
-                'initial_tons' => (float) ($isAgricola ? UreaInitialInventory::agricola() : UreaInitialInventory::industrial())->where('plant_origin', 'UREA 1')->sum('quantity_tons'),
-                'daily_tons' => (float) ($isAgricola ? UreaDailyProduction::agricola() : UreaDailyProduction::industrial())->where('plant_origin', 'UREA 1')->sum('quantity_tons'),
-            ],
-            'UREA 2' => [
-                'initial_tons' => (float) ($isAgricola ? UreaInitialInventory::agricola() : UreaInitialInventory::industrial())->where('plant_origin', 'UREA 2')->sum('quantity_tons'),
-                'daily_tons' => (float) ($isAgricola ? UreaDailyProduction::agricola() : UreaDailyProduction::industrial())->where('plant_origin', 'UREA 2')->sum('quantity_tons'),
-            ],
-        ];
-        $byPlant['UREA 1']['total_tons'] = $byPlant['UREA 1']['initial_tons'] + $byPlant['UREA 1']['daily_tons'];
-        $byPlant['UREA 2']['total_tons'] = $byPlant['UREA 2']['initial_tons'] + $byPlant['UREA 2']['daily_tons'];
+        // 5. Breakdown by Plant / Origin
+        $defaultPlants = ['UREA 1', 'UREA 2'];
+        if ($type === 'importada') {
+            $defaultPlants = ['BUQUE / MUELLE', 'UREA 1', 'UREA 2'];
+        } elseif ($type === 'dap') {
+            $defaultPlants = ['PLANTA DAP', 'UREA 1', 'UREA 2'];
+        }
+
+        // Merge with any other plants registered in DB for this type
+        $dbPlants = UreaDailyProduction::where('product_type', $type)
+            ->pluck('plant_origin')
+            ->merge(UreaInitialInventory::where('product_type', $type)->pluck('plant_origin'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $allPlants = array_unique(array_merge($defaultPlants, $dbPlants));
+
+        $byPlant = [];
+        foreach ($allPlants as $plant) {
+            $initTons = (float) UreaInitialInventory::where('product_type', $type)->where('plant_origin', $plant)->sum('quantity_tons');
+            $dailyTons = (float) UreaDailyProduction::where('product_type', $type)->where('plant_origin', $plant)->sum('quantity_tons');
+            $byPlant[$plant] = [
+                'initial_tons' => round($initTons, 2),
+                'daily_tons' => round($dailyTons, 2),
+                'total_tons' => round($initTons + $dailyTons, 2),
+            ];
+        }
 
         // 6. Breakdown by Warehouse (Almacen 1 to 5)
         $byWarehouse = [];
         for ($i = 1; $i <= 5; $i++) {
             $whKey = "Almacen {$i}";
-            $initTons = (float) ($isAgricola ? UreaInitialInventory::agricola() : UreaInitialInventory::industrial())->where('warehouse', $whKey)->sum('quantity_tons');
-            $prodTons = (float) ($isAgricola ? UreaDailyProduction::agricola() : UreaDailyProduction::industrial())->where('warehouse', $whKey)->sum('quantity_tons');
+            $initTons = (float) UreaInitialInventory::where('product_type', $type)->where('warehouse', $whKey)->sum('quantity_tons');
+            $prodTons = (float) UreaDailyProduction::where('product_type', $type)->where('warehouse', $whKey)->sum('quantity_tons');
             $shipped = $exits['by_warehouse'][$whKey] ?? 0.0;
             $stock = ($initTons + $prodTons) - $shipped;
 
@@ -345,7 +369,7 @@ class UreaStockService
 
         $productType = self::getOrderProductType($order);
         if (!$productType) {
-            // Not Urea Agrícola or Industrial, skip validation
+            // Unknown product type, skip validation
             return;
         }
 
@@ -355,7 +379,13 @@ class UreaStockService
         }
 
         $availableStock = self::getWarehouseStock($productType, $warehouseKey);
-        $productLabel = $productType === 'agricola' ? 'Urea Agrícola' : 'Urea Industrial';
+        $productLabel = match ($productType) {
+            'agricola' => 'Urea Agrícola',
+            'industrial' => 'Urea Industrial',
+            'importada' => 'Urea Importada',
+            'dap' => 'DAP (Fosfato Diamónico)',
+            default => 'Fertilizante',
+        };
 
         // Check if net tons requested exceeds available stock in warehouse
         if ($netTons > $availableStock) {
