@@ -19,6 +19,37 @@ export default function WeightVerificationTemplate({ order = {}, samples = [] }:
 
     const safeOrder = order || {};
 
+    const effectiveSamples = useMemo(() => {
+        if (Array.isArray(samples) && samples.length > 0) {
+            return samples;
+        }
+        if (typeof window === "undefined" || !safeOrder) return [];
+
+        const candidateKeys = [
+            safeOrder.id ? `envasadora_sampling_order_${safeOrder.id}` : null,
+            safeOrder.id ? `envasadora_sampling_${safeOrder.id}` : null,
+            safeOrder.folio ? `envasadora_sampling_order_${safeOrder.folio}` : null,
+            safeOrder.folio ? `envasadora_sampling_${safeOrder.folio}` : null,
+            safeOrder.order_number ? `envasadora_sampling_order_${safeOrder.order_number}` : null,
+            safeOrder.order_number ? `envasadora_sampling_${safeOrder.order_number}` : null,
+            "envasadora_sampling_draft_temp",
+        ].filter(Boolean) as string[];
+
+        let bestSamples: any[] = [];
+        for (const key of candidateKeys) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed.samples) && parsed.samples.length > bestSamples.length) {
+                        bestSamples = parsed.samples;
+                    }
+                }
+            } catch {}
+        }
+        return bestSamples;
+    }, [samples, safeOrder]);
+
     const bgColor = !tenant || tenant?.slug === 'proagro' ? 'bg-green-100' : (tenant?.primary_color ? '' : 'bg-green-100');
     const headerBgColor = !tenant || tenant?.slug === 'proagro' ? 'bg-gray-200' : (tenant?.primary_color ? 'bg-gray-200' : 'bg-green-200');
     const accentColor = !tenant || tenant?.slug === 'proagro' ? 'bg-green-100' : (tenant?.primary_color ? 'bg-gray-100' : 'bg-green-100');
@@ -54,8 +85,8 @@ export default function WeightVerificationTemplate({ order = {}, samples = [] }:
     const sampleGrid = useMemo(() => {
         const grid: { [rowNum: number]: { [colIdx: number]: number } } = {};
         
-        samples.forEach((s) => {
-            const row = s.num;
+        effectiveSamples.forEach((s) => {
+            const row = Number(s.num) || 1;
             const env = s.envasadora; // 1 or 2
             const w = Number(s.weight) || 0;
 
@@ -78,7 +109,7 @@ export default function WeightVerificationTemplate({ order = {}, samples = [] }:
         });
 
         return grid;
-    }, [samples, limits]);
+    }, [effectiveSamples, limits]);
 
     // Calculate Column Sums
     const colSums = useMemo(() => {
@@ -108,15 +139,15 @@ export default function WeightVerificationTemplate({ order = {}, samples = [] }:
 
     // Overall average
     const overallStats = useMemo(() => {
-        if (samples.length === 0) return { avg: null, totalSum: 0 };
-        const total = samples.reduce((acc, s) => acc + (Number(s.weight) || 0), 0);
+        if (effectiveSamples.length === 0) return { avg: null, totalSum: 0 };
+        const total = effectiveSamples.reduce((acc, s) => acc + (Number(s.weight) || 0), 0);
         return {
-            avg: total / samples.length,
+            avg: total / effectiveSamples.length,
             totalSum: total,
         };
-    }, [samples]);
+    }, [effectiveSamples]);
 
-    // Generate 40 rows for the table
+    // Generate 40 rows for the table (GLS-AP-FO-003 has 40 numbered rows)
     const rows = Array.from({ length: 40 }, (_, i) => i + 1);
 
     return (
@@ -298,7 +329,7 @@ export default function WeightVerificationTemplate({ order = {}, samples = [] }:
                             <tr className={`h-3 ${accentColor} leading-none`}>
                                 <td className="border border-black font-bold text-[6.5px]">Peso=</td>
                                 <td className="border border-black font-mono font-bold" colSpan={6}>
-                                    {overallStats.avg !== null ? `${overallStats.avg.toFixed(3)} KG (${samples.length} MUESTRAS)` : ""}
+                                    {overallStats.avg !== null ? `${overallStats.avg.toFixed(3)} KG (${effectiveSamples.length} MUESTRAS)` : ""}
                                 </td>
                             </tr>
                         </tbody>

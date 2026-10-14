@@ -181,6 +181,11 @@
                     registrations.forEach((registration) => registration.unregister());
                 });
             }
+            if ('caches' in window) {
+                caches.keys().then((names) => {
+                    names.forEach((name) => caches.delete(name));
+                });
+            }
         })();
     </script>
 
@@ -226,7 +231,7 @@
 
     <!-- Scripts -->
     @routes
-    <!-- Cache Buster: v=3.2-print-entry-clean -->
+    <!-- Cache Buster: v=3.6-print-clean-controls -->
     @viteReactRefresh
     @vite('resources/js/app.tsx')
     @inertiaHead

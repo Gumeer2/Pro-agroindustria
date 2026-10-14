@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { Fragment } from "react";
+import Swal from "sweetalert2";
 import {
     X,
     Printer,
@@ -18,6 +19,9 @@ import {
     CheckCircle2,
     AlertTriangle,
     FileText,
+    ArrowRight,
+    Lock,
+    Cloud,
 } from "lucide-react";
 
 interface SampleRecord {
@@ -34,6 +38,7 @@ interface Props {
     stowageCount?: string | number;
     totalSamplesCount?: number;
     onOpenPrintDocuments?: (samples: SampleRecord[]) => void;
+    onSave?: (samples: SampleRecord[]) => void;
 }
 
 export default function EnvasadoraSamplingModal({
@@ -43,15 +48,30 @@ export default function EnvasadoraSamplingModal({
     stowageCount,
     totalSamplesCount = 40,
     onOpenPrintDocuments,
+    onSave,
 }: Props) {
     const [selectedEnvasadora, setSelectedEnvasadora] = useState<1 | 2>(1);
+    const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
+    const [pendingWeight, setPendingWeight] = useState<number | null>(null);
     const [sampleInput, setSampleInput] = useState<string>("");
     const [inputError, setInputError] = useState<string>("");
     const [samples, setSamples] = useState<SampleRecord[]>([]);
+    const [isSaved, setIsSaved] = useState<boolean>(false);
+    const [savedAt, setSavedAt] = useState<string | null>(null);
+    const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null);
+    const sampleInputRef = useRef<HTMLInputElement>(null);
+    const isLoadedRef = useRef<boolean>(false);
 
     // Editing state
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editingValue, setEditingValue] = useState<string>("");
+
+    // Storage Key for draft & persistence per order
+    const getStorageKey = () => {
+        if (!order) return "envasadora_sampling_draft_temp";
+        const id = order.id || order.order_number || order.folio || "current";
+        return `envasadora_sampling_order_${id}`;
+    };
 
     // Determine target weight based on order presentation / product
     const targetBaseWeight = useMemo(() => {
@@ -84,14 +104,304 @@ export default function EnvasadoraSamplingModal({
         };
     }, [targetBaseWeight]);
 
-    // Load samples or reset when modal opens for a new order
+    // Load samples or restore draft when modal opens
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && order) {
+            isLoadedRef.current = false;
+            
+            const primaryKey = getStorageKey();
+            const candidateKeys = [
+                primaryKey,
+                order.id ? `envasadora_sampling_order_${order.id}` : null,
+                order.id ? `envasadora_sampling_${order.id}` : null,
+                order.folio ? `envasadora_sampling_order_${order.folio}` : null,
+                order.folio ? `envasadora_sampling_${order.folio}` : null,
+                order.order_number ? `envasadora_sampling_order_${order.order_number}` : null,
+                order.order_number ? `envasadora_sampling_${order.order_number}` : null,
+                "envasadora_sampling_draft_temp",
+            ].filter(Boolean) as string[];
+
+            try {
+                const orderIdentifiers = [order.id, order.folio, order.order_number].filter(Boolean).map(String);
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith("envasadora_sampling")) {
+                        if (orderIdentifiers.some((id) => k.includes(id)) || k.includes("temp") || k.includes("draft")) {
+                            if (!candidateKeys.includes(k)) candidateKeys.push(k);
+                        }
+                    }
+                }
+            } catch (e) {}
+
+            try {
+                let bestPayload: any = null;
+                let maxCount = -1;
+
+                for (const k of candidateKeys) {
+                    try {
+                        const raw = localStorage.getItem(k);
+                        if (!raw) continue;
+                        const parsed = JSON.parse(raw);
+                        if (parsed && Array.isArray(parsed.samples)) {
+                            const count = parsed.samples.length;
+                            if (count > maxCount) {
+                                maxCount = count;
+                                bestPayload = parsed;
+                            } else if (count === maxCount && count > 0) {
+                                const bestDate = bestPayload?.updatedAt ? new Date(bestPayload.updatedAt).getTime() : 0;
+                                const thisDate = parsed.updatedAt ? new Date(parsed.updatedAt).getTime() : 0;
+                                if (thisDate > bestDate) {
+                                    bestPayload = parsed;
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                if (bestPayload && Array.isArray(bestPayload.samples) && bestPayload.samples.length > 0) {
+                    const loadedSamples = bestPayload.samples;
+                    const savedState = Boolean(bestPayload.isSaved) && loadedSamples.length === 40;
+                    setSamples(loadedSamples);
+                    setIsSaved(savedState);
+                    setSavedAt(savedState ? (bestPayload.savedAt || null) : null);
+
+                    if (bestPayload.updatedAt) {
+                        try {
+                            const date = new Date(bestPayload.updatedAt);
+                            setLastAutosavedAt(
+                                date.toLocaleTimeString("es-MX", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    second: "2-digit",
+                                })
+                            );
+                        } catch {
+                            setLastAutosavedAt(null);
+                        }
+                    }
+
+                    if (bestPayload.selectedEnvasadora === 1 || bestPayload.selectedEnvasadora === 2) {
+                        setSelectedEnvasadora(bestPayload.selectedEnvasadora);
+                    }
+
+                    if (!savedState && loadedSamples.length > 0) {
+                        Swal.fire({
+                            toast: true,
+                            position: "top-end",
+                            icon: "info",
+                            title: `Avance autoguardado recuperado`,
+                            text: `${loadedSamples.length} de 40 estibas capturadas. Continúe capturando.`,
+                            showConfirmButton: false,
+                            timer: 3500,
+                        });
+                    }
+                } else {
+                    setSamples([]);
+                    setIsSaved(false);
+                    setSavedAt(null);
+                    setLastAutosavedAt(null);
+                }
+            } catch (err) {
+                console.error("Error al cargar muestreo almacenado", err);
+                setSamples([]);
+                setIsSaved(false);
+                setSavedAt(null);
+                setLastAutosavedAt(null);
+            }
+
             setSampleInput("");
             setInputError("");
             setEditingId(null);
+            setIsSelectorOpen(false);
+            setPendingWeight(null);
+            setTimeout(() => {
+                isLoadedRef.current = true;
+                sampleInputRef.current?.focus();
+            }, 100);
+        } else {
+            isLoadedRef.current = false;
         }
-    }, [isOpen, order?.id]);
+    }, [isOpen, order?.id, order?.order_number]);
+
+    const persistSamplingData = (payload: any) => {
+        const primaryKey = getStorageKey();
+        const candidateKeys = new Set<string>();
+        candidateKeys.add(primaryKey);
+
+        const ids = [order?.id, order?.order_number, order?.folio].filter(Boolean);
+        ids.forEach((id) => {
+            candidateKeys.add(`envasadora_sampling_order_${id}`);
+            candidateKeys.add(`envasadora_sampling_${id}`);
+        });
+
+        // Do NOT wipe out stored samples if new payload is empty
+        const newSamples = Array.isArray(payload?.samples) ? payload.samples : [];
+        if (newSamples.length === 0) {
+            for (const k of candidateKeys) {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed?.samples) && parsed.samples.length > 0) {
+                            return;
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+
+        const serialized = JSON.stringify(payload);
+        candidateKeys.forEach((k) => {
+            try {
+                localStorage.setItem(k, serialized);
+            } catch (err) {}
+        });
+
+        try {
+            window.dispatchEvent(new Event("storage"));
+        } catch (err) {}
+    };
+
+    // Autoguardado continuo en tiempo real ante cualquier percance
+    useEffect(() => {
+        if (!isLoadedRef.current || !order || !isOpen) return;
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+        });
+        const effectiveIsSaved = isSaved && samples.length === 40;
+        try {
+            persistSamplingData({
+                orderId: order.id || order.order_number || order.folio,
+                samples,
+                isSaved: effectiveIsSaved,
+                savedAt: effectiveIsSaved ? savedAt : null,
+                selectedEnvasadora,
+                updatedAt: now.toISOString(),
+            });
+            setLastAutosavedAt(timeStr);
+        } catch (err) {
+            console.error("Error al respaldar muestreo en localStorage", err);
+        }
+    }, [samples, isSaved, savedAt, selectedEnvasadora, order?.id]);
+
+    // Bloqueo estricto: solo está bloqueado si TIENE LAS 40 ESTIBAS y fue guardado
+    const isLocked = isSaved && samples.length === 40;
+
+    // Proteger contra cierre involuntario de pestaña/navegador si hay estibas sin guardar
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (isOpen && !isLocked && samples.length > 0) {
+                e.preventDefault();
+                e.returnValue = "";
+            }
+        };
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, [isOpen, isLocked, samples.length]);
+
+    const handleSave = () => {
+        const now = new Date().toISOString();
+        const isCompleted = samples.length === 40;
+
+        try {
+            persistSamplingData({
+                orderId: order?.id || order?.order_number || order?.folio,
+                samples,
+                isSaved: isCompleted,
+                savedAt: isCompleted ? (savedAt || now) : null,
+                selectedEnvasadora,
+                updatedAt: now,
+            });
+        } catch (e) {
+            console.error("Error al guardar en localStorage", e);
+        }
+
+        if (isCompleted) {
+            setIsSaved(true);
+            setSavedAt(savedAt || now);
+            if (onSave) {
+                onSave(samples);
+            }
+            Swal.fire({
+                icon: "success",
+                title: "¡Muestreo Completado y Guardado!",
+                html: "Se han completado y certificado las <b>40 estibas</b> con éxito.<br/><br/>El cronómetro en el historial comenzará a correr.",
+                confirmButtonColor: "#16a34a",
+                confirmButtonText: "Aceptar",
+            });
+            onClose();
+        } else {
+            setIsSaved(false);
+            if (onSave) {
+                onSave(samples);
+            }
+            Swal.fire({
+                toast: true,
+                position: "top-end",
+                icon: "info",
+                title: "Avance guardado",
+                text: `${samples.length} de 40 estibas guardadas. Puede continuar en cualquier momento desde el historial.`,
+                showConfirmButton: false,
+                timer: 3000,
+            });
+            onClose();
+        }
+    };
+
+    const handleAttemptClose = () => {
+        handleSave();
+    };
+
+    const handleSelectEnvasadora = (env: 1 | 2) => {
+        if (isLocked) return;
+        const weightToSave = pendingWeight !== null ? pendingWeight : parseFloat(sampleInput);
+        if (weightToSave && !isNaN(weightToSave) && weightToSave > 0) {
+            const countForThisEnv = samples.filter((s) => s.envasadora === env).length;
+            if (countForThisEnv >= 20) {
+                Swal.fire({
+                    icon: "warning",
+                    title: `ENV-${env} completada`,
+                    text: `La envasadora ENV-${env} ya cuenta con sus 20 estibas capturadas. Por favor seleccione la otra envasadora.`,
+                    confirmButtonColor: "#4f46e5",
+                });
+                return;
+            }
+            if (samples.length >= 40) {
+                Swal.fire({
+                    icon: "info",
+                    title: "40 estibas completadas",
+                    text: "Ya se completaron las 40 estibas requeridas en total. Por favor guarde el muestreo.",
+                    confirmButtonColor: "#16a34a",
+                });
+                return;
+            }
+            const newRecord: SampleRecord = {
+                id: Date.now() + Math.random(),
+                num: countForThisEnv + 1,
+                envasadora: env,
+                weight: weightToSave,
+            };
+            setSamples((prev) => [...prev, newRecord]);
+        }
+        setSelectedEnvasadora(env);
+        setPendingWeight(null);
+        setSampleInput("");
+        setIsSelectorOpen(false);
+        setTimeout(() => {
+            sampleInputRef.current?.focus();
+        }, 100);
+    };
+
+    const handleCancelSelector = () => {
+        setIsSelectorOpen(false);
+        setPendingWeight(null);
+        setTimeout(() => {
+            sampleInputRef.current?.focus();
+        }, 100);
+    };
 
     // Samples by Envasadora
     const samplesEnv1 = useMemo(() => samples.filter((s) => s.envasadora === 1), [samples]);
@@ -135,6 +445,16 @@ export default function EnvasadoraSamplingModal({
 
     const handleAddSample = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
+        if (isLocked) return;
+        if (samples.length >= 40) {
+            Swal.fire({
+                icon: "info",
+                title: "40 estibas completadas",
+                text: "Ya se ha capturado el total de 40 estibas requeridas. Haga clic en 'Guardar Muestreo' para finalizar y bloquear el registro.",
+                confirmButtonColor: "#16a34a",
+            });
+            return;
+        }
         const val = parseFloat(sampleInput);
         if (isNaN(val) || val <= 0) {
             setInputError("Por favor capture un peso válido en kg.");
@@ -142,23 +462,18 @@ export default function EnvasadoraSamplingModal({
         }
 
         setInputError("");
-        const newRecord: SampleRecord = {
-            id: Date.now() + Math.random(),
-            num: samples.length + 1,
-            envasadora: selectedEnvasadora,
-            weight: val,
-        };
-
-        setSamples((prev) => [...prev, newRecord]);
-        setSampleInput("");
+        setPendingWeight(val);
+        setIsSelectorOpen(true);
     };
 
     const handleStartEdit = (sample: SampleRecord) => {
+        if (isLocked) return;
         setEditingId(sample.id);
         setEditingValue(sample.weight.toString());
     };
 
     const handleSaveEdit = (id: number) => {
+        if (isLocked) return;
         const val = parseFloat(editingValue);
         if (isNaN(val) || val <= 0) return;
         setSamples((prev) => prev.map((s) => (s.id === id ? { ...s, weight: val } : s)));
@@ -167,9 +482,20 @@ export default function EnvasadoraSamplingModal({
     };
 
     const handleDeleteSample = (id: number) => {
+        if (isLocked) return;
         setSamples((prev) => {
             const filtered = prev.filter((s) => s.id !== id);
-            return filtered.map((s, idx) => ({ ...s, num: idx + 1 }));
+            let env1Count = 0;
+            let env2Count = 0;
+            return filtered.map((s) => {
+                if (s.envasadora === 1) {
+                    env1Count++;
+                    return { ...s, num: env1Count };
+                } else {
+                    env2Count++;
+                    return { ...s, num: env2Count };
+                }
+            });
         });
     };
 
@@ -261,7 +587,7 @@ export default function EnvasadoraSamplingModal({
 
     return (
         <Transition.Root show={isOpen} as={Fragment}>
-            <Dialog as="div" className="relative z-[9999]" onClose={onClose}>
+            <Dialog as="div" className="relative z-[9999]" onClose={() => {}}>
                 <Transition.Child
                     as={Fragment}
                     enter="ease-out duration-300"
@@ -302,9 +628,33 @@ export default function EnvasadoraSamplingModal({
                                                         Orden #{order.order_number}
                                                     </span>
                                                 )}
+                                                {isLocked ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                        Guardado Finalizado (40/40 estibas)
+                                                    </span>
+                                                ) : samples.length > 0 ? (
+                                                    <span
+                                                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                                        title="Su avance se encuentra autoguardado en tiempo real"
+                                                    >
+                                                        <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+                                                        Autoguardado activo ({samples.length}/40 estibas)
+                                                    </span>
+                                                ) : (
+                                                    <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200">
+                                                        40 estibas requeridas (20 por ENV)
+                                                    </span>
+                                                )}
                                             </div>
-                                            <p className="text-xs font-medium text-gray-500 mt-0.5">
-                                                Monitoreo estadístico de peso por saco • Tolva 1 • Presentación {targetBaseWeight} kg
+                                            <p className="text-xs font-medium text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                                                <span>Monitoreo estadístico de peso por saco • Tolva 1 • Presentación {targetBaseWeight} kg</span>
+                                                {lastAutosavedAt && !isLocked && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 font-mono font-medium bg-indigo-50/70 px-2 py-0.5 rounded-md border border-indigo-100">
+                                                        <Cloud className="w-3 h-3 text-indigo-500" />
+                                                        Último autoguardado: {lastAutosavedAt}
+                                                    </span>
+                                                )}
                                             </p>
                                         </div>
                                     </div>
@@ -313,15 +663,26 @@ export default function EnvasadoraSamplingModal({
                                     <div className="flex items-center gap-2.5 self-end sm:self-auto">
                                         {/* Selector de Envasadora */}
                                         <div className="bg-slate-100/90 p-1 rounded-xl flex items-center gap-1 border border-slate-200">
-                                            <span className="text-[11px] font-bold text-gray-600 px-2.5 hidden md:inline">
-                                                Envasadora:
-                                            </span>
                                             <button
                                                 type="button"
-                                                onClick={() => setSelectedEnvasadora(1)}
+                                                disabled={isLocked}
+                                                onClick={() => !isLocked && setIsSelectorOpen(true)}
+                                                className={`text-[11px] font-bold px-2.5 hidden md:inline transition ${
+                                                    isLocked ? "text-gray-400 cursor-not-allowed" : "text-gray-600 hover:text-indigo-600 cursor-pointer"
+                                                }`}
+                                                title={isLocked ? "Muestreo finalizado" : "Cambiar envasadora activa"}
+                                            >
+                                                Envasadora:
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={isLocked}
+                                                onClick={() => !isLocked && setSelectedEnvasadora(1)}
                                                 className={`px-3 py-1.5 rounded-lg font-extrabold text-xs transition-all ${
                                                     selectedEnvasadora === 1
                                                         ? "bg-indigo-600 text-white shadow-sm"
+                                                        : isLocked
+                                                        ? "text-gray-400 cursor-not-allowed"
                                                         : "text-gray-600 hover:text-gray-900 hover:bg-white"
                                                 }`}
                                             >
@@ -329,10 +690,13 @@ export default function EnvasadoraSamplingModal({
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={() => setSelectedEnvasadora(2)}
+                                                disabled={isLocked}
+                                                onClick={() => !isLocked && setSelectedEnvasadora(2)}
                                                 className={`px-3 py-1.5 rounded-lg font-extrabold text-xs transition-all ${
                                                     selectedEnvasadora === 2
                                                         ? "bg-emerald-600 text-white shadow-sm"
+                                                        : isLocked
+                                                        ? "text-gray-400 cursor-not-allowed"
                                                         : "text-gray-600 hover:text-gray-900 hover:bg-white"
                                                 }`}
                                             >
@@ -354,18 +718,43 @@ export default function EnvasadoraSamplingModal({
 
                                         <button
                                             type="button"
+                                            onClick={handleSave}
+                                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black shadow-md transition transform active:scale-95 ${
+                                                samples.length === 40
+                                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
+                                                    : isLocked
+                                                    ? "bg-emerald-700 hover:bg-emerald-800 text-white"
+                                                    : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30"
+                                            }`}
+                                            title={
+                                                samples.length === 40
+                                                    ? "Guardar y certificar 40 estibas (Muestreo Completo)"
+                                                    : isLocked
+                                                    ? "Muestreo finalizado y guardado - Salir"
+                                                    : `Guardar avance (${samples.length}/40 estibas) y salir`
+                                            }
+                                        >
+                                            {isLocked || samples.length === 40 ? (
+                                                <CheckCircle2 className="w-4 h-4 text-white" />
+                                            ) : (
+                                                <Save className="w-4 h-4 text-white" />
+                                            )}
+                                            <span>
+                                                {isLocked
+                                                    ? "Guardado (40/40)"
+                                                    : samples.length === 40
+                                                    ? "Guardar (40/40)"
+                                                    : `Guardar (${samples.length}/40)`}
+                                            </span>
+                                        </button>
+
+                                        <button
+                                            type="button"
                                             onClick={() => (onOpenPrintDocuments ? onOpenPrintDocuments(samples) : window.print())}
                                             className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition shadow-sm"
                                             title="Imprimir"
                                         >
                                             <Printer className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={onClose}
-                                            className="p-2.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition"
-                                        >
-                                            <X className="w-5 h-5" />
                                         </button>
                                     </div>
                                 </div>
@@ -379,7 +768,7 @@ export default function EnvasadoraSamplingModal({
                                                 AVG ENV-1
                                             </span>
                                             <span className="text-[10px] font-semibold bg-indigo-100/80 px-2 py-0.5 rounded-md text-indigo-800">
-                                                {samplesEnv1.length} mstr.
+                                                {samplesEnv1.length} / 20 mstr.
                                             </span>
                                         </div>
                                         <div className="text-xl font-black text-gray-900 font-mono">
@@ -397,7 +786,7 @@ export default function EnvasadoraSamplingModal({
                                                 AVG ENV-2
                                             </span>
                                             <span className="text-[10px] font-semibold bg-emerald-100/80 px-2 py-0.5 rounded-md text-emerald-800">
-                                                {samplesEnv2.length} mstr.
+                                                {samplesEnv2.length} / 20 mstr.
                                             </span>
                                         </div>
                                         <div className="text-xl font-black text-gray-900 font-mono">
@@ -458,64 +847,143 @@ export default function EnvasadoraSamplingModal({
                                     </div>
                                 </div>
 
-                                {/* Formulario de Captura de Muestra */}
-                                <form
-                                    onSubmit={handleAddSample}
-                                    className="mt-4 bg-gradient-to-r from-slate-50 via-indigo-50/30 to-slate-50 border border-indigo-100/90 rounded-2xl p-4 shadow-sm"
-                                >
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                                        <div className="flex items-center gap-2 text-xs font-bold text-gray-700 whitespace-nowrap">
-                                            <span
-                                                className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                                                    selectedEnvasadora === 1 ? "bg-indigo-600" : "bg-emerald-600"
-                                                }`}
-                                            ></span>
-                                            Captura para {selectedEnvasadora === 1 ? "ENV-1" : "ENV-2"}:
-                                        </div>
-
-                                        <div className="relative flex-1">
-                                            <input
-                                                type="number"
-                                                step="0.001"
-                                                value={sampleInput}
-                                                onChange={(e) => {
-                                                    setSampleInput(e.target.value);
-                                                    if (inputError) setInputError("");
-                                                }}
-                                                placeholder={`Ingrese peso del saco (ej. ${limits.ideal.toFixed(2)})`}
-                                                className={`w-full rounded-xl px-4 py-2.5 pr-14 text-sm font-bold font-mono transition shadow-sm ${
-                                                    inputError
-                                                        ? "border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-200"
-                                                        : sampleInput
-                                                        ? "border-emerald-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
-                                                        : "border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                                                }`}
-                                                autoFocus
-                                            />
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                <span className="text-xs font-bold text-gray-400 font-mono">kg</span>
+                                {/* Formulario de Captura de Muestra o Estado Bloqueado */}
+                                {isLocked ? (
+                                    <div className="mt-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-emerald-950">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                                                <Lock className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+                                                    Muestreo Guardado y Bloqueado
+                                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 font-bold">
+                                                        40 / 40 Estibas Completadas
+                                                    </span>
+                                                </h4>
+                                                <p className="text-xs text-emerald-700 mt-0.5">
+                                                    Este registro se guardó exitosamente y se encuentra certificado en solo lectura.
+                                                </p>
                                             </div>
                                         </div>
-
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {savedAt && (
+                                                <div className="text-right text-[11px] font-mono text-emerald-700 bg-white/70 border border-emerald-200/80 rounded-xl px-3 py-1.5 shadow-xs">
+                                                    <span className="font-semibold text-emerald-800">Guardado:</span>{" "}
+                                                    {new Date(savedAt).toLocaleString("es-MX", {
+                                                        dateStyle: "short",
+                                                        timeStyle: "short",
+                                                    })}
+                                                </div>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    Swal.fire({
+                                                        title: "¿Desbloquear para corregir?",
+                                                        text: "Se habilitará nuevamente la edición y captura de estibas.",
+                                                        icon: "question",
+                                                        showCancelButton: true,
+                                                        confirmButtonText: "Sí, desbloquear",
+                                                        cancelButtonText: "Cancelar",
+                                                        confirmButtonColor: "#4f46e5",
+                                                    }).then((res) => {
+                                                        if (res.isConfirmed) {
+                                                            setIsSaved(false);
+                                                        }
+                                                    });
+                                                }}
+                                                className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                                                title="Habilitar edición para corregir estibas"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5" />
+                                                <span>Desbloquear</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : samples.length >= 40 ? (
+                                    <div className="mt-4 bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-emerald-950 animate-fade-in">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                                                <CheckCircle2 className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+                                                    ¡Las 40 estibas han sido completadas!
+                                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 font-bold">
+                                                        40 / 40 estibas (20 en ENV-1 y 20 en ENV-2)
+                                                    </span>
+                                                </h4>
+                                                <p className="text-xs text-emerald-700 mt-0.5">
+                                                    Todas las estibas han sido registradas y autoguardadas. Haga clic en <b>"Guardar Muestreo"</b> para finalizar.
+                                                </p>
+                                            </div>
+                                        </div>
                                         <button
-                                            type="submit"
-                                            className={`px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-md transition transform active:scale-95 flex items-center justify-center gap-2 ${
-                                                selectedEnvasadora === 1
-                                                    ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20"
-                                                    : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
-                                            }`}
+                                            type="button"
+                                            onClick={handleSave}
+                                            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md shadow-emerald-600/30 transition transform active:scale-95 shrink-0 flex items-center gap-2"
                                         >
-                                            <Check className="w-4 h-4 stroke-[3]" />
-                                            Capturar Muestra
+                                            <Save className="w-4 h-4" />
+                                            Guardar Muestreo (40/40)
                                         </button>
                                     </div>
-                                    {inputError && (
-                                        <div className="flex items-center gap-1.5 text-xs text-rose-600 font-semibold mt-2">
-                                            <AlertCircle className="w-4 h-4 shrink-0" />
-                                            {inputError}
+                                ) : (
+                                    <form
+                                        onSubmit={handleAddSample}
+                                        className="mt-4 bg-gradient-to-r from-slate-50 via-indigo-50/30 to-slate-50 border border-indigo-100/90 rounded-2xl p-4 shadow-sm"
+                                    >
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                                            <div className="flex items-center gap-2 text-xs font-bold text-gray-700 whitespace-nowrap">
+                                                <Scale className="w-4 h-4 text-indigo-600" />
+                                                <span>Capturar estiba (#{samples.length + 1} de 40):</span>
+                                            </div>
+
+                                            <div className="relative flex-1">
+                                                <input
+                                                    ref={sampleInputRef}
+                                                    type="number"
+                                                    step="0.001"
+                                                    value={sampleInput}
+                                                    onChange={(e) => {
+                                                        setSampleInput(e.target.value);
+                                                        if (inputError) setInputError("");
+                                                    }}
+                                                    placeholder={`Ingrese peso del saco en kg (ej. ${limits.ideal.toFixed(2)})`}
+                                                    className={`w-full rounded-xl px-4 py-2.5 pr-14 text-sm font-bold font-mono transition shadow-sm ${
+                                                        inputError
+                                                            ? "border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-200"
+                                                            : sampleInput
+                                                            ? "border-emerald-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
+                                                            : "border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                                                    }`}
+                                                    autoFocus
+                                                />
+                                                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                    <span className="text-xs font-bold text-gray-400 font-mono">kg</span>
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                type="submit"
+                                                className={`px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-md transition transform active:scale-95 flex items-center justify-center gap-2 ${
+                                                    selectedEnvasadora === 1
+                                                        ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20"
+                                                        : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+                                                }`}
+                                            >
+                                                <Check className="w-4 h-4 stroke-[3]" />
+                                                Capturar Muestra
+                                            </button>
                                         </div>
-                                    )}
-                                </form>
+                                        {inputError && (
+                                            <div className="flex items-center gap-1.5 text-xs text-rose-600 font-semibold mt-2">
+                                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                                {inputError}
+                                            </div>
+                                        )}
+                                    </form>
+                                )}
 
                                 {/* Tables Grid: ENV-1 and ENV-2 */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -527,7 +995,7 @@ export default function EnvasadoraSamplingModal({
                                                 Últimos Muestreos ENV-1
                                             </span>
                                             <span className="text-[11px] font-semibold text-indigo-600 font-mono">
-                                                {samplesEnv1.length} registrados
+                                                {samplesEnv1.length} / 20 estibas
                                             </span>
                                         </div>
                                         <div className="overflow-x-auto max-h-40 overflow-y-auto">
@@ -547,10 +1015,10 @@ export default function EnvasadoraSamplingModal({
                                                             </td>
                                                         </tr>
                                                     ) : (
-                                                        samplesEnv1.slice(-5).map((sample) => (
+                                                        samplesEnv1.map((sample, idx) => (
                                                             <tr key={sample.id} className="hover:bg-indigo-50/30 transition">
                                                                 <td className="py-2 px-3 font-bold text-gray-600 text-center font-mono">
-                                                                    #{sample.num}
+                                                                    #{idx + 1}
                                                                 </td>
                                                                 <td className="py-2 px-3 font-mono">
                                                                     {editingId === sample.id ? (
@@ -569,7 +1037,11 @@ export default function EnvasadoraSamplingModal({
                                                                     )}
                                                                 </td>
                                                                 <td className="py-2 px-3 text-center">
-                                                                    {editingId === sample.id ? (
+                                                                    {isLocked ? (
+                                                                        <span className="inline-flex items-center justify-center text-gray-400 font-bold text-xs" title="Muestreo guardado y bloqueado">
+                                                                            <Lock className="w-3.5 h-3.5 text-gray-400" />
+                                                                        </span>
+                                                                    ) : editingId === sample.id ? (
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleSaveEdit(sample.id)}
@@ -615,7 +1087,7 @@ export default function EnvasadoraSamplingModal({
                                                 Últimos Muestreos ENV-2
                                             </span>
                                             <span className="text-[11px] font-semibold text-emerald-600 font-mono">
-                                                {samplesEnv2.length} registrados
+                                                {samplesEnv2.length} / 20 estibas
                                             </span>
                                         </div>
                                         <div className="overflow-x-auto max-h-40 overflow-y-auto">
@@ -635,10 +1107,10 @@ export default function EnvasadoraSamplingModal({
                                                             </td>
                                                         </tr>
                                                     ) : (
-                                                        samplesEnv2.slice(-5).map((sample) => (
+                                                        samplesEnv2.map((sample, idx) => (
                                                             <tr key={sample.id} className="hover:bg-emerald-50/30 transition">
                                                                 <td className="py-2 px-3 font-bold text-gray-600 text-center font-mono">
-                                                                    #{sample.num}
+                                                                    #{idx + 1}
                                                                 </td>
                                                                 <td className="py-2 px-3 font-mono">
                                                                     {editingId === sample.id ? (
@@ -657,7 +1129,11 @@ export default function EnvasadoraSamplingModal({
                                                                     )}
                                                                 </td>
                                                                 <td className="py-2 px-3 text-center">
-                                                                    {editingId === sample.id ? (
+                                                                    {isLocked ? (
+                                                                        <span className="inline-flex items-center justify-center text-gray-400 font-bold text-xs" title="Muestreo guardado y bloqueado">
+                                                                            <Lock className="w-3.5 h-3.5 text-gray-400" />
+                                                                        </span>
+                                                                    ) : editingId === sample.id ? (
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleSaveEdit(sample.id)}
@@ -698,12 +1174,12 @@ export default function EnvasadoraSamplingModal({
 
                                 {/* Tolerancias y Especificaciones */}
                                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                            Límite Superior
+                                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5">
+                                        <div className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">
+                                            Límite Inferior
                                         </div>
-                                        <div className="text-sm font-black text-slate-900 font-mono mt-0.5">
-                                            {limits.superior.toFixed(3)} kg
+                                        <div className="text-sm font-black text-rose-950 font-mono mt-0.5">
+                                            {limits.inferior.toFixed(3)} kg
                                         </div>
                                     </div>
                                     <div className="bg-sky-50 border border-sky-200 rounded-xl p-2.5">
@@ -714,12 +1190,12 @@ export default function EnvasadoraSamplingModal({
                                             {limits.ideal.toFixed(3)} kg
                                         </div>
                                     </div>
-                                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5">
-                                        <div className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">
-                                            Límite Inferior
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                            Límite Superior
                                         </div>
-                                        <div className="text-sm font-black text-rose-950 font-mono mt-0.5">
-                                            {limits.inferior.toFixed(3)} kg
+                                        <div className="text-sm font-black text-slate-900 font-mono mt-0.5">
+                                            {limits.superior.toFixed(3)} kg
                                         </div>
                                     </div>
                                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
@@ -969,10 +1445,38 @@ export default function EnvasadoraSamplingModal({
                                     <div className="flex items-center gap-2 w-full sm:w-auto">
                                         <button
                                             type="button"
-                                            onClick={onClose}
-                                            className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-gray-300 text-sm font-bold text-gray-700 hover:bg-gray-50 transition shadow-sm"
+                                            onClick={handleSave}
+                                            className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-sm font-bold shadow-md transition flex items-center justify-center gap-2 ${
+                                                samples.length === 40
+                                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 active:scale-95 ring-2 ring-emerald-400/40"
+                                                    : isLocked
+                                                    ? "bg-emerald-700 hover:bg-emerald-800 text-white shadow-emerald-700/30 active:scale-95"
+                                                    : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30 active:scale-95"
+                                            }`}
+                                            title={
+                                                samples.length === 40
+                                                    ? "Guardar y certificar las 40 estibas (inicia cronómetro en historial)"
+                                                    : isLocked
+                                                    ? "Muestreo finalizado y guardado - Salir"
+                                                    : `Guardar avance (${samples.length}/40 estibas) y salir`
+                                            }
                                         >
-                                            Cerrar
+                                            {isLocked ? (
+                                                <>
+                                                    <CheckCircle2 className="w-4 h-4 text-white" />
+                                                    <span>Guardado (40/40) - Salir</span>
+                                                </>
+                                            ) : samples.length === 40 ? (
+                                                <>
+                                                    <CheckCircle2 className="w-4 h-4 text-white" />
+                                                    <span>Guardar Muestreo Final (40/40)</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save className="w-4 h-4 text-white" />
+                                                    <span>Guardar Avance ({samples.length}/40) y Salir</span>
+                                                </>
+                                            )}
                                         </button>
                                         {onOpenPrintDocuments && (
                                             <button
@@ -986,6 +1490,199 @@ export default function EnvasadoraSamplingModal({
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Ventana emergente: Preguntar en qué envasadora se capturó la muestra */}
+                                <Transition
+                                    show={isSelectorOpen}
+                                    as={Fragment}
+                                    enter="ease-out duration-300"
+                                    enterFrom="opacity-0"
+                                    enterTo="opacity-100"
+                                    leave="ease-in duration-200"
+                                    leaveFrom="opacity-100"
+                                    leaveTo="opacity-0"
+                                >
+                                    <div
+                                        className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div
+                                            className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-slate-200 transform transition-all animate-fade-in"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            {/* Header con gradiente */}
+                                            <div className="bg-gradient-to-br from-indigo-700 via-indigo-800 to-slate-900 p-6 text-white relative">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleCancelSelector();
+                                                    }}
+                                                    className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-full transition-colors text-white/80 hover:text-white"
+                                                    title="Cancelar"
+                                                >
+                                                    <X className="w-5 h-5" />
+                                                </button>
+                                                <div className="flex items-center gap-3.5 mb-2">
+                                                    <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md shadow-sm">
+                                                        <Scale className="w-7 h-7 text-white" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-xl font-black text-white leading-tight">
+                                                            ¿En qué envasadora capturó la muestra?
+                                                        </h3>
+                                                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                            {pendingWeight !== null && (
+                                                                <span className="font-mono bg-emerald-500/30 text-emerald-200 px-2.5 py-0.5 rounded-lg font-black text-xs border border-emerald-400/40">
+                                                                    Peso: {pendingWeight.toFixed(3)} kg
+                                                                </span>
+                                                            )}
+                                                            <span className="text-indigo-200 text-xs font-medium">
+                                                                {order?.folio || (order?.order_number ? `Orden #${order.order_number}` : "Control de Muestreo")}
+                                                                {order?.product ? ` • ${order.product}` : ""}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Contenido de selección */}
+                                            <div className="p-6">
+                                                <p className="text-sm font-semibold text-gray-700 mb-5 text-center">
+                                                    Seleccione la línea de envasado correspondiente a este peso:
+                                                </p>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    {/* Botón ENV-1 */}
+                                                    <button
+                                                        type="button"
+                                                        disabled={samplesEnv1.length >= 20}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleSelectEnvasadora(1);
+                                                        }}
+                                                        className={`group p-5 rounded-2xl border-2 transition-all duration-200 text-left flex flex-col justify-between ${
+                                                            samplesEnv1.length >= 20
+                                                                ? "border-gray-200 bg-gray-50/70 opacity-60 cursor-not-allowed"
+                                                                : selectedEnvasadora === 1
+                                                                ? "border-indigo-600 bg-indigo-50/80 shadow-md shadow-indigo-100 ring-2 ring-indigo-500/30 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                                                : "border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                                        }`}
+                                                    >
+                                                        <div>
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="px-3 py-1 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-sm">
+                                                                        ENV-1
+                                                                    </span>
+                                                                    <span
+                                                                        className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                                                                            samplesEnv1.length >= 20
+                                                                                ? "bg-emerald-100 text-emerald-800"
+                                                                                : "bg-indigo-100/70 text-indigo-700"
+                                                                        }`}
+                                                                    >
+                                                                        {samplesEnv1.length} / 20 estibas {samplesEnv1.length >= 20 && "✓"}
+                                                                    </span>
+                                                                </div>
+                                                                {selectedEnvasadora === 1 && samplesEnv1.length < 20 && (
+                                                                    <CheckCircle2 className="w-5 h-5 text-indigo-600" />
+                                                                )}
+                                                            </div>
+                                                            <h4 className="text-base font-black text-gray-900 group-hover:text-indigo-900">
+                                                                Envasadora 01
+                                                            </h4>
+                                                            <p className="text-xs text-gray-500 mt-1">
+                                                                Línea de envasado 1 • Tolva 1
+                                                            </p>
+                                                        </div>
+                                                        <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-indigo-600">
+                                                            <span>
+                                                                {samplesEnv1.length >= 20
+                                                                    ? "Límite de 20 completado"
+                                                                    : "Guardar en ENV-1"}
+                              </span>
+                                                            {samplesEnv1.length < 20 && (
+                                                                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                            )}
+                                                        </div>
+                                                    </button>
+
+                                                    {/* Botón ENV-2 */}
+                                                    <button
+                                                        type="button"
+                                                        disabled={samplesEnv2.length >= 20}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleSelectEnvasadora(2);
+                                                        }}
+                                                        className={`group p-5 rounded-2xl border-2 transition-all duration-200 text-left flex flex-col justify-between ${
+                                                            samplesEnv2.length >= 20
+                                                                ? "border-gray-200 bg-gray-50/70 opacity-60 cursor-not-allowed"
+                                                                : selectedEnvasadora === 2
+                                                                ? "border-emerald-600 bg-emerald-50/80 shadow-md shadow-emerald-100 ring-2 ring-emerald-500/30 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                                                : "border-gray-200 hover:border-emerald-300 hover:bg-emerald-50/40 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                                                        }`}
+                                                    >
+                                                        <div>
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-600 text-white shadow-sm">
+                                                                        ENV-2
+                                                                    </span>
+                                                                    <span
+                                                                        className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                                                                            samplesEnv2.length >= 20
+                                                                                ? "bg-emerald-100 text-emerald-800"
+                                                                                : "bg-emerald-100/70 text-emerald-700"
+                                                                        }`}
+                                                                    >
+                                                                        {samplesEnv2.length} / 20 estibas {samplesEnv2.length >= 20 && "✓"}
+                                                                    </span>
+                                                                </div>
+                                                                {selectedEnvasadora === 2 && samplesEnv2.length < 20 && (
+                                                                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                                                                )}
+                                                            </div>
+                                                            <h4 className="text-base font-black text-gray-900 group-hover:text-emerald-900">
+                                                                Envasadora 02
+                                                            </h4>
+                                                            <p className="text-xs text-gray-500 mt-1">
+                                                                Línea de envasado 2 • Tolva 1
+                                                            </p>
+                                                        </div>
+                                                        <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-emerald-600">
+                                                            <span>
+                                                                {samplesEnv2.length >= 20
+                                                                    ? "Límite de 20 completado"
+                                                                    : "Guardar en ENV-2"}
+                              </span>
+                                                            {samplesEnv2.length < 20 && (
+                                                                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                                            )}
+                                                        </div>
+                                                    </button>
+                                                </div>
+
+                                                <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
+                                                    <span className="text-xs text-gray-400">
+                                                        Muestra #{samples.length + 1}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleCancelSelector();
+                                                        }}
+                                                        className="px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-100 transition"
+                                                    >
+                                                        Cancelar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </Transition>
                             </Dialog.Panel>
                         </Transition.Child>
                     </div>

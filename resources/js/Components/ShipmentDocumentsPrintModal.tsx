@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Dialog, Transition } from "@headlessui/react";
 import { Fragment } from "react";
@@ -9,7 +9,6 @@ import {
     Layers,
     Scale,
     CheckCircle2,
-    ExternalLink,
 } from "lucide-react";
 import WeightVerificationTemplate from "@/Components/Print/WeightVerificationTemplate";
 import StowageNoteTemplate from "@/Components/Print/StowageNoteTemplate";
@@ -34,18 +33,41 @@ export default function ShipmentDocumentsPrintModal({
     order = {},
     samples = [],
 }: Props) {
-    const [activeTab, setActiveTab] = useState<"all" | "fo003" | "fo002">("all");
-
     const safeOrder = order || {};
+
+    const effectiveSamples = useMemo(() => {
+        if (Array.isArray(samples) && samples.length > 0) {
+            return samples;
+        }
+        if (typeof window === "undefined" || !safeOrder) return [];
+
+        const candidateKeys = [
+            safeOrder.id ? `envasadora_sampling_order_${safeOrder.id}` : null,
+            safeOrder.id ? `envasadora_sampling_${safeOrder.id}` : null,
+            safeOrder.folio ? `envasadora_sampling_order_${safeOrder.folio}` : null,
+            safeOrder.folio ? `envasadora_sampling_${safeOrder.folio}` : null,
+            safeOrder.order_number ? `envasadora_sampling_order_${safeOrder.order_number}` : null,
+            safeOrder.order_number ? `envasadora_sampling_${safeOrder.order_number}` : null,
+            "envasadora_sampling_draft_temp",
+        ].filter(Boolean) as string[];
+
+        let bestSamples: any[] = [];
+        for (const key of candidateKeys) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed.samples) && parsed.samples.length > bestSamples.length) {
+                        bestSamples = parsed.samples;
+                    }
+                }
+            } catch {}
+        }
+        return bestSamples;
+    }, [samples, safeOrder]);
 
     const handlePrint = () => {
         window.print();
-    };
-
-    const handleOpenFullPrint = () => {
-        if (safeOrder.id) {
-            window.open(route("documentation.orders.print", safeOrder.id), "_blank");
-        }
     };
 
     return (
@@ -55,18 +77,14 @@ export default function ShipmentDocumentsPrintModal({
                 isOpen &&
                 createPortal(
                     <div id="direct-body-print-portal">
-                        {(activeTab === "all" || activeTab === "fo003") && (
-                            <div className="page-weight-verification">
-                                <WeightVerificationTemplate order={safeOrder} samples={samples} />
+                        <div className="page-weight-verification">
+                            <WeightVerificationTemplate order={safeOrder} samples={effectiveSamples} />
+                        </div>
+                        <div className="stowage-page-wrapper">
+                            <div className="rotate-landscape-v2">
+                                <StowageNoteTemplate order={safeOrder} samples={effectiveSamples} />
                             </div>
-                        )}
-                        {(activeTab === "all" || activeTab === "fo002") && (
-                            <div className="stowage-page-wrapper">
-                                <div className="rotate-landscape-v2">
-                                    <StowageNoteTemplate order={safeOrder} samples={samples} />
-                                </div>
-                            </div>
-                        )}
+                        </div>
                     </div>,
                     document.body
                 )}
@@ -184,49 +202,8 @@ export default function ShipmentDocumentsPrintModal({
                                             </div>
                                         </div>
 
-                                        {/* Action Buttons & Tab Switcher */}
-                                        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
-                                            {/* Tabs */}
-                                            <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setActiveTab("all")}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                                                        activeTab === "all"
-                                                            ? "bg-white text-indigo-700 shadow-sm"
-                                                            : "text-gray-600 hover:text-gray-900"
-                                                    }`}
-                                                >
-                                                    Ambos
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setActiveTab("fo003")}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                                                        activeTab === "fo003"
-                                                            ? "bg-white text-indigo-700 shadow-sm"
-                                                            : "text-gray-600 hover:text-gray-900"
-                                                    }`}
-                                                    title="Verificación de Peso de Sacos (Vertical)"
-                                                >
-                                                    <Scale className="w-3.5 h-3.5" />
-                                                    GLS-AP-FO-003 (Vertical)
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setActiveTab("fo002")}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                                                        activeTab === "fo002"
-                                                            ? "bg-white text-indigo-700 shadow-sm"
-                                                            : "text-gray-600 hover:text-gray-900"
-                                                    }`}
-                                                    title="Nota de Estiba a Camión (Horizontal)"
-                                                >
-                                                    <Layers className="w-3.5 h-3.5" />
-                                                    GLS-AP-FO-002 (Horizontal)
-                                                </button>
-                                            </div>
-
+                                        {/* Action Buttons */}
+                                        <div className="flex items-center gap-2 self-end sm:self-auto">
                                             {/* Print Button */}
                                             <button
                                                 type="button"
@@ -237,23 +214,12 @@ export default function ShipmentDocumentsPrintModal({
                                                 <span>Imprimir</span>
                                             </button>
 
-                                            {safeOrder.id && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleOpenFullPrint}
-                                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-gray-700 rounded-xl text-xs font-bold transition shadow-sm"
-                                                    title="Abrir página completa de impresión"
-                                                >
-                                                    <ExternalLink className="w-3.5 h-3.5 text-gray-500" />
-                                                    <span>Pestaña</span>
-                                                </button>
-                                            )}
-
                                             {/* Close Button */}
                                             <button
                                                 type="button"
                                                 onClick={onClose}
                                                 className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition"
+                                                title="Cerrar"
                                             >
                                                 <X className="w-5 h-5" />
                                             </button>
@@ -264,34 +230,30 @@ export default function ShipmentDocumentsPrintModal({
                                     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
                                         <div className="space-y-6 max-w-[215mm] mx-auto">
                                             {/* PAGE 1: GLS-AP-FO-003 (VERIFICACION DE PESO DE SACOS - VERTICAL) */}
-                                            {(activeTab === "all" || activeTab === "fo003") && (
-                                                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden p-3 sm:p-4">
-                                                    <div className="mb-2 pb-2 border-b border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500">
-                                                        <span className="flex items-center gap-1.5 text-indigo-700">
-                                                            <Scale className="w-4 h-4" />
-                                                            GLS-AP-FO-003 · VERIFICACIÓN DE PESO DE SACOS (VERTICAL)
-                                                        </span>
-                                                        <span>Hoja 1</span>
-                                                    </div>
-                                                    <WeightVerificationTemplate order={safeOrder} samples={samples} />
+                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden p-3 sm:p-4">
+                                                <div className="mb-2 pb-2 border-b border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500">
+                                                    <span className="flex items-center gap-1.5 text-indigo-700">
+                                                        <Scale className="w-4 h-4" />
+                                                        GLS-AP-FO-003 · VERIFICACIÓN DE PESO DE SACOS (VERTICAL)
+                                                    </span>
+                                                    <span>Hoja 1</span>
                                                 </div>
-                                            )}
+                                                <WeightVerificationTemplate order={safeOrder} samples={effectiveSamples} />
+                                            </div>
 
                                             {/* PAGE 2: GLS-AP-FO-002 (NOTA DE ESTIBA A CAMIÓN - HORIZONTAL) */}
-                                            {(activeTab === "all" || activeTab === "fo002") && (
-                                                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden p-3 sm:p-4">
-                                                    <div className="mb-2 pb-2 border-b border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500">
-                                                        <span className="flex items-center gap-1.5 text-emerald-700">
-                                                            <Layers className="w-4 h-4" />
-                                                            GLS-AP-FO-002 · NOTA DE ESTIBA A CAMIÓN (HORIZONTAL)
-                                                        </span>
-                                                        <span>Hoja 2</span>
-                                                    </div>
-                                                    <div className="w-full">
-                                                        <StowageNoteTemplate order={safeOrder} samples={samples} />
-                                                    </div>
+                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden p-3 sm:p-4">
+                                                <div className="mb-2 pb-2 border-b border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500">
+                                                    <span className="flex items-center gap-1.5 text-emerald-700">
+                                                        <Layers className="w-4 h-4" />
+                                                        GLS-AP-FO-002 · NOTA DE ESTIBA A CAMIÓN (HORIZONTAL)
+                                                    </span>
+                                                    <span>Hoja 2</span>
                                                 </div>
-                                            )}
+                                                <div className="w-full">
+                                                    <StowageNoteTemplate order={safeOrder} samples={effectiveSamples} />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 

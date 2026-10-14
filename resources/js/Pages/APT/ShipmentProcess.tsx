@@ -11,6 +11,7 @@ import {
     FileText,
     MoreHorizontal,
     Package,
+    Pause,
     Printer,
     QrCode,
     Search,
@@ -272,10 +273,24 @@ function formatDateTime(isoString: string | null): string {
     return `${day}/${month}/${year}, ${hours}:${minutes} ${ampm}`;
 }
 
-function LiveStopwatch({ startedAt, finishedAt }: { startedAt: string | null; finishedAt: string | null; status?: string }) {
+function LiveStopwatch({
+    startedAt,
+    finishedAt,
+    status,
+    isSamplingIncomplete = false,
+    samplingCompletedAt = null,
+}: {
+    startedAt: string | null;
+    finishedAt: string | null;
+    status?: string;
+    isSamplingIncomplete?: boolean;
+    samplingCompletedAt?: string | null;
+}) {
     const calculateElapsed = () => {
-        if (!startedAt) return 0;
-        const startMs = new Date(startedAt).getTime();
+        if (isSamplingIncomplete) return 0;
+        const effectiveStart = samplingCompletedAt || startedAt;
+        if (!effectiveStart) return 0;
+        const startMs = new Date(effectiveStart).getTime();
         if (isNaN(startMs)) return 0;
 
         if (finishedAt) {
@@ -290,20 +305,38 @@ function LiveStopwatch({ startedAt, finishedAt }: { startedAt: string | null; fi
     const [elapsed, setElapsed] = useState(calculateElapsed);
 
     useEffect(() => {
-        setElapsed(calculateElapsed());
-
-        if (!startedAt || finishedAt) {
+        if (isSamplingIncomplete) {
+            setElapsed(0);
             return;
         }
 
-        const startMs = new Date(startedAt).getTime();
+        setElapsed(calculateElapsed());
+
+        const effectiveStart = samplingCompletedAt || startedAt;
+        if (!effectiveStart || finishedAt) {
+            return;
+        }
+
+        const startMs = new Date(effectiveStart).getTime();
         const timer = setInterval(() => {
             const diff = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
             setElapsed(diff);
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [startedAt, finishedAt]);
+    }, [startedAt, finishedAt, isSamplingIncomplete, samplingCompletedAt]);
+
+    if (isSamplingIncomplete) {
+        return (
+            <span
+                className="inline-flex items-center gap-1 font-mono font-bold text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shadow-2xs"
+                title="Pausado: El cronómetro comenzará a correr una vez completado y guardado el muestreo de envasadora (40/40 estibas)"
+            >
+                <Pause className="w-2.5 h-2.5 text-amber-600 animate-pulse shrink-0" />
+                00:00
+            </span>
+        );
+    }
 
     return (
         <span className="font-mono font-bold text-xs text-indigo-900 tracking-wider">
@@ -311,6 +344,69 @@ function LiveStopwatch({ startedAt, finishedAt }: { startedAt: string | null; fi
         </span>
     );
 }
+
+const isRowEnvasado = (row: HistoryItem): boolean => {
+    const pres = (row.presentation || "").toString().toUpperCase();
+    if (pres.includes("ENVASADO")) return true;
+    if (pres.includes("GRANEL")) return false;
+    const text = `${row.product || ""}`.toUpperCase();
+    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
+};
+
+const getOrderSamplingStatus = (row: HistoryItem): {
+    isEnvasado: boolean;
+    isCompleted: boolean;
+    samplesCount: number;
+    savedAt: string | null;
+} => {
+    if (!isRowEnvasado(row)) {
+        return { isEnvasado: false, isCompleted: true, samplesCount: 0, savedAt: null };
+    }
+
+    try {
+        const id = row.id || (row as any).order_number || row.folio;
+        const candidateKeys = [
+            `envasadora_sampling_order_${id}`,
+            `envasadora_sampling_${id}`,
+            row.folio ? `envasadora_sampling_order_${row.folio}` : null,
+            row.folio ? `envasadora_sampling_${row.folio}` : null,
+            row.id ? `envasadora_sampling_order_${row.id}` : null,
+            row.id ? `envasadora_sampling_${row.id}` : null,
+            (row as any).order_number ? `envasadora_sampling_order_${(row as any).order_number}` : null,
+            (row as any).order_number ? `envasadora_sampling_${(row as any).order_number}` : null,
+        ].filter(Boolean) as string[];
+
+        let bestParsed: any = null;
+        let maxCount = -1;
+        for (const k of candidateKeys) {
+            try {
+                const raw = localStorage.getItem(k);
+                if (!raw) continue;
+                const parsed = JSON.parse(raw);
+                if (parsed && Array.isArray(parsed.samples)) {
+                    if (parsed.samples.length > maxCount) {
+                        maxCount = parsed.samples.length;
+                        bestParsed = parsed;
+                    }
+                }
+            } catch {}
+        }
+
+        if (!bestParsed) {
+            return { isEnvasado: true, isCompleted: false, samplesCount: 0, savedAt: null };
+        }
+        const samples = Array.isArray(bestParsed.samples) ? bestParsed.samples : [];
+        const isCompleted = Boolean(bestParsed.isSaved) && samples.length === 40;
+        return {
+            isEnvasado: true,
+            isCompleted,
+            samplesCount: samples.length,
+            savedAt: isCompleted ? (bestParsed.savedAt || bestParsed.updatedAt || null) : null,
+        };
+    } catch {
+        return { isEnvasado: true, isCompleted: false, samplesCount: 0, savedAt: null };
+    }
+};
 
 export default function ShipmentProcess({
     auth,
@@ -383,13 +479,50 @@ export default function ShipmentProcess({
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
     const [printOrderData, setPrintOrderData] = useState<any>(null);
     const [printSamplesData, setPrintSamplesData] = useState<any[]>([]);
+    const [samplingRevision, setSamplingRevision] = useState(0);
+
+    useEffect(() => {
+        const handleStorageChange = () => setSamplingRevision((r) => r + 1);
+        window.addEventListener("storage", handleStorageChange);
+        return () => window.removeEventListener("storage", handleStorageChange);
+    }, []);
 
     const handleOpenPrintModal = async (itemId: string | number) => {
         try {
             const response = await axios.get(route("documentation.orders.print-data", itemId));
             if (response.data?.order) {
-                setPrintOrderData(response.data.order);
-                setPrintSamplesData([]);
+                const orderData = response.data.order;
+                setPrintOrderData(orderData);
+
+                // Recuperar muestras almacenadas para esta orden
+                const orderId = orderData.id || itemId;
+                const folio = orderData.folio;
+                const orderNum = orderData.order_number;
+
+                const candidateKeys = [
+                    `envasadora_sampling_order_${orderId}`,
+                    `envasadora_sampling_${orderId}`,
+                    folio ? `envasadora_sampling_order_${folio}` : null,
+                    folio ? `envasadora_sampling_${folio}` : null,
+                    orderNum ? `envasadora_sampling_order_${orderNum}` : null,
+                    orderNum ? `envasadora_sampling_${orderNum}` : null,
+                    "envasadora_sampling_draft_temp",
+                ].filter(Boolean) as string[];
+
+                let loadedSamples: any[] = [];
+                for (const key of candidateKeys) {
+                    try {
+                        const raw = localStorage.getItem(key);
+                        if (raw) {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed.samples) && parsed.samples.length > loadedSamples.length) {
+                                loadedSamples = parsed.samples;
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                setPrintSamplesData(loadedSamples);
                 setIsPrintModalOpen(true);
             }
         } catch (e) {
@@ -577,6 +710,21 @@ export default function ShipmentProcess({
     };
 
     const handleFinish = async (id: string, folio: string) => {
+        const targetRow = history.find((h) => String(h.id) === String(id));
+        if (targetRow) {
+            const status = getOrderSamplingStatus(targetRow);
+            if (status.isEnvasado && !status.isCompleted) {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Muestreo Incompleto",
+                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de envasadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 40 estibas</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 40 estibas requeridas.`,
+                    confirmButtonColor: "#4f46e5",
+                    confirmButtonText: "Entendido",
+                });
+                return;
+            }
+        }
+
         const result = await Swal.fire({
             title: "¿Finalizar orden?",
             text: `¿Estás seguro que quieres finalizar esta orden de embarque ${folio ? `(${folio})` : ""}?`,
@@ -1229,48 +1377,50 @@ export default function ShipmentProcess({
                         </div>
                     </div>
 
-                    <div className="w-full overflow-hidden">
-                        <table className="w-full table-fixed divide-y divide-gray-200 text-xs">
+                    <div className="w-full overflow-x-auto">
+                        <table className="w-full min-w-[1150px] table-fixed divide-y divide-gray-200 text-xs">
                             <thead className="bg-[#1e1b4b] text-white">
                                 <tr>
                                     <th className="w-[2.5%] px-1 py-3.5 text-center font-bold uppercase tracking-wider">
                                         <Settings className="w-3.5 h-3.5 mx-auto text-indigo-300 opacity-60" />
                                     </th>
-                                    <th className="w-[8.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[7.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         FOLIO
                                     </th>
-                                    <th className="w-[15%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         LOTE
                                     </th>
-                                    <th className="w-[12%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         OPERADOR
                                     </th>
-                                    <th className="w-[11.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         LÍDER DE CUADRILLA
                                     </th>
-                                    <th className="w-[11%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         PRODUCTO
                                     </th>
-                                    <th className="w-[7.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[6.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         PLACAS
                                     </th>
-                                    <th className="w-[8%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[7%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         HORA INICIAL
                                     </th>
-                                    <th className="w-[7%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[6.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         HORA FINAL
                                     </th>
-                                    <th className="w-[6.5%] px-1 py-3.5 text-center font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[7.5%] px-1 py-3.5 text-center font-bold uppercase tracking-wider truncate">
                                         CRONÓMETRO
                                     </th>
-                                    <th className="w-[10.5%] px-1.5 py-3.5 text-center font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[24.5%] px-1.5 py-3.5 text-center font-bold uppercase tracking-wider truncate">
                                         ACCIÓN
                                     </th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-100">
                                 {filteredHistory.length > 0 ? (
-                                    filteredHistory.map((row) => (
+                                    filteredHistory.map((row) => {
+                                        const samplingStatus = getOrderSamplingStatus(row);
+                                        return (
                                         <tr
                                             key={row.id}
                                             className="hover:bg-indigo-50/50 transition-colors duration-150"
@@ -1343,7 +1493,7 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Folio & Warehouse */}
-                                            <td className="w-[8.5%] px-1.5 py-2 font-bold text-indigo-700 uppercase truncate text-left">
+                                            <td className="w-[7.5%] px-1.5 py-2 font-bold text-indigo-700 uppercase truncate text-left">
                                                 <a
                                                     href={route("documentation.print-order", row.id)}
                                                     target="_blank"
@@ -1360,7 +1510,7 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Lote */}
-                                            <td className="w-[15%] px-1.5 py-2 text-left truncate" title={row.lot_folio || "Sin Lote"}>
+                                            <td className="w-[9.5%] px-1.5 py-2 text-left truncate" title={row.lot_folio || "Sin Lote"}>
                                                 {row.lot_folio ? (
                                                     <span className="inline-block max-w-full truncate px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200">
                                                         {row.lot_folio}
@@ -1373,32 +1523,32 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Operador */}
-                                            <td className="w-[12%] px-1.5 py-2 font-semibold text-gray-800 uppercase truncate text-left text-[11px]" title={row.operator}>
+                                            <td className="w-[9.5%] px-1.5 py-2 font-semibold text-gray-800 uppercase truncate text-left text-[11px]" title={row.operator}>
                                                 {row.operator}
                                             </td>
 
                                             {/* Líder de Cuadrilla */}
-                                            <td className="w-[11.5%] px-1.5 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.squad_leader}>
+                                            <td className="w-[9.5%] px-1.5 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.squad_leader}>
                                                 {row.squad_leader}
                                             </td>
 
                                             {/* Producto */}
-                                            <td className="w-[11%] px-1.5 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.product}>
+                                            <td className="w-[9.5%] px-1.5 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.product}>
                                                 {row.product}
                                             </td>
 
                                             {/* Placas */}
-                                            <td className="w-[7.5%] px-1.5 py-2 font-mono text-gray-600 uppercase text-[10px] truncate text-left" title={row.plates}>
+                                            <td className="w-[6.5%] px-1.5 py-2 font-mono text-gray-600 uppercase text-[10px] truncate text-left" title={row.plates}>
                                                 {row.plates}
                                             </td>
 
                                             {/* Hora Inicial */}
-                                            <td className="w-[8%] px-1.5 py-2 text-gray-700 text-[10px] leading-tight text-left" title={formatDateTime(row.started_at)}>
+                                            <td className="w-[7%] px-1.5 py-2 text-gray-700 text-[10px] leading-tight text-left" title={formatDateTime(row.started_at)}>
                                                 {formatDateTime(row.started_at)}
                                             </td>
 
                                             {/* Hora Final */}
-                                            <td className="w-[7%] px-1.5 py-2 text-[10px] leading-tight text-left" title={row.finished_at ? formatDateTime(row.finished_at) : "Pendiente"}>
+                                            <td className="w-[6.5%] px-1.5 py-2 text-[10px] leading-tight text-left" title={row.finished_at ? formatDateTime(row.finished_at) : "Pendiente"}>
                                                 {row.finished_at ? (
                                                     <span className="text-gray-700 font-medium">
                                                         {formatDateTime(row.finished_at)}
@@ -1411,47 +1561,79 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Cronómetro */}
-                                            <td className="w-[6.5%] px-1 py-2 text-center text-[11px]">
+                                            <td className="w-[7.5%] px-1 py-2 text-center text-[11px]">
                                                 <LiveStopwatch
                                                     startedAt={row.started_at}
                                                     finishedAt={row.finished_at}
                                                     status={row.status}
+                                                    isSamplingIncomplete={samplingStatus.isEnvasado && !samplingStatus.isCompleted}
+                                                    samplingCompletedAt={samplingStatus.savedAt}
                                                 />
                                             </td>
 
                                             {/* Acción */}
-                                            <td className="w-[10.5%] px-1.5 py-2 text-center">
+                                            <td className="w-[24.5%] px-1.5 py-2 text-center">
                                                 <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+                                                    {samplingStatus.isEnvasado && (
+                                                        samplingStatus.isCompleted ? (
+                                                            <button
+                                                                type="button"
+                                                                disabled
+                                                                className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] cursor-not-allowed whitespace-nowrap flex items-center gap-1 opacity-80 shrink-0"
+                                                                title="Muestreo de envasadora completado y finalizado (40/40 estibas)"
+                                                            >
+                                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                <span>Muestreo OK</span>
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setActiveSamplingOrder(row);
+                                                                    setIsSamplingModalOpen(true);
+                                                                }}
+                                                                className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
+                                                                title={`Muestreo de envasadora incompleto (${samplingStatus.samplesCount} de 40 estibas). Haga clic para continuar capturando.`}
+                                                            >
+                                                                <Scale className="w-3 h-3" />
+                                                                <span>Muestreo ({samplingStatus.samplesCount}/40)</span>
+                                                            </button>
+                                                        )
+                                                    )}
+
                                                     {row.status === "loading" && !row.finished_at && (
                                                         <button
                                                             type="button"
                                                             onClick={() => handleFinish(row.id, row.folio)}
-                                                            className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap"
+                                                            className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap shrink-0"
                                                         >
                                                             Finalizar
                                                         </button>
                                                     )}
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleOpenPrintModal(row.id)}
-                                                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center justify-center"
-                                                        title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
-                                                    >
-                                                        <Printer className="w-3.5 h-3.5" />
-                                                    </button>
+                                                    {samplingStatus.isEnvasado && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenPrintModal(row.id)}
+                                                            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center justify-center shrink-0"
+                                                            title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
+                                                        >
+                                                            <Printer className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
 
                                                     <button
                                                         type="button"
                                                         onClick={() => handleDelete(row.id, row.folio)}
-                                                        className="bg-red-800 hover:bg-red-900 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap"
+                                                        className="bg-red-800 hover:bg-red-900 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap shrink-0"
                                                     >
                                                         Eliminar
                                                     </button>
                                                 </div>
                                             </td>
                                         </tr>
-                                    ))
+                                    );
+                                    })
                                 ) : (
                                     <tr>
                                         <td colSpan={11} className="px-6 py-12 text-center text-gray-400">
@@ -1562,10 +1744,16 @@ export default function ShipmentProcess({
             {/* Modal de Muestreo de Envasadora (Acción) */}
             <EnvasadoraSamplingModal
                 isOpen={isSamplingModalOpen}
-                onClose={() => setIsSamplingModalOpen(false)}
+                onClose={() => {
+                    setIsSamplingModalOpen(false);
+                    setSamplingRevision((r) => r + 1);
+                }}
                 order={activeSamplingOrder}
                 stowageCount={stowageCount}
                 totalSamplesCount={40}
+                onSave={() => {
+                    setSamplingRevision((r) => r + 1);
+                }}
                 onOpenPrintDocuments={handleOpenPrintModalFromSampling}
             />
 
