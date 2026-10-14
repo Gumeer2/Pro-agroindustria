@@ -355,25 +355,26 @@ export default function ShipmentProcess({
     const [stowageCount, setStowageCount] = useState<string>("");
     const [isSaving, setIsSaving] = useState(false);
 
-    const totalSamples = useMemo(() => {
-        const estibas = parseFloat(stowageCount);
-        if (!estibas || isNaN(estibas) || estibas <= 0) return "";
-        const text = `${scannedOrder?.product || ""} ${scannedOrder?.presentation || ""} ${scannedOrder?.sacks_count || ""}`.toUpperCase();
-        const sackWeight = text.includes("50KG") || text.includes("50 KG") ? 50 : 25;
-        const samples = sackWeight === 50 ? 20 : 40;
-        return samples.toString();
-    }, [stowageCount, scannedOrder]);
+    const totalSamples = "40";
+
+    const isEnvasado = useMemo(() => {
+        if (!scannedOrder) return false;
+        const pres = (scannedOrder.presentation || "").toString().toUpperCase();
+        if (pres.includes("ENVASADO")) return true;
+        if (pres.includes("GRANEL")) return false;
+        const text = `${scannedOrder.product || ""} ${scannedOrder.product_text || ""} ${scannedOrder.sacks_count || ""}`.toUpperCase();
+        return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG") || text.includes("25 KG") || text.includes("50 KG");
+    }, [scannedOrder]);
 
     const suggestedSamplesPerStowage = useMemo(() => {
         const estibas = parseFloat(stowageCount);
-        const samples = parseFloat(totalSamples);
-        if (!estibas || isNaN(estibas) || estibas <= 0 || !samples || isNaN(samples) || samples <= 0) return "";
-        const result = samples / estibas;
+        if (!estibas || isNaN(estibas) || estibas <= 0) return "";
+        const result = 40 / estibas;
         if (Number.isInteger(result)) {
             return result.toString();
         }
         return parseFloat(result.toFixed(2)).toString();
-    }, [stowageCount, totalSamples]);
+    }, [stowageCount]);
 
     // Success Modal & Sampling Modal & Print Documents Modal
     const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -544,10 +545,14 @@ export default function ShipmentProcess({
 
             const savedOrder = response.data?.order || scannedOrder;
 
-            // Open the Sampling Modal (Estibas y gráfica)
-            setActiveSamplingOrder(savedOrder);
-            setPrintOrderData(savedOrder);
-            setIsSamplingModalOpen(true);
+            if (isEnvasado) {
+                // Open the Sampling Modal (Estibas y gráfica)
+                setActiveSamplingOrder(savedOrder);
+                setPrintOrderData(savedOrder);
+                setIsSamplingModalOpen(true);
+            } else {
+                setShowSuccessModal(true);
+            }
 
             // Refresh list & reset to step 1
             setScannedOrder(null);
@@ -926,6 +931,14 @@ export default function ShipmentProcess({
                                             <span>
                                                 <strong className="text-gray-900">Producto:</strong> {scannedOrder.product || "N/A"}
                                             </span>
+                                            <span>•</span>
+                                            <span>
+                                                <strong className="text-gray-900">Presentación:</strong>{" "}
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-extrabold ${isEnvasado ? "bg-indigo-50 text-indigo-700 border border-indigo-200" : "bg-amber-50 text-amber-800 border border-amber-200"}`}>
+                                                    {scannedOrder.presentation || (isEnvasado ? "ENVASADO" : "GRANEL")}
+                                                    {scannedOrder.sacks_count ? ` (${scannedOrder.sacks_count})` : ""}
+                                                </span>
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -1045,109 +1058,111 @@ export default function ShipmentProcess({
                                         />
                                     </div>
 
-                                    {/* Bloque Destacado: Configuración de Estibas y Muestreo */}
-                                    <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/60 via-slate-50 to-emerald-50/40 rounded-2xl border border-indigo-100/90 p-5 md:p-6 shadow-sm">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-indigo-100/70">
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm">
-                                                    <Layers className="w-5 h-5" />
+                                    {/* Bloque Destacado: Configuración de Estibas y Muestreo (Solo para Envasado) */}
+                                    {isEnvasado && (
+                                        <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/60 via-slate-50 to-emerald-50/40 rounded-2xl border border-indigo-100/90 p-5 md:p-6 shadow-sm">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-indigo-100/70">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm">
+                                                        <Layers className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-gray-900">
+                                                            Control de Estibas y Plan de Muestreo
+                                                        </h4>
+                                                        <p className="text-xs text-gray-500">
+                                                            Distribución y cálculo dinámico de muestras para control en envasadoras
+                                                        </p>
+                                                    </div>
                                                 </div>
+                                                <span className="self-start sm:self-auto inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-800">
+                                                    Muestreo Calidad
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                {/* Número de Estibas */}
                                                 <div>
-                                                    <h4 className="text-sm font-bold text-gray-900">
-                                                        Control de Estibas y Plan de Muestreo
-                                                    </h4>
-                                                    <p className="text-xs text-gray-500">
-                                                        Distribución y cálculo dinámico de muestras para control en envasadoras
+                                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                                                        Número de Estibas
+                                                    </label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            step="1"
+                                                            value={stowageCount}
+                                                            onChange={(e) => setStowageCount(e.target.value)}
+                                                            placeholder="Ej. 20"
+                                                            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 pr-20 text-gray-900 font-semibold shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
+                                                        />
+                                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                            <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-1 rounded-md border border-gray-200">
+                                                                Estibas
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11px] text-gray-500 mt-1">
+                                                        Cantidad de estibas en la unidad
+                                                    </p>
+                                                </div>
+
+                                                {/* N. Muestras */}
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                        <span>N° Total Muestras</span>
+                                                        <span className="text-[10px] text-indigo-600 font-normal lowercase bg-indigo-50 px-1.5 py-0.5 rounded">
+                                                            fijo
+                                                        </span>
+                                                    </label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            readOnly
+                                                            value={totalSamples}
+                                                            placeholder="40"
+                                                            className="w-full rounded-xl border border-indigo-100 bg-white/80 px-4 py-3 pr-20 text-indigo-900 font-bold shadow-sm cursor-not-allowed"
+                                                        />
+                                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-200">
+                                                                Sacos
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11px] text-gray-500 mt-1">
+                                                        Base fija de 40 sacos
+                                                    </p>
+                                                </div>
+
+                                                {/* Muestras Sugeridas Por Estiba */}
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                        <span>Muestras / Estiba</span>
+                                                        <span className="text-[10px] text-emerald-600 font-normal lowercase bg-emerald-50 px-1.5 py-0.5 rounded">
+                                                            sugerido
+                                                        </span>
+                                                    </label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            readOnly
+                                                            value={suggestedSamplesPerStowage}
+                                                            placeholder="Calculando..."
+                                                            className="w-full rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 pr-24 text-emerald-900 font-bold shadow-sm cursor-not-allowed"
+                                                        />
+                                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
+                                                                Muestras/Est.
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11px] text-gray-500 mt-1">
+                                                        Total Muestras ÷ N° Estibas
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className="self-start sm:self-auto inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-800">
-                                                Muestreo Calidad
-                                            </span>
                                         </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            {/* Número de Estibas */}
-                                            <div>
-                                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                                                    Número de Estibas
-                                                </label>
-                                                <div className="relative">
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        step="1"
-                                                        value={stowageCount}
-                                                        onChange={(e) => setStowageCount(e.target.value)}
-                                                        placeholder="Ej. 20"
-                                                        className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 pr-20 text-gray-900 font-semibold shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
-                                                    />
-                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                        <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-1 rounded-md border border-gray-200">
-                                                            Estibas
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <p className="text-[11px] text-gray-500 mt-1">
-                                                    Cantidad de estibas en la unidad
-                                                </p>
-                                            </div>
-
-                                            {/* N. Muestras */}
-                                            <div>
-                                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                    <span>N° Total Muestras</span>
-                                                    <span className="text-[10px] text-indigo-600 font-normal lowercase bg-indigo-50 px-1.5 py-0.5 rounded">
-                                                        automático
-                                                    </span>
-                                                </label>
-                                                <div className="relative">
-                                                    <input
-                                                        type="text"
-                                                        readOnly
-                                                        value={totalSamples}
-                                                        placeholder="Calculando..."
-                                                        className="w-full rounded-xl border border-indigo-100 bg-white/80 px-4 py-3 pr-20 text-indigo-900 font-bold shadow-sm cursor-not-allowed"
-                                                    />
-                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-200">
-                                                            Sacos
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <p className="text-[11px] text-gray-500 mt-1">
-                                                    Base 40 sacos (25kg) o 20 sacos (50kg)
-                                                </p>
-                                            </div>
-
-                                            {/* Muestras Sugeridas Por Estiba */}
-                                            <div>
-                                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                    <span>Muestras / Estiba</span>
-                                                    <span className="text-[10px] text-emerald-600 font-normal lowercase bg-emerald-50 px-1.5 py-0.5 rounded">
-                                                        sugerido
-                                                    </span>
-                                                </label>
-                                                <div className="relative">
-                                                    <input
-                                                        type="text"
-                                                        readOnly
-                                                        value={suggestedSamplesPerStowage}
-                                                        placeholder="Calculando..."
-                                                        className="w-full rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 pr-24 text-emerald-900 font-bold shadow-sm cursor-not-allowed"
-                                                    />
-                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                        <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
-                                                            Muestras/Est.
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <p className="text-[11px] text-gray-500 mt-1">
-                                                    Total Muestras ÷ N° Estibas
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
 
                                 {/* Submit & Back Buttons */}
@@ -1291,23 +1306,37 @@ export default function ShipmentProcess({
                                                                     </a>
                                                                 )}
                                                             </Menu.Item>
-                                                            <Menu.Item>
-                                                                {({ active }) => (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            setActiveSamplingOrder(row);
-                                                                            setIsSamplingModalOpen(true);
-                                                                        }}
-                                                                        className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
-                                                                            active ? "bg-indigo-600 text-white" : "text-gray-700"
-                                                                        }`}
-                                                                    >
-                                                                        <Settings className="w-3.5 h-3.5" />
-                                                                        Muestreo Envasadora
-                                                                    </button>
-                                                                )}
-                                                            </Menu.Item>
+                                                            {(() => {
+                                                                const rowIsEnvasado = (() => {
+                                                                    const pres = (row.presentation || "").toString().toUpperCase();
+                                                                    if (pres.includes("ENVASADO")) return true;
+                                                                    if (pres.includes("GRANEL")) return false;
+                                                                    const text = `${row.product || ""}`.toUpperCase();
+                                                                    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
+                                                                })();
+
+                                                                if (!rowIsEnvasado) return null;
+
+                                                                return (
+                                                                    <Menu.Item>
+                                                                        {({ active }) => (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setActiveSamplingOrder(row);
+                                                                                    setIsSamplingModalOpen(true);
+                                                                                }}
+                                                                                className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
+                                                                                    active ? "bg-indigo-600 text-white" : "text-gray-700"
+                                                                                }`}
+                                                                            >
+                                                                                <Settings className="w-3.5 h-3.5" />
+                                                                                Muestreo Envasadora
+                                                                            </button>
+                                                                        )}
+                                                                    </Menu.Item>
+                                                                );
+                                                            })()}
                                                         </Menu.Items>
                                                     </Transition>
                                                 </Menu>
@@ -1536,7 +1565,7 @@ export default function ShipmentProcess({
                 onClose={() => setIsSamplingModalOpen(false)}
                 order={activeSamplingOrder}
                 stowageCount={stowageCount}
-                totalSamplesCount={parseInt(totalSamples) || 40}
+                totalSamplesCount={40}
                 onOpenPrintDocuments={handleOpenPrintModalFromSampling}
             />
 

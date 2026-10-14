@@ -1756,6 +1756,7 @@ class DocumentationController extends Controller
             'operator' => $order->operator_name ?? 'N/A',
             'squad_leader' => $order->loading_squad_leader ?? 'N/A',
             'product' => $order->product ?? $order->items->first()?->product?->name ?? 'N/A',
+            'presentation' => $order->presentation,
             'plates' => collect([$order->tractor_plate, $order->trailer_plate])->filter()->implode(' / ') ?: 'N/A',
             'started_at' => $order->loaded_at?->toIso8601String(),
             'finished_at' => $order->loading_finished_at?->toIso8601String(),
