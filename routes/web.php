@@ -318,6 +318,8 @@ Route::middleware('auth')->group(function () {
                 Route::get('/documentation/shipment-orders/search-qr', 'searchQr')->name('documentation.shipment-orders.search-qr');
                 Route::post('/documentation/shipment-orders/save-loading', 'saveLoading')->name('documentation.shipment-orders.save-loading');
                 Route::get('/documentation/shipment-orders/loading-history', 'loadingHistory')->name('documentation.shipment-orders.loading-history');
+                Route::post('/documentation/shipment-orders/{id}/save-sampling', 'saveSampling')->name('documentation.shipment-orders.save-sampling');
+                Route::get('/documentation/shipment-orders/{id}/sampling', 'getSampling')->name('documentation.shipment-orders.get-sampling');
                 Route::patch('/documentation/shipment-orders/{id}/finish-loading', 'finishLoading')->name('documentation.shipment-orders.finish-loading');
                 Route::delete('/documentation/shipment-orders/{id}/delete-loading', 'deleteLoading')->name('documentation.shipment-orders.delete-loading');
             Route::put('/documentation/shipment-orders/{id}', 'updateOrder')->name('documentation.update');

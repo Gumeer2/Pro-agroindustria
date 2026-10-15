@@ -54084,3 +54084,59 @@ Stack trace:
 #17 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/10ce211b-fdf1-48d1-8c9a-5cf6f1ee42d1/scratch/test_db.php(9): Illuminate/Database/Migrations/Migrator->run(Array)
 #18 {main}
 "} 
+[2026-10-15 10:41:59] local.ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'order_number' in 'field list' (Connection: mysql, SQL: select `id`, `folio`, `order_number`, `presentation`, `sacks_count`, `status`, `loaded_at` from `shipment_orders` where `sacks_count` like %720% or `presentation` like %ENVASADO% or `status` = loading order by `created_at` desc limit 5) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'order_number' in 'field list' (Connection: mysql, SQL: select `id`, `folio`, `order_number`, `presentation`, `sacks_count`, `status`, `loaded_at` from `shipment_orders` where `sacks_count` like %720% or `presentation` like %ENVASADO% or `status` = loading order by `created_at` desc limit 5) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#8 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/10ce211b-fdf1-48d1-8c9a-5cf6f1ee42d1/scratch/check_db.php(12): Illuminate/Database/Eloquent/Builder->get(Array)
+#9 {main}
+
+[previous exception] [object] (PDOException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'order_number' in 'field list' at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:407)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): PDO->prepare('select `id`, `f...')
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select `id`, `f...', Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#9 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#10 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/10ce211b-fdf1-48d1-8c9a-5cf6f1ee42d1/scratch/check_db.php(12): Illuminate/Database/Eloquent/Builder->get(Array)
+#11 {main}
+"} 
+[2026-10-15 10:42:37] local.ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'order_number' in 'field list' (Connection: mysql, SQL: select `id`, `folio`, `order_number`, `presentation`, `sacks_count`, `status`, `loaded_at` from `shipment_orders` where `sacks_count` like %720% or `presentation` like %ENVASADO% or `status` = loading order by `created_at` desc limit 5) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'order_number' in 'field list' (Connection: mysql, SQL: select `id`, `folio`, `order_number`, `presentation`, `sacks_count`, `status`, `loaded_at` from `shipment_orders` where `sacks_count` like %720% or `presentation` like %ENVASADO% or `status` = loading order by `created_at` desc limit 5) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#8 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/10ce211b-fdf1-48d1-8c9a-5cf6f1ee42d1/scratch/check_db.php(12): Illuminate/Database/Eloquent/Builder->get(Array)
+#9 {main}
+
+[previous exception] [object] (PDOException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'order_number' in 'field list' at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:407)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): PDO->prepare('select `id`, `f...')
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select `id`, `f...', Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#9 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#10 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/10ce211b-fdf1-48d1-8c9a-5cf6f1ee42d1/scratch/check_db.php(12): Illuminate/Database/Eloquent/Builder->get(Array)
+#11 {main}
+"} 

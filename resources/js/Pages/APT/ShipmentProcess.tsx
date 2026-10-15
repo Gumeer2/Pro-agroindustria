@@ -68,6 +68,11 @@ interface HistoryItem {
     started_at: string | null;
     finished_at: string | null;
     status: string;
+    stowage_count?: number | null;
+    samples?: any[];
+    sampling_completed_at?: string | null;
+    sampling_status?: string | null;
+    sampling_avg?: number | null;
 }
 
 interface Props {
@@ -284,8 +289,6 @@ function LiveStopwatch({
     startedAt,
     finishedAt,
     status,
-    isSamplingIncomplete = false,
-    samplingCompletedAt = null,
 }: {
     startedAt: string | null;
     finishedAt: string | null;
@@ -294,10 +297,8 @@ function LiveStopwatch({
     samplingCompletedAt?: string | null;
 }) {
     const calculateElapsed = () => {
-        if (isSamplingIncomplete) return 0;
-        const effectiveStart = samplingCompletedAt || startedAt;
-        if (!effectiveStart) return 0;
-        const startMs = new Date(effectiveStart).getTime();
+        if (!startedAt) return 0;
+        const startMs = new Date(startedAt).getTime();
         if (isNaN(startMs)) return 0;
 
         if (finishedAt) {
@@ -312,38 +313,20 @@ function LiveStopwatch({
     const [elapsed, setElapsed] = useState(calculateElapsed);
 
     useEffect(() => {
-        if (isSamplingIncomplete) {
-            setElapsed(0);
-            return;
-        }
-
         setElapsed(calculateElapsed());
 
-        const effectiveStart = samplingCompletedAt || startedAt;
-        if (!effectiveStart || finishedAt) {
+        if (!startedAt || finishedAt) {
             return;
         }
 
-        const startMs = new Date(effectiveStart).getTime();
+        const startMs = new Date(startedAt).getTime();
         const timer = setInterval(() => {
             const diff = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
             setElapsed(diff);
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [startedAt, finishedAt, isSamplingIncomplete, samplingCompletedAt]);
-
-    if (isSamplingIncomplete) {
-        return (
-            <span
-                className="inline-flex items-center gap-1 font-mono font-bold text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shadow-2xs"
-                title="Pausado: El cronómetro comenzará a correr una vez completado y guardado el muestreo de ensacadora (40/40 estibas)"
-            >
-                <Pause className="w-2.5 h-2.5 text-amber-600 animate-pulse shrink-0" />
-                00:00
-            </span>
-        );
-    }
+    }, [startedAt, finishedAt]);
 
     return (
         <span className="font-mono font-bold text-xs text-indigo-900 tracking-wider">
@@ -370,6 +353,17 @@ const getOrderSamplingStatus = (row: HistoryItem): {
         return { isEnvasado: false, isCompleted: true, samplesCount: 0, savedAt: null };
     }
 
+    // 1. Check DB samples from shipment_process_histories
+    const dbSamples = Array.isArray(row.samples) ? row.samples : [];
+    const dbCount = dbSamples.length;
+    const dbCompleted = dbCount >= 40 || Boolean(row.sampling_completed_at) || row.sampling_status === "completed";
+    const dbSavedAt = row.sampling_completed_at || null;
+
+    // 2. Check localStorage for any newer offline draft
+    let localCount = -1;
+    let localSaved = false;
+    let localSavedAt: string | null = null;
+
     try {
         const id = row.id || (row as any).order_number || row.folio;
         const candidateKeys = [
@@ -378,49 +372,35 @@ const getOrderSamplingStatus = (row: HistoryItem): {
             `envasadora_sampling_order_${id}`,
             `envasadora_sampling_${id}`,
             row.folio ? `ensacadora_sampling_order_${row.folio}` : null,
-            row.folio ? `envasadora_sampling_order_${row.folio}` : null,
-            row.folio ? `ensacadora_sampling_${row.folio}` : null,
             row.folio ? `envasadora_sampling_${row.folio}` : null,
             row.id ? `ensacadora_sampling_order_${row.id}` : null,
-            row.id ? `envasadora_sampling_order_${row.id}` : null,
-            row.id ? `ensacadora_sampling_${row.id}` : null,
             row.id ? `envasadora_sampling_${row.id}` : null,
-            (row as any).order_number ? `ensacadora_sampling_order_${(row as any).order_number}` : null,
-            (row as any).order_number ? `envasadora_sampling_order_${(row as any).order_number}` : null,
-            (row as any).order_number ? `ensacadora_sampling_${(row as any).order_number}` : null,
-            (row as any).order_number ? `envasadora_sampling_${(row as any).order_number}` : null,
         ].filter(Boolean) as string[];
 
-        let bestParsed: any = null;
-        let maxCount = -1;
         for (const k of candidateKeys) {
             try {
                 const raw = localStorage.getItem(k);
                 if (!raw) continue;
                 const parsed = JSON.parse(raw);
-                if (parsed && Array.isArray(parsed.samples)) {
-                    if (parsed.samples.length > maxCount) {
-                        maxCount = parsed.samples.length;
-                        bestParsed = parsed;
-                    }
+                if (parsed && Array.isArray(parsed.samples) && parsed.samples.length > localCount) {
+                    localCount = parsed.samples.length;
+                    localSaved = Boolean(parsed.isSaved) && localCount === 40;
+                    localSavedAt = parsed.savedAt || parsed.updatedAt || null;
                 }
             } catch {}
         }
+    } catch {}
 
-        if (!bestParsed) {
-            return { isEnvasado: true, isCompleted: false, samplesCount: 0, savedAt: null };
-        }
-        const samples = Array.isArray(bestParsed.samples) ? bestParsed.samples : [];
-        const isCompleted = Boolean(bestParsed.isSaved) && samples.length === 40;
-        return {
-            isEnvasado: true,
-            isCompleted,
-            samplesCount: samples.length,
-            savedAt: isCompleted ? (bestParsed.savedAt || bestParsed.updatedAt || null) : null,
-        };
-    } catch {
-        return { isEnvasado: true, isCompleted: false, samplesCount: 0, savedAt: null };
-    }
+    const maxCount = Math.max(dbCount, localCount >= 0 ? localCount : 0);
+    const isCompleted = dbCompleted || (localSaved && maxCount >= 40);
+    const savedAt = dbSavedAt || localSavedAt;
+
+    return {
+        isEnvasado: true,
+        isCompleted,
+        samplesCount: maxCount,
+        savedAt,
+    };
 };
 
 export default function ShipmentProcess({
@@ -509,7 +489,12 @@ export default function ShipmentProcess({
                 const orderData = response.data.order;
                 setPrintOrderData(orderData);
 
-                // Recuperar muestras almacenadas para esta orden
+                // Recuperar muestras almacenadas para esta orden desde base de datos e historial
+                const row = history.find((h) => String(h.id) === String(itemId) || String(h.shipment_order_id) === String(itemId));
+                let loadedSamples: any[] = Array.isArray(row?.samples) && row.samples.length > 0 
+                    ? row.samples 
+                    : (Array.isArray(orderData?.samples) && orderData.samples.length > 0 ? orderData.samples : []);
+
                 const orderId = orderData.id || itemId;
                 const folio = orderData.folio;
                 const orderNum = orderData.order_number;
@@ -521,17 +506,10 @@ export default function ShipmentProcess({
                     `envasadora_sampling_${orderId}`,
                     folio ? `ensacadora_sampling_order_${folio}` : null,
                     folio ? `envasadora_sampling_order_${folio}` : null,
-                    folio ? `ensacadora_sampling_${folio}` : null,
-                    folio ? `envasadora_sampling_${folio}` : null,
                     orderNum ? `ensacadora_sampling_order_${orderNum}` : null,
-                    orderNum ? `envasadora_sampling_order_${orderNum}` : null,
-                    orderNum ? `ensacadora_sampling_${orderNum}` : null,
-                    orderNum ? `envasadora_sampling_${orderNum}` : null,
                     "ensacadora_sampling_draft_temp",
-                    "envasadora_sampling_draft_temp",
                 ].filter(Boolean) as string[];
 
-                let loadedSamples: any[] = [];
                 for (const key of candidateKeys) {
                     try {
                         const raw = localStorage.getItem(key);
@@ -540,6 +518,15 @@ export default function ShipmentProcess({
                             if (Array.isArray(parsed.samples) && parsed.samples.length > loadedSamples.length) {
                                 loadedSamples = parsed.samples;
                             }
+                        }
+                    } catch (e) {}
+                }
+
+                if (loadedSamples.length === 0 && orderId) {
+                    try {
+                        const sampRes = await axios.get(route("documentation.shipment-orders.get-sampling", orderId));
+                        if (Array.isArray(sampRes.data?.samples) && sampRes.data.samples.length > 0) {
+                            loadedSamples = sampRes.data.samples;
                         }
                     } catch (e) {}
                 }
@@ -604,6 +591,51 @@ export default function ShipmentProcess({
             console.error("Error refreshing loading history:", error);
         }
     };
+
+    // Auto-sincronización de muestras locales hacia MariaDB al cargar la página
+    useEffect(() => {
+        if (!Array.isArray(history) || history.length === 0) return;
+
+        history.forEach((row) => {
+            if (!isRowEnvasado(row)) return;
+            const dbCount = Array.isArray(row.samples) ? row.samples.length : 0;
+            if (dbCount > 0) return;
+
+            const targetId = row.id || row.shipment_order_id || row.folio;
+            if (!targetId) return;
+
+            const candidateKeys = [
+                `ensacadora_sampling_order_${targetId}`,
+                `ensacadora_sampling_${targetId}`,
+                row.folio ? `ensacadora_sampling_order_${row.folio}` : null,
+                row.id ? `ensacadora_sampling_order_${row.id}` : null,
+            ].filter(Boolean) as string[];
+
+            for (const k of candidateKeys) {
+                try {
+                    const raw = localStorage.getItem(k);
+                    if (!raw) continue;
+                    const parsed = JSON.parse(raw);
+                    if (parsed && Array.isArray(parsed.samples) && parsed.samples.length > 0) {
+                        axios
+                            .post(route("documentation.shipment-orders.save-sampling", targetId), {
+                                samples: parsed.samples,
+                                stowage_count: row.stowage_count || null,
+                                is_completed: Boolean(parsed.isSaved) && parsed.samples.length === 40,
+                                shipment_order_id: row.id,
+                                folio: row.folio,
+                                history_id: row.history_id,
+                            })
+                            .then(() => {
+                                refreshHistory();
+                            })
+                            .catch(() => {});
+                        break;
+                    }
+                } catch (e) {}
+            }
+        });
+    }, []);
 
     const handleSearchOrder = async (query?: string) => {
         const q = (query !== undefined ? query : searchQr).trim();
@@ -696,9 +728,13 @@ export default function ShipmentProcess({
                 warehouse: warehouse || `Almacen ${selectedWarehouseId}`,
                 squad_leader: squadLeader || null,
                 loading_assistant: loadingAssistant || null,
+                stowage_count: stowageCount ? parseInt(stowageCount, 10) : null,
             });
 
             const savedOrder = response.data?.order || scannedOrder;
+            if (stowageCount) {
+                savedOrder.stowage_count = parseInt(stowageCount, 10);
+            }
 
             if (isEnvasado) {
                 // Open the Sampling Modal (Estibas y gráfica)
@@ -1555,8 +1591,15 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Producto */}
-                                            <td className="w-[9.5%] px-1.5 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.product}>
-                                                {row.product}
+                                            <td className="w-[9.5%] px-1.5 py-2 text-left text-[11px]" title={row.product}>
+                                                <div className="font-semibold text-gray-700 uppercase truncate">
+                                                    {row.product}
+                                                </div>
+                                                {row.stowage_count ? (
+                                                    <div className="text-[10px] text-indigo-600 font-bold">
+                                                        {row.stowage_count} estibas
+                                                    </div>
+                                                ) : null}
                                             </td>
 
                                             {/* Placas */}
@@ -1588,8 +1631,6 @@ export default function ShipmentProcess({
                                                     startedAt={row.started_at}
                                                     finishedAt={row.finished_at}
                                                     status={row.status}
-                                                    isSamplingIncomplete={samplingStatus.isEnvasado && !samplingStatus.isCompleted}
-                                                    samplingCompletedAt={samplingStatus.savedAt}
                                                 />
                                             </td>
 
@@ -1766,15 +1807,17 @@ export default function ShipmentProcess({
             {/* Modal de Muestreo de Ensacadora (Acción) */}
             <EnsacadoraSamplingModal
                 isOpen={isSamplingModalOpen}
-                onClose={() => {
+                onClose={async () => {
                     setIsSamplingModalOpen(false);
                     setSamplingRevision((r) => r + 1);
+                    await refreshHistory();
                 }}
                 order={activeSamplingOrder}
-                stowageCount={stowageCount}
+                stowageCount={activeSamplingOrder?.stowage_count || stowageCount}
                 totalSamplesCount={40}
-                onSave={() => {
+                onSave={async () => {
                     setSamplingRevision((r) => r + 1);
+                    await refreshHistory();
                 }}
                 onOpenPrintDocuments={handleOpenPrintModalFromSampling}
             />

@@ -1641,6 +1641,7 @@ class DocumentationController extends Controller
             'warehouse' => 'required|string|max:255',
             'squad_leader' => 'nullable|string|max:255',
             'loading_assistant' => 'nullable|string|max:255',
+            'stowage_count' => 'nullable|integer',
             'loaded_at' => 'nullable|date',
         ]);
 
@@ -1705,6 +1706,135 @@ class DocumentationController extends Controller
             'message' => 'Embarque guardado correctamente.',
             'administrator' => $administrator,
             'order' => $this->formatOrderForPrint($order->fresh()),
+        ]);
+    }
+
+    public function saveSampling(Request $request, string $id)
+    {
+        $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
+        if (!$order && $request->filled('shipment_order_id')) {
+            $order = ShipmentOrder::where('id', $request->input('shipment_order_id'))->orWhere('folio', $request->input('shipment_order_id'))->first();
+        }
+        if (!$order && $request->filled('folio')) {
+            $order = ShipmentOrder::where('folio', $request->input('folio'))->first();
+        }
+        if (!$order && $request->filled('order_id')) {
+            $order = ShipmentOrder::where('id', $request->input('order_id'))->orWhere('folio', $request->input('order_id'))->first();
+        }
+
+        $history = null;
+        if ($order) {
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        }
+        if (!$history) {
+            $history = ShipmentProcessHistory::find($id);
+            if ($history && !$order) {
+                $order = $history->shipmentOrder;
+            }
+        }
+        if (!$history && $request->filled('history_id')) {
+            $history = ShipmentProcessHistory::find($request->input('history_id'));
+            if ($history && !$order) {
+                $order = $history->shipmentOrder;
+            }
+        }
+
+        if (!$history && $order) {
+            $history = ShipmentProcessHistory::create([
+                'shipment_order_id' => $order->id,
+                'lot_id' => $order->lot_id,
+                'warehouse' => $order->warehouse,
+                'loading_administrator' => $order->loading_administrator ?? $request->user()?->name ?? 'Administrador',
+                'loading_squad_leader' => $order->loading_squad_leader,
+                'loading_assistant' => $order->loading_assistant,
+                'started_at' => $order->loaded_at ?? now(),
+                'status' => 'loading',
+            ]);
+        }
+
+        if (!$history) {
+            return response()->json(['message' => 'No se encontró el registro de proceso de embarque.'], 404);
+        }
+
+        $samples = $request->input('samples', []);
+        if (is_string($samples)) {
+            $samples = json_decode($samples, true) ?: [];
+        }
+        $stowageCount = $request->input('stowage_count');
+        $isCompleted = count($samples) >= 40 || $request->boolean('is_completed');
+
+        $avg = null;
+        if (count($samples) > 0) {
+            $weights = collect($samples)->pluck('weight')->map(fn ($w) => (float)$w)->filter(fn ($w) => $w > 0);
+            if ($weights->count() > 0) {
+                $avg = round($weights->avg(), 3);
+            }
+        }
+
+        $updateData = [
+            'samples' => $samples,
+            'sampling_avg' => $avg,
+            'sampling_status' => $isCompleted ? 'completed' : (count($samples) > 0 ? 'in_progress' : 'pending'),
+            'updated_by' => auth()->id(),
+        ];
+
+        if ($stowageCount !== null && $stowageCount !== '') {
+            $updateData['stowage_count'] = (int)$stowageCount;
+        }
+
+        if ($isCompleted) {
+            $updateData['sampling_completed_at'] = $history->sampling_completed_at ?? now();
+        } else {
+            if (count($samples) < 40) {
+                $updateData['sampling_completed_at'] = null;
+            }
+        }
+
+        $history->update($updateData);
+
+        return response()->json([
+            'message' => 'Estibas y muestreo guardados correctamente en la tabla de historial.',
+            'history' => $this->formatProcessHistoryItem($history->fresh(['shipmentOrder.items.product', 'lot'])),
+        ]);
+    }
+
+    public function getSampling(Request $request, string $id)
+    {
+        $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
+        if (!$order && $request->filled('shipment_order_id')) {
+            $order = ShipmentOrder::where('id', $request->input('shipment_order_id'))->orWhere('folio', $request->input('shipment_order_id'))->first();
+        }
+        if (!$order && $request->filled('folio')) {
+            $order = ShipmentOrder::where('folio', $request->input('folio'))->first();
+        }
+
+        $history = null;
+        if ($order) {
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        }
+        if (!$history) {
+            $history = ShipmentProcessHistory::find($id);
+        }
+        if (!$history && $request->filled('history_id')) {
+            $history = ShipmentProcessHistory::find($request->input('history_id'));
+        }
+
+        if (!$history) {
+            return response()->json([
+                'samples' => [],
+                'stowage_count' => null,
+                'sampling_completed_at' => null,
+                'sampling_status' => 'pending',
+                'sampling_avg' => null,
+            ]);
+        }
+
+        return response()->json([
+            'samples' => $history->samples ?? [],
+            'stowage_count' => $history->stowage_count,
+            'sampling_completed_at' => $history->sampling_completed_at?->toIso8601String(),
+            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 40 ? 'completed' : 'pending'),
+            'sampling_avg' => $history->sampling_avg,
         ]);
     }
 
@@ -1833,13 +1963,22 @@ class DocumentationController extends Controller
             'started_at' => ($history->started_at ?? $order?->loaded_at)?->toIso8601String(),
             'finished_at' => ($history->finished_at ?? $order?->loading_finished_at)?->toIso8601String(),
             'status' => $history->status ?? $order?->status ?? 'loading',
+            'stowage_count' => $history->stowage_count,
+            'samples' => $history->samples ?? [],
+            'sampling_completed_at' => $history->sampling_completed_at?->toIso8601String(),
+            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 40 ? 'completed' : (count($history->samples ?? []) > 0 ? 'in_progress' : 'pending')),
+            'sampling_avg' => $history->sampling_avg,
         ];
     }
 
     private function formatLoadingHistoryItem(ShipmentOrder $order): array
     {
+        $history = $order->latestProcessHistory ?? ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+
         return [
             'id' => $order->id,
+            'history_id' => $history?->id,
+            'shipment_order_id' => $order->id,
             'lot_id' => $order->lot_id,
             'warehouse' => $order->lot?->warehouse ?: $order->warehouse,
             'cubicle' => $order->lot?->cubicle,
@@ -1857,6 +1996,11 @@ class DocumentationController extends Controller
             'started_at' => $order->loaded_at?->toIso8601String(),
             'finished_at' => $order->loading_finished_at?->toIso8601String(),
             'status' => $order->status,
+            'stowage_count' => $history?->stowage_count,
+            'samples' => $history?->samples ?? [],
+            'sampling_completed_at' => $history?->sampling_completed_at?->toIso8601String(),
+            'sampling_status' => $history?->sampling_status ?? (count($history?->samples ?? []) >= 40 ? 'completed' : (count($history?->samples ?? []) > 0 ? 'in_progress' : 'pending')),
+            'sampling_avg' => $history?->sampling_avg,
         ];
     }
 

@@ -134,33 +134,34 @@ export default function EnsacadoraSamplingModal({
         if (isOpen && order) {
             isLoadedRef.current = false;
             
+            let loadedSamples: SampleRecord[] = [];
+            let loadedIsSaved = false;
+            let loadedSavedAt: string | null = null;
+
+            // 1. Check if order passed in props already has samples from shipment_process_histories
+            if (Array.isArray(order.samples) && order.samples.length > 0) {
+                loadedSamples = order.samples;
+                loadedIsSaved = order.samples.length === 40 || order.sampling_status === "completed";
+                loadedSavedAt = order.sampling_completed_at || null;
+            }
+
+            // 2. Check localStorage drafts
             const primaryKey = getStorageKey();
             const candidateKeys = [
                 primaryKey,
+                order.id ? `ensacadora_sampling_order_${order.id}` : null,
+                order.id ? `ensacadora_sampling_${order.id}` : null,
                 order.id ? `envasadora_sampling_order_${order.id}` : null,
                 order.id ? `envasadora_sampling_${order.id}` : null,
-                order.folio ? `envasadora_sampling_order_${order.folio}` : null,
-                order.folio ? `envasadora_sampling_${order.folio}` : null,
-                order.order_number ? `envasadora_sampling_order_${order.order_number}` : null,
-                order.order_number ? `envasadora_sampling_${order.order_number}` : null,
-                "envasadora_sampling_draft_temp",
+                order.folio ? `ensacadora_sampling_order_${order.folio}` : null,
+                order.folio ? `ensacadora_sampling_${order.folio}` : null,
+                order.order_number ? `ensacadora_sampling_order_${order.order_number}` : null,
+                "ensacadora_sampling_draft_temp",
             ].filter(Boolean) as string[];
 
             try {
-                const orderIdentifiers = [order.id, order.folio, order.order_number].filter(Boolean).map(String);
-                for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k && k.startsWith("envasadora_sampling")) {
-                        if (orderIdentifiers.some((id) => k.includes(id)) || k.includes("temp") || k.includes("draft")) {
-                            if (!candidateKeys.includes(k)) candidateKeys.push(k);
-                        }
-                    }
-                }
-            } catch (e) {}
-
-            try {
                 let bestPayload: any = null;
-                let maxCount = -1;
+                let maxCount = loadedSamples.length;
 
                 for (const k of candidateKeys) {
                     try {
@@ -172,67 +173,50 @@ export default function EnsacadoraSamplingModal({
                             if (count > maxCount) {
                                 maxCount = count;
                                 bestPayload = parsed;
-                            } else if (count === maxCount && count > 0) {
-                                const bestDate = bestPayload?.updatedAt ? new Date(bestPayload.updatedAt).getTime() : 0;
-                                const thisDate = parsed.updatedAt ? new Date(parsed.updatedAt).getTime() : 0;
-                                if (thisDate > bestDate) {
-                                    bestPayload = parsed;
-                                }
                             }
                         }
                     } catch (e) {}
                 }
 
-                if (bestPayload && Array.isArray(bestPayload.samples) && bestPayload.samples.length > 0) {
-                    const loadedSamples = bestPayload.samples;
-                    const savedState = Boolean(bestPayload.isSaved) && loadedSamples.length === 40;
-                    setSamples(loadedSamples);
-                    setIsSaved(savedState);
-                    setSavedAt(savedState ? (bestPayload.savedAt || null) : null);
-
-                    if (bestPayload.updatedAt) {
-                        try {
-                            const date = new Date(bestPayload.updatedAt);
-                            setLastAutosavedAt(
-                                date.toLocaleTimeString("es-MX", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    second: "2-digit",
-                                })
-                            );
-                        } catch {
-                            setLastAutosavedAt(null);
-                        }
-                    }
-
-                    const activeEns = bestPayload.selectedEnsacadora || bestPayload.selectedEnvasadora;
-                    if (activeEns === 1 || activeEns === 2) {
-                        setSelectedEnsacadora(activeEns);
-                    }
-
-                    if (!savedState && loadedSamples.length > 0) {
-                        Swal.fire({
-                            toast: true,
-                            position: "top-end",
-                            icon: "info",
-                            title: `Avance autoguardado recuperado`,
-                            text: `${loadedSamples.length} de 40 estibas capturadas. Continúe capturando.`,
-                            showConfirmButton: false,
-                            timer: 3500,
-                        });
-                    }
-                } else {
-                    setSamples([]);
-                    setIsSaved(false);
-                    setSavedAt(null);
-                    setLastAutosavedAt(null);
+                if (bestPayload && Array.isArray(bestPayload.samples) && bestPayload.samples.length > loadedSamples.length) {
+                    loadedSamples = bestPayload.samples;
+                    loadedIsSaved = Boolean(bestPayload.isSaved) && loadedSamples.length === 40;
+                    loadedSavedAt = loadedIsSaved ? (bestPayload.savedAt || null) : null;
                 }
-            } catch (err) {
-                console.error("Error al cargar muestreo almacenado", err);
+            } catch (e) {}
+
+            if (loadedSamples.length > 0) {
+                setSamples(loadedSamples);
+                setIsSaved(loadedIsSaved);
+                setSavedAt(loadedSavedAt);
+            } else {
                 setSamples([]);
                 setIsSaved(false);
                 setSavedAt(null);
                 setLastAutosavedAt(null);
+            }
+
+            // 3. Fetch from API to ensure fresh database state from shipment_process_histories
+            // 3. Fetch from API to ensure fresh database state from shipment_process_histories
+            const currentOrderId = order.id || order.shipment_order_id || order.folio;
+            if (currentOrderId) {
+                try {
+                    axios
+                        .get(route("documentation.shipment-orders.get-sampling", currentOrderId))
+                        .then((res) => {
+                            if (res.data?.samples && Array.isArray(res.data.samples) && res.data.samples.length > 0) {
+                                setSamples(res.data.samples);
+                                if (res.data.samples.length >= 40 || res.data.sampling_completed_at) {
+                                    setIsSaved(true);
+                                    setSavedAt(res.data.sampling_completed_at || null);
+                                }
+                            } else if (loadedSamples.length > 0) {
+                                // If database is empty or has fewer samples, immediately sync the loaded local samples to DB!
+                                saveSamplesToDatabase(loadedSamples, loadedIsSaved);
+                            }
+                        })
+                        .catch(() => {});
+                } catch (e) {}
             }
 
             setSampleInput("");
@@ -247,7 +231,7 @@ export default function EnsacadoraSamplingModal({
         } else {
             isLoadedRef.current = false;
         }
-    }, [isOpen, order?.id, order?.order_number]);
+    }, [isOpen, order?.id, order?.order_number, order?.folio]);
 
     const persistSamplingData = (payload: any) => {
         const primaryKey = getStorageKey();
@@ -290,31 +274,70 @@ export default function EnsacadoraSamplingModal({
         } catch (err) {}
     };
 
-    // Autoguardado continuo en tiempo real ante cualquier percance
-    useEffect(() => {
-        if (!isLoadedRef.current || !order || !isOpen) return;
+    // Helper: Guardar en tiempo real directamente en la base de datos (shipment_process_histories)
+    const saveSamplesToDatabase = async (
+        samplesToSave: SampleRecord[],
+        isCompleted: boolean = false
+    ) => {
         const now = new Date();
         const timeStr = now.toLocaleTimeString("es-MX", {
             hour: "2-digit",
             minute: "2-digit",
             second: "2-digit",
         });
-        const effectiveIsSaved = isSaved && samples.length === 40;
+
+        const targetId = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
+        if (!targetId) return null;
+
+        // Respaldo local
         try {
             persistSamplingData({
-                orderId: order.id || order.order_number || order.folio,
-                samples,
-                isSaved: effectiveIsSaved,
-                savedAt: effectiveIsSaved ? savedAt : null,
+                orderId: targetId,
+                samples: samplesToSave,
+                isSaved: isCompleted,
+                savedAt: isCompleted ? (savedAt || now.toISOString()) : null,
                 selectedEnsacadora,
                 selectedEnvasadora: selectedEnsacadora,
                 updatedAt: now.toISOString(),
             });
             setLastAutosavedAt(timeStr);
-        } catch (err) {
-            console.error("Error al respaldar muestreo en localStorage", err);
+        } catch (e) {
+            console.error("Error al respaldar en localStorage:", e);
         }
-    }, [samples, isSaved, savedAt, selectedEnsacadora, order?.id]);
+
+        try {
+            const response = await axios.post(
+                route("documentation.shipment-orders.save-sampling", targetId),
+                {
+                    samples: samplesToSave,
+                    stowage_count: stowageCount || order?.stowage_count || null,
+                    is_completed: isCompleted,
+                    shipment_order_id: order?.id || order?.shipment_order_id,
+                    folio: order?.folio,
+                    history_id: order?.history_id,
+                }
+            );
+            return response.data;
+        } catch (err) {
+            console.error("Error al guardar estibas en base de datos:", err);
+            return null;
+        }
+    };
+
+    // Autoguardado continuo de respaldo en tiempo real
+    useEffect(() => {
+        if (!isLoadedRef.current || !order || !isOpen) return;
+        const effectiveIsSaved = isSaved && samples.length === 40;
+
+        const currentOrderId = order.id || order.shipment_order_id || order.folio;
+        if (currentOrderId && samples.length > 0) {
+            const timer = setTimeout(() => {
+                saveSamplesToDatabase(samples, effectiveIsSaved);
+            }, 1000);
+
+            return () => clearTimeout(timer);
+        }
+    }, [samples, isSaved, savedAt, selectedEnsacadora, stowageCount, order?.id, order?.folio]);
 
     // Bloqueo estricto: solo está bloqueado si TIENE LAS 40 ESTIBAS y fue guardado
     const isLocked = isSaved && samples.length === 40;
@@ -331,34 +354,23 @@ export default function EnsacadoraSamplingModal({
         return () => window.removeEventListener("beforeunload", handleBeforeUnload);
     }, [isOpen, isLocked, samples.length]);
 
-    const handleSave = () => {
+    const handleSave = async () => {
         const now = new Date().toISOString();
         const isCompleted = samples.length === 40;
 
-        try {
-            persistSamplingData({
-                orderId: order?.id || order?.order_number || order?.folio,
-                samples,
-                isSaved: isCompleted,
-                savedAt: isCompleted ? (savedAt || now) : null,
-                selectedEnsacadora,
-                selectedEnvasadora: selectedEnsacadora,
-                updatedAt: now,
-            });
-        } catch (e) {
-            console.error("Error al guardar en localStorage", e);
-        }
+        // Guardar directamente en la base de datos MariaDB (esperando confirmación)
+        await saveSamplesToDatabase(samples, isCompleted);
 
         if (isCompleted) {
             setIsSaved(true);
             setSavedAt(savedAt || now);
             if (onSave) {
-                onSave(samples);
+                await onSave(samples);
             }
             Swal.fire({
                 icon: "success",
                 title: "¡Muestreo Completado y Guardado!",
-                html: "Se han completado y certificado las <b>40 estibas</b> con éxito.<br/><br/>El cronómetro en el historial comenzará a correr.",
+                html: "Se han guardado las <b>40 estibas</b> en la base de datos con éxito.<br/><br/>Muestreo finalizado y certificado.",
                 confirmButtonColor: "#16a34a",
                 confirmButtonText: "Aceptar",
             });
@@ -366,14 +378,14 @@ export default function EnsacadoraSamplingModal({
         } else {
             setIsSaved(false);
             if (onSave) {
-                onSave(samples);
+                await onSave(samples);
             }
             Swal.fire({
                 toast: true,
                 position: "top-end",
                 icon: "info",
                 title: "Avance guardado",
-                text: `${samples.length} de 40 estibas guardadas. Puede continuar en cualquier momento desde el historial.`,
+                text: `${samples.length} de 40 estibas guardadas en la base de datos. Se sincronizarán en cualquier navegador.`,
                 showConfirmButton: false,
                 timer: 3000,
             });
@@ -415,7 +427,10 @@ export default function EnsacadoraSamplingModal({
                 envasadora: env,
                 weight: weightToSave,
             };
-            setSamples((prev) => [...prev, newRecord]);
+            const updated = [...samples, newRecord];
+            setSamples(updated);
+            // Guardar inmediatamente en base de datos en tiempo real
+            saveSamplesToDatabase(updated, false);
         }
         setSelectedEnsacadora(env);
         setPendingWeight(null);
@@ -570,27 +585,29 @@ export default function EnsacadoraSamplingModal({
         if (isLocked) return;
         const val = parseFloat(editingValue);
         if (isNaN(val) || val <= 0) return;
-        setSamples((prev) => prev.map((s) => (s.id === id ? { ...s, weight: val } : s)));
+        const updated = samples.map((s) => (s.id === id ? { ...s, weight: val } : s));
+        setSamples(updated);
+        saveSamplesToDatabase(updated, isSaved && updated.length === 40);
         setEditingId(null);
         setEditingValue("");
     };
 
     const handleDeleteSample = (id: number) => {
         if (isLocked) return;
-        setSamples((prev) => {
-            const filtered = prev.filter((s) => s.id !== id);
-            let env1Count = 0;
-            let env2Count = 0;
-            return filtered.map((s) => {
-                if ((s.ensacadora || s.envasadora) === 1) {
-                    env1Count++;
-                    return { ...s, num: env1Count };
-                } else {
-                    env2Count++;
-                    return { ...s, num: env2Count };
-                }
-            });
+        const filtered = samples.filter((s) => s.id !== id);
+        let env1Count = 0;
+        let env2Count = 0;
+        const updated = filtered.map((s) => {
+            if ((s.ensacadora || s.envasadora) === 1) {
+                env1Count++;
+                return { ...s, num: env1Count };
+            } else {
+                env2Count++;
+                return { ...s, num: env2Count };
+            }
         });
+        setSamples(updated);
+        saveSamplesToDatabase(updated, false);
     };
 
     // Chart dimensions
@@ -948,6 +965,7 @@ export default function EnsacadoraSamplingModal({
                                                     }).then((res) => {
                                                         if (res.isConfirmed) {
                                                             setIsSaved(false);
+                                                            saveSamplesToDatabase(samples, false);
                                                         }
                                                     });
                                                 }}
@@ -1278,24 +1296,17 @@ export default function EnsacadoraSamplingModal({
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="text-sm font-black text-indigo-950 font-mono mt-0.5">
-                                            {estimatedNetWeightKg !== null
-                                                ? `${estimatedNetWeightKg.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`
-                                                : "---"}
-                                        </div>
                                         <div
-                                            className="text-[10px] text-indigo-700 font-mono mt-0.5 truncate"
+                                            className="text-sm font-black text-indigo-950 font-mono mt-0.5"
                                             title={
                                                 estimatedNetWeightTons !== null
-                                                    ? `${estimatedNetWeightTons.toFixed(3)} ton (${overallAvg?.toFixed(3)} kg × ${totalSacks.toLocaleString("es-MX")} sacos)`
+                                                    ? `${overallAvg?.toFixed(3)} kg × ${totalSacks.toLocaleString("es-MX")} sacos`
                                                     : undefined
                                             }
                                         >
                                             {estimatedNetWeightTons !== null
-                                                ? `≈ ${estimatedNetWeightTons.toFixed(3)} ton`
-                                                : totalSacks > 0
-                                                ? `${totalSacks.toLocaleString("es-MX")} sacos programados`
-                                                : "Sin sacos prog."}
+                                                ? `${estimatedNetWeightTons.toFixed(3)} ton`
+                                                : "---"}
                                         </div>
                                     </div>
                                 </div>
@@ -1547,7 +1558,7 @@ export default function EnsacadoraSamplingModal({
                                             }`}
                                             title={
                                                 samples.length === 40
-                                                    ? "Guardar y certificar las 40 estibas (inicia cronómetro en historial)"
+                                                    ? "Guardar y certificar las 40 estibas en historial"
                                                     : isLocked
                                                     ? "Muestreo finalizado y guardado - Salir"
                                                     : `Guardar avance (${samples.length}/40 estibas) y salir`
