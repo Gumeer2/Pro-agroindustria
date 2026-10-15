@@ -137,27 +137,102 @@ class SupplyInventoryController extends Controller
     {
         $agricolaMetrics = \App\Services\UreaStockService::getMetrics('agricola');
         $industrialMetrics = \App\Services\UreaStockService::getMetrics('industrial');
+        $automotrizMetrics = \App\Services\UreaStockService::getMetrics('automotriz');
         $importadaMetrics = \App\Services\UreaStockService::getMetrics('importada');
         $dapMetrics = \App\Services\UreaStockService::getMetrics('dap');
 
+        $operationalDate = $agricolaMetrics['operationalDate'] ?? now()->format('Y-m-d');
+
+        // Panel 1: Urea Proagro (Agrícola + Industrial + Automotriz)
+        $proagroStock = round(($agricolaMetrics['totalStockTons'] ?? 0) + ($industrialMetrics['totalStockTons'] ?? 0) + ($automotrizMetrics['totalStockTons'] ?? 0), 2);
+        $proagroToday = round(($agricolaMetrics['todayProductionTons'] ?? 0) + ($industrialMetrics['todayProductionTons'] ?? 0) + ($automotrizMetrics['todayProductionTons'] ?? 0), 2);
+        $proagroShipped = round(($agricolaMetrics['totalShippedTons'] ?? 0) + ($industrialMetrics['totalShippedTons'] ?? 0) + ($automotrizMetrics['totalShippedTons'] ?? 0), 2);
+        $proagroInitial = round(($agricolaMetrics['totalInitialTons'] ?? 0) + ($industrialMetrics['totalInitialTons'] ?? 0) + ($automotrizMetrics['totalInitialTons'] ?? 0), 2);
+
+        // Panel 2: Urea Importada (Aparte)
+        $importadaStock = round($importadaMetrics['totalStockTons'] ?? 0, 2);
+        $importadaToday = round($importadaMetrics['todayProductionTons'] ?? 0, 2);
+        $importadaShipped = round($importadaMetrics['totalShippedTons'] ?? 0, 2);
+        $importadaInitial = round($importadaMetrics['totalInitialTons'] ?? 0, 2);
+
+        // Panel 3: DAP (Aparte)
+        $dapStock = round($dapMetrics['totalStockTons'] ?? 0, 2);
+        $dapToday = round($dapMetrics['todayProductionTons'] ?? 0, 2);
+        $dapShipped = round($dapMetrics['totalShippedTons'] ?? 0, 2);
+        $dapInitial = round($dapMetrics['totalInitialTons'] ?? 0, 2);
+
+        // Consolidado Importada & DAP
+        $importDapStock = round($importadaStock + $dapStock, 2);
+        $importDapToday = round($importadaToday + $dapToday, 2);
+        $importDapShipped = round($importadaShipped + $dapShipped, 2);
+        $importDapInitial = round($importadaInitial + $dapInitial, 2);
+
         return Inertia::render('APT/Inventory/ProductionHub', [
             'metrics' => [
+                'operational_date' => $operationalDate,
+
+                // Panel 1: Urea Proagro (Agrícola + Industrial + Automotriz)
+                'urea_proagro' => [
+                    'stock_total' => $proagroStock,
+                    'today_production' => $proagroToday,
+                    'shipped_total' => $proagroShipped,
+                    'initial_total' => $proagroInitial,
+                ],
+
+                // Panel 2: Urea Importada (Aparte)
+                'urea_importada' => [
+                    'stock_total' => $importadaStock,
+                    'today_production' => $importadaToday,
+                    'shipped_total' => $importadaShipped,
+                    'initial_total' => $importadaInitial,
+                ],
+
+                // Panel 3: DAP (Aparte)
+                'dap' => [
+                    'stock_total' => $dapStock,
+                    'today_production' => $dapToday,
+                    'shipped_total' => $dapShipped,
+                    'initial_total' => $dapInitial,
+                ],
+
+                // Consolidado Importada y DAP
+                'urea_importada_dap' => [
+                    'stock_total' => $importDapStock,
+                    'today_production' => $importDapToday,
+                    'shipped_total' => $importDapShipped,
+                    'initial_total' => $importDapInitial,
+                ],
+
+                // Individual metrics
                 'urea_agricola_total' => $agricolaMetrics['totalStockTons'],
                 'urea_agricola_daily' => $agricolaMetrics['totalDailyTons'],
                 'urea_agricola_initial' => $agricolaMetrics['totalInitialTons'],
                 'urea_agricola_shipped' => $agricolaMetrics['totalShippedTons'],
+                'urea_agricola_today' => $agricolaMetrics['todayProductionTons'] ?? 0,
+
                 'urea_industrial_total' => $industrialMetrics['totalStockTons'],
                 'urea_industrial_daily' => $industrialMetrics['totalDailyTons'],
                 'urea_industrial_initial' => $industrialMetrics['totalInitialTons'],
                 'urea_industrial_shipped' => $industrialMetrics['totalShippedTons'],
+                'urea_industrial_today' => $industrialMetrics['todayProductionTons'] ?? 0,
+
+                'urea_automotriz_total' => $automotrizMetrics['totalStockTons'],
+                'urea_automotriz_daily' => $automotrizMetrics['totalDailyTons'],
+                'urea_automotriz_initial' => $automotrizMetrics['totalInitialTons'],
+                'urea_automotriz_shipped' => $automotrizMetrics['totalShippedTons'],
+                'urea_automotriz_today' => $automotrizMetrics['todayProductionTons'] ?? 0,
+
                 'urea_importada_total' => $importadaMetrics['totalStockTons'],
                 'urea_importada_daily' => $importadaMetrics['totalDailyTons'],
                 'urea_importada_initial' => $importadaMetrics['totalInitialTons'],
                 'urea_importada_shipped' => $importadaMetrics['totalShippedTons'],
+                'urea_importada_today' => $importadaMetrics['todayProductionTons'] ?? 0,
+
                 'dap_total' => $dapMetrics['totalStockTons'],
                 'dap_daily' => $dapMetrics['totalDailyTons'],
                 'dap_initial' => $dapMetrics['totalInitialTons'],
                 'dap_shipped' => $dapMetrics['totalShippedTons'],
+                'dap_today' => $dapMetrics['todayProductionTons'] ?? 0,
             ],
         ]);
     }

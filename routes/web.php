@@ -242,6 +242,15 @@ Route::middleware('auth')->group(function () {
         Route::put('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-industrial.initial.update');
         Route::delete('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-industrial.initial.destroy');
 
+        // Urea Automotriz Inventory Management (Daily Production & Initial Inventory)
+        Route::get('/apt/inventory/urea-automotriz', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'index'])->name('apt.inventory.urea-automotriz.index');
+        Route::post('/apt/inventory/urea-automotriz/daily', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'storeDaily'])->name('apt.inventory.urea-automotriz.daily.store');
+        Route::put('/apt/inventory/urea-automotriz/daily/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-automotriz.daily.update');
+        Route::delete('/apt/inventory/urea-automotriz/daily/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-automotriz.daily.destroy');
+        Route::post('/apt/inventory/urea-automotriz/initial', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'storeInitial'])->name('apt.inventory.urea-automotriz.initial.store');
+        Route::put('/apt/inventory/urea-automotriz/initial/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-automotriz.initial.update');
+        Route::delete('/apt/inventory/urea-automotriz/initial/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-automotriz.initial.destroy');
+
         // Urea Importada Inventory Management (Daily Reception & Initial Inventory)
         Route::get('/apt/inventory/urea-importada', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'index'])->name('apt.inventory.urea-importada.index');
         Route::post('/apt/inventory/urea-importada/daily', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'storeDaily'])->name('apt.inventory.urea-importada.daily.store');

@@ -344,7 +344,7 @@ export default function SupplyInventoryView({
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
                     <div>
                         <Link
-                            href={typeof route === "function" ? route("apt.inventory.index") : "/apt/inventory"}
+                            href={typeof route === "function" ? `${route("apt.inventory.index")}?from=${typeof window !== "undefined" && new URLSearchParams(window.location.search).get("from") ? new URLSearchParams(window.location.search).get("from") : "production"}` : `/apt/inventory?from=production`}
                             className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium mb-3 group"
                         >
                             <ArrowLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" />

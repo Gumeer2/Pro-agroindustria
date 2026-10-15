@@ -57,6 +57,16 @@ const iconMap: Record<string, React.ElementType> = {
 
 export default function ProductsHub({ auth, mainModules = [], metrics }: Props) {
     const [searchTerm, setSearchTerm] = useState("");
+    const fromParam = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null;
+
+    const getBackUrl = () => {
+        const from = fromParam || "production";
+        try {
+            return typeof route === "function" ? `${route("apt.inventory.index")}?from=${from}` : `/apt/inventory?from=${from}`;
+        } catch {
+            return `/apt/inventory?from=${from}`;
+        }
+    };
 
     const filteredModules = (mainModules || []).filter(
         (mod) =>
@@ -73,7 +83,7 @@ export default function ProductsHub({ auth, mainModules = [], metrics }: Props) 
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
                     <div>
                         <Link
-                            href={typeof route === "function" ? route("apt.inventory.index") : "/apt/inventory"}
+                            href={getBackUrl()}
                             className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium mb-3 group"
                         >
                             <ArrowLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" />

@@ -35,6 +35,11 @@ class UreaInitialInventory extends Model
         return $query->where('product_type', 'industrial');
     }
 
+    public function scopeAutomotriz($query)
+    {
+        return $query->where('product_type', 'automotriz');
+    }
+
     public function scopeImportada($query)
     {
         return $query->where('product_type', 'importada');

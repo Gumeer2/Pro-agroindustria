@@ -58,6 +58,10 @@ class UreaStockService
             return 'agricola';
         }
 
+        if (str_contains($upper, 'AUTOMOTRIZ')) {
+            return 'automotriz';
+        }
+
         if (str_contains($upper, 'INDUSTRIAL')) {
             return 'industrial';
         }
@@ -382,6 +386,7 @@ class UreaStockService
         $productLabel = match ($productType) {
             'agricola' => 'Urea Agrícola',
             'industrial' => 'Urea Industrial',
+            'automotriz' => 'Urea Automotriz',
             'importada' => 'Urea Importada',
             'dap' => 'DAP (Fosfato Diamónico)',
             default => 'Fertilizante',
