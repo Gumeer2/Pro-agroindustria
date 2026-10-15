@@ -31,7 +31,7 @@ import Swal from "sweetalert2";
 import { Dialog, Menu, Transition } from "@headlessui/react";
 import LoadingAssistantDropdown from "@/Components/LoadingAssistantDropdown";
 import QrScannerModal from "@/Components/QrScannerModal";
-import EnvasadoraSamplingModal from "@/Components/EnvasadoraSamplingModal";
+import EnsacadoraSamplingModal from "@/Components/EnsacadoraSamplingModal";
 import ShipmentDocumentsPrintModal from "@/Components/ShipmentDocumentsPrintModal";
 
 interface Lot {
@@ -49,14 +49,21 @@ interface Assistant {
 
 interface HistoryItem {
     id: string;
-    lot_id: number | null;
+    history_id?: number;
+    shipment_order_id?: string;
+    lot_id: number | string | null;
     warehouse?: string;
     cubicle?: string;
     lot_folio?: string;
     folio: string;
+    order_number?: string;
     operator: string;
     squad_leader: string;
     product: string;
+    presentation?: string;
+    sacks_count?: string | number | null;
+    programmed_tons?: string | number | null;
+    programmed_weight?: string | number | null;
     plates: string;
     started_at: string | null;
     finished_at: string | null;
@@ -330,7 +337,7 @@ function LiveStopwatch({
         return (
             <span
                 className="inline-flex items-center gap-1 font-mono font-bold text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shadow-2xs"
-                title="Pausado: El cronómetro comenzará a correr una vez completado y guardado el muestreo de envasadora (40/40 estibas)"
+                title="Pausado: El cronómetro comenzará a correr una vez completado y guardado el muestreo de ensacadora (40/40 estibas)"
             >
                 <Pause className="w-2.5 h-2.5 text-amber-600 animate-pulse shrink-0" />
                 00:00
@@ -366,13 +373,21 @@ const getOrderSamplingStatus = (row: HistoryItem): {
     try {
         const id = row.id || (row as any).order_number || row.folio;
         const candidateKeys = [
+            `ensacadora_sampling_order_${id}`,
+            `ensacadora_sampling_${id}`,
             `envasadora_sampling_order_${id}`,
             `envasadora_sampling_${id}`,
+            row.folio ? `ensacadora_sampling_order_${row.folio}` : null,
             row.folio ? `envasadora_sampling_order_${row.folio}` : null,
+            row.folio ? `ensacadora_sampling_${row.folio}` : null,
             row.folio ? `envasadora_sampling_${row.folio}` : null,
+            row.id ? `ensacadora_sampling_order_${row.id}` : null,
             row.id ? `envasadora_sampling_order_${row.id}` : null,
+            row.id ? `ensacadora_sampling_${row.id}` : null,
             row.id ? `envasadora_sampling_${row.id}` : null,
+            (row as any).order_number ? `ensacadora_sampling_order_${(row as any).order_number}` : null,
             (row as any).order_number ? `envasadora_sampling_order_${(row as any).order_number}` : null,
+            (row as any).order_number ? `ensacadora_sampling_${(row as any).order_number}` : null,
             (row as any).order_number ? `envasadora_sampling_${(row as any).order_number}` : null,
         ].filter(Boolean) as string[];
 
@@ -500,12 +515,19 @@ export default function ShipmentProcess({
                 const orderNum = orderData.order_number;
 
                 const candidateKeys = [
+                    `ensacadora_sampling_order_${orderId}`,
+                    `ensacadora_sampling_${orderId}`,
                     `envasadora_sampling_order_${orderId}`,
                     `envasadora_sampling_${orderId}`,
+                    folio ? `ensacadora_sampling_order_${folio}` : null,
                     folio ? `envasadora_sampling_order_${folio}` : null,
+                    folio ? `ensacadora_sampling_${folio}` : null,
                     folio ? `envasadora_sampling_${folio}` : null,
+                    orderNum ? `ensacadora_sampling_order_${orderNum}` : null,
                     orderNum ? `envasadora_sampling_order_${orderNum}` : null,
+                    orderNum ? `ensacadora_sampling_${orderNum}` : null,
                     orderNum ? `envasadora_sampling_${orderNum}` : null,
+                    "ensacadora_sampling_draft_temp",
                     "envasadora_sampling_draft_temp",
                 ].filter(Boolean) as string[];
 
@@ -717,7 +739,7 @@ export default function ShipmentProcess({
                 Swal.fire({
                     icon: "warning",
                     title: "Muestreo Incompleto",
-                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de envasadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 40 estibas</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 40 estibas requeridas.`,
+                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de ensacadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 40 estibas</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 40 estibas requeridas.`,
                     confirmButtonColor: "#4f46e5",
                     confirmButtonText: "Entendido",
                 });
@@ -1219,7 +1241,7 @@ export default function ShipmentProcess({
                                                             Control de Estibas y Plan de Muestreo
                                                         </h4>
                                                         <p className="text-xs text-gray-500">
-                                                            Distribución y cálculo dinámico de muestras para control en envasadoras
+                                                            Distribución y cálculo dinámico de muestras para control en ensacadoras
                                                         </p>
                                                     </div>
                                                 </div>
@@ -1481,7 +1503,7 @@ export default function ShipmentProcess({
                                                                                 }`}
                                                                             >
                                                                                 <Settings className="w-3.5 h-3.5" />
-                                                                                Muestreo Envasadora
+                                                                                Muestreo Ensacadora
                                                                             </button>
                                                                         )}
                                                                     </Menu.Item>
@@ -1580,7 +1602,7 @@ export default function ShipmentProcess({
                                                                 type="button"
                                                                 disabled
                                                                 className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] cursor-not-allowed whitespace-nowrap flex items-center gap-1 opacity-80 shrink-0"
-                                                                title="Muestreo de envasadora completado y finalizado (40/40 estibas)"
+                                                                title="Muestreo de ensacadora completado y finalizado (40/40 estibas)"
                                                             >
                                                                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                                                 <span>Muestreo OK</span>
@@ -1593,7 +1615,7 @@ export default function ShipmentProcess({
                                                                     setIsSamplingModalOpen(true);
                                                                 }}
                                                                 className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
-                                                                title={`Muestreo de envasadora incompleto (${samplingStatus.samplesCount} de 40 estibas). Haga clic para continuar capturando.`}
+                                                                title={`Muestreo de ensacadora incompleto (${samplingStatus.samplesCount} de 40 estibas). Haga clic para continuar capturando.`}
                                                             >
                                                                 <Scale className="w-3 h-3" />
                                                                 <span>Muestreo ({samplingStatus.samplesCount}/40)</span>
@@ -1741,8 +1763,8 @@ export default function ShipmentProcess({
                     </div>
                 </Dialog>
             </Transition.Root>
-            {/* Modal de Muestreo de Envasadora (Acción) */}
-            <EnvasadoraSamplingModal
+            {/* Modal de Muestreo de Ensacadora (Acción) */}
+            <EnsacadoraSamplingModal
                 isOpen={isSamplingModalOpen}
                 onClose={() => {
                     setIsSamplingModalOpen(false);

@@ -14,6 +14,7 @@ use App\Models\ShipmentDestination;
 use App\Models\ShipmentOrigin;
 use App\Models\AptAttendance;
 use App\Models\LoadingAssistant;
+use App\Models\ShipmentProcessHistory;
 use App\Models\User;
 use App\Models\WeightTicket;
 use Illuminate\Http\Request;
@@ -1671,6 +1672,7 @@ class DocumentationController extends Controller
         }
 
         $administrator = $request->user()?->name ?: $request->user()?->username ?: 'Administrador';
+        $now = now();
 
         $order->update([
             'lot_id' => $validated['lot_id'],
@@ -1678,9 +1680,26 @@ class DocumentationController extends Controller
             'loading_administrator' => $administrator,
             'loading_squad_leader' => $validated['squad_leader'] ?? null,
             'loading_assistant' => $validated['loading_assistant'] ?? null,
-            'loaded_at' => now(),
+            'loaded_at' => $now,
             'status' => 'loading',
         ]);
+
+        $lot = Lot::find($validated['lot_id']);
+
+        ShipmentProcessHistory::updateOrCreate(
+            ['shipment_order_id' => $order->id],
+            [
+                'lot_id' => $validated['lot_id'],
+                'warehouse' => $validated['warehouse'],
+                'cubicle' => $lot?->cubicle,
+                'loading_administrator' => $administrator,
+                'loading_squad_leader' => $validated['squad_leader'] ?? null,
+                'loading_assistant' => $validated['loading_assistant'] ?? null,
+                'stowage_count' => $request->input('stowage_count'),
+                'started_at' => $now,
+                'status' => 'loading',
+            ]
+        );
 
         return response()->json([
             'message' => 'Embarque guardado correctamente.',
@@ -1698,50 +1717,123 @@ class DocumentationController extends Controller
 
     public function finishLoading(string $id)
     {
-        $order = ShipmentOrder::whereNotNull('lot_id')->findOrFail($id);
-        $order->update([
-            'status' => 'loading',
-            'loading_finished_at' => now(),
-        ]);
+        $order = ShipmentOrder::find($id);
+        $history = null;
+
+        if ($order) {
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        } else {
+            $history = ShipmentProcessHistory::find($id);
+            if ($history) {
+                $order = $history->shipmentOrder;
+            }
+        }
+
+        if (!$order && !$history) {
+            return response()->json(['message' => 'Orden o registro no encontrado.'], 404);
+        }
+
+        $now = now();
+        if ($order) {
+            $order->update([
+                'status' => 'loading',
+                'loading_finished_at' => $now,
+            ]);
+        }
+
+        if ($history) {
+            $history->update([
+                'finished_at' => $now,
+                'status' => 'completed',
+            ]);
+        }
 
         return response()->json([
             'message' => 'Orden de embarque finalizada correctamente.',
-            'item' => $this->formatLoadingHistoryItem($order->fresh(['items.product'])),
+            'item' => $history
+                ? $this->formatProcessHistoryItem($history->fresh(['shipmentOrder.items.product', 'lot']))
+                : $this->formatLoadingHistoryItem($order->fresh(['items.product', 'lot'])),
         ]);
     }
 
     public function deleteLoading(string $id)
     {
-        $order = ShipmentOrder::whereNotNull('lot_id')->findOrFail($id);
-        $order->update([
-            'lot_id' => null,
-            'warehouse' => null,
-            'loading_administrator' => null,
-            'loading_squad_leader' => null,
-            'loading_assistant' => null,
-            'loaded_at' => null,
-            'loading_finished_at' => null,
-            'status' => 'created',
-        ]);
-
-        $order->refresh();
+        $order = ShipmentOrder::find($id);
+        if ($order) {
+            ShipmentProcessHistory::where('shipment_order_id', $order->id)->delete();
+            $order->update([
+                'lot_id' => null,
+                'warehouse' => null,
+                'loading_administrator' => null,
+                'loading_squad_leader' => null,
+                'loading_assistant' => null,
+                'loaded_at' => null,
+                'loading_finished_at' => null,
+                'status' => 'created',
+            ]);
+        } else {
+            $history = ShipmentProcessHistory::find($id);
+            if ($history) {
+                $order = $history->shipmentOrder;
+                $history->delete();
+                if ($order && !ShipmentProcessHistory::where('shipment_order_id', $order->id)->exists()) {
+                    $order->update([
+                        'lot_id' => null,
+                        'warehouse' => null,
+                        'loading_administrator' => null,
+                        'loading_squad_leader' => null,
+                        'loading_assistant' => null,
+                        'loaded_at' => null,
+                        'loading_finished_at' => null,
+                        'status' => 'created',
+                    ]);
+                }
+            }
+        }
 
         return response()->json(['message' => 'Registro eliminado del historial.']);
     }
 
     private function getLoadingHistory(?string $lotId = null)
     {
-        $query = ShipmentOrder::with(['items.product', 'lot'])
-            ->whereNotNull('lot_id');
+        $query = ShipmentProcessHistory::with(['shipmentOrder.items.product', 'lot']);
 
         if ($lotId) {
             $query->where('lot_id', $lotId);
         }
 
-        return $query->orderByDesc('loaded_at')
+        return $query->orderByDesc('started_at')
             ->get()
-            ->map(fn (ShipmentOrder $order) => $this->formatLoadingHistoryItem($order))
+            ->map(fn (ShipmentProcessHistory $history) => $this->formatProcessHistoryItem($history))
             ->values();
+    }
+
+    private function formatProcessHistoryItem(ShipmentProcessHistory $history): array
+    {
+        $order = $history->shipmentOrder;
+
+        return [
+            'id' => $order ? $order->id : (string)$history->id,
+            'history_id' => $history->id,
+            'shipment_order_id' => $order?->id,
+            'lot_id' => $history->lot_id,
+            'warehouse' => $history->lot?->warehouse ?: $history->warehouse ?: $order?->warehouse,
+            'cubicle' => $history->lot?->cubicle ?: $history->cubicle,
+            'lot_folio' => $history->lot?->folio,
+            'folio' => $order?->folio ?? 'N/A',
+            'order_number' => $order?->order_number,
+            'operator' => $order?->operator_name ?? 'N/A',
+            'squad_leader' => $history->loading_squad_leader ?? $order?->loading_squad_leader ?? 'N/A',
+            'product' => $order?->product ?? $order?->items?->first()?->product?->name ?? 'N/A',
+            'presentation' => $order?->presentation,
+            'sacks_count' => $order?->sacks_count,
+            'programmed_tons' => $order?->programmed_tons,
+            'programmed_weight' => $order?->programmed_weight,
+            'plates' => $order ? (collect([$order->tractor_plate, $order->trailer_plate])->filter()->implode(' / ') ?: 'N/A') : 'N/A',
+            'started_at' => ($history->started_at ?? $order?->loaded_at)?->toIso8601String(),
+            'finished_at' => ($history->finished_at ?? $order?->loading_finished_at)?->toIso8601String(),
+            'status' => $history->status ?? $order?->status ?? 'loading',
+        ];
     }
 
     private function formatLoadingHistoryItem(ShipmentOrder $order): array
@@ -1753,10 +1845,14 @@ class DocumentationController extends Controller
             'cubicle' => $order->lot?->cubicle,
             'lot_folio' => $order->lot?->folio,
             'folio' => $order->folio,
+            'order_number' => $order->order_number,
             'operator' => $order->operator_name ?? 'N/A',
             'squad_leader' => $order->loading_squad_leader ?? 'N/A',
             'product' => $order->product ?? $order->items->first()?->product?->name ?? 'N/A',
             'presentation' => $order->presentation,
+            'sacks_count' => $order->sacks_count,
+            'programmed_tons' => $order->programmed_tons,
+            'programmed_weight' => $order->programmed_weight,
             'plates' => collect([$order->tractor_plate, $order->trailer_plate])->filter()->implode(' / ') ?: 'N/A',
             'started_at' => $order->loaded_at?->toIso8601String(),
             'finished_at' => $order->loading_finished_at?->toIso8601String(),

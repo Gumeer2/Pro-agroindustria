@@ -3,7 +3,7 @@ import { usePage } from '@inertiajs/react';
 
 interface Props {
     order?: any;
-    samples?: Array<{ id: number; num: number; envasadora: 1 | 2; weight: number }>;
+    samples?: Array<{ id: number; num: number; ensacadora?: 1 | 2; envasadora?: 1 | 2; weight: number }>;
 }
 
 export default function StowageNoteTemplate({ order = {} }: Props) {

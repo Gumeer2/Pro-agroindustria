@@ -1,0 +1,35 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use App\Traits\HasAuditTrail;
+
+class ShipmentProcessHistory extends Model
+{
+    use HasAuditTrail;
+
+    protected $guarded = [];
+
+    protected $casts = [
+        'started_at' => 'datetime',
+        'finished_at' => 'datetime',
+        'stowage_count' => 'integer',
+    ];
+
+    /**
+     * Shipment order related to this process history record.
+     */
+    public function shipmentOrder()
+    {
+        return $this->belongsTo(ShipmentOrder::class, 'shipment_order_id');
+    }
+
+    /**
+     * Lot assigned during loading.
+     */
+    public function lot()
+    {
+        return $this->belongsTo(Lot::class, 'lot_id');
+    }
+}

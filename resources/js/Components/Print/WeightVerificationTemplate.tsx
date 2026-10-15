@@ -4,7 +4,8 @@ import { usePage } from '@inertiajs/react';
 interface SampleRecord {
     id: number;
     num: number;
-    envasadora: 1 | 2;
+    ensacadora?: 1 | 2;
+    envasadora?: 1 | 2;
     weight: number;
 }
 
@@ -26,12 +27,19 @@ export default function WeightVerificationTemplate({ order = {}, samples = [] }:
         if (typeof window === "undefined" || !safeOrder) return [];
 
         const candidateKeys = [
+            safeOrder.id ? `ensacadora_sampling_order_${safeOrder.id}` : null,
+            safeOrder.id ? `ensacadora_sampling_${safeOrder.id}` : null,
             safeOrder.id ? `envasadora_sampling_order_${safeOrder.id}` : null,
             safeOrder.id ? `envasadora_sampling_${safeOrder.id}` : null,
+            safeOrder.folio ? `ensacadora_sampling_order_${safeOrder.folio}` : null,
+            safeOrder.folio ? `ensacadora_sampling_${safeOrder.folio}` : null,
             safeOrder.folio ? `envasadora_sampling_order_${safeOrder.folio}` : null,
             safeOrder.folio ? `envasadora_sampling_${safeOrder.folio}` : null,
+            safeOrder.order_number ? `ensacadora_sampling_order_${safeOrder.order_number}` : null,
+            safeOrder.order_number ? `ensacadora_sampling_${safeOrder.order_number}` : null,
             safeOrder.order_number ? `envasadora_sampling_order_${safeOrder.order_number}` : null,
             safeOrder.order_number ? `envasadora_sampling_${safeOrder.order_number}` : null,
+            "ensacadora_sampling_draft_temp",
             "envasadora_sampling_draft_temp",
         ].filter(Boolean) as string[];
 
@@ -87,7 +95,7 @@ export default function WeightVerificationTemplate({ order = {}, samples = [] }:
         
         effectiveSamples.forEach((s) => {
             const row = Number(s.num) || 1;
-            const env = s.envasadora; // 1 or 2
+            const env = s.ensacadora || s.envasadora || 1; // 1 or 2
             const w = Number(s.weight) || 0;
 
             let bracket = 1; // 0 = LIC, 1 = LC, 2 = LSC
