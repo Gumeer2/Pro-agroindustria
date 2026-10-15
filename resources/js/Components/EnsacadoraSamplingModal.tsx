@@ -779,18 +779,6 @@ export default function EnsacadoraSamplingModal({
 
                                     {/* Action Buttons */}
                                     <div className="flex items-center gap-2.5 self-end sm:self-auto">
-                                        {onOpenPrintDocuments && (
-                                            <button
-                                                type="button"
-                                                onClick={() => onOpenPrintDocuments(samples)}
-                                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition"
-                                                title="Ver Formatos Oficiales (GLS-AP-FO-003 y 002)"
-                                            >
-                                                <FileText className="w-3.5 h-3.5" />
-                                                <span>Ver Documentos PDF</span>
-                                            </button>
-                                        )}
-
                                         <button
                                             type="button"
                                             onClick={handleSave}
