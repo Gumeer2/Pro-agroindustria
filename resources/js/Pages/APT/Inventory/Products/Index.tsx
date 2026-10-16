@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link, router, useForm } from "@inertiajs/react";
 import Swal from "sweetalert2";
@@ -26,10 +26,13 @@ import {
     Check,
     ListFilter,
     Printer,
+    ExternalLink,
 } from "lucide-react";
 
 interface SupplyGroup {
     number: number;
+    consecutive?: string;
+    code?: string;
     name: string;
     description?: string;
 }
@@ -50,7 +53,9 @@ interface SupplyType {
 
 interface InventoryItem {
     id: number;
+    consecutive?: string;
     code: string;
+    part_number?: string;
     name: string;
     description?: string;
     type_id: number;
@@ -89,14 +94,44 @@ interface Metrics {
     out_of_stock_count: number;
 }
 
+interface LowStockAlertItem {
+    id: number;
+    name: string;
+    code: string;
+    part_number?: string;
+    consecutive?: string;
+    type_id: number;
+    type_slug: string;
+    type_name: string;
+    group_number: number;
+    group_name: string;
+    unit: string;
+    stock: number;
+    min_stock: number;
+    unit_cost: number;
+    location?: string;
+    deficit: number;
+    is_out_of_stock: boolean;
+}
+
 interface Props {
     auth: any;
     items: PaginatedData<InventoryItem>;
     metrics: Metrics;
     locations?: string[];
+    lowStockAlerts?: LowStockAlertItem[];
     allItemsSummary?: {
         id: number;
+        name?: string;
         type_slug: string;
+        type_name?: string;
+        type_id: number;
+        group_number?: number;
+        group_name?: string;
+        consecutive?: string;
+        code?: string;
+        part_number?: string;
+        unit?: string;
         stock: number;
         min_stock: number;
         unit_cost: number;
@@ -118,6 +153,7 @@ export default function ProductsIndex({
     items,
     metrics,
     locations = [],
+    lowStockAlerts = [],
     allItemsSummary = [],
     types = [],
     selectedTypeSlug = "",
@@ -139,6 +175,67 @@ export default function ProductsIndex({
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+    // Stock Alerts Modal State
+    const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+    const [alertFilterType, setAlertFilterType] = useState<string>("all");
+    const [alertFilterGroup, setAlertFilterGroup] = useState<string>("all");
+    const [alertFilterCode, setAlertFilterCode] = useState<string>("");
+    const [alertFilterStatus, setAlertFilterStatus] = useState<"all" | "out_of_stock" | "low_stock">("all");
+
+    // Available groups for the alert modal based on alertFilterType
+    const alertModalGroups = useMemo(() => {
+        if (alertFilterType === "all") {
+            const allG: { number: number; name: string; typeName: string }[] = [];
+            types.forEach((t) => {
+                (t.groups || []).forEach((g) => {
+                    allG.push({ number: g.number, name: g.name, typeName: t.name });
+                });
+            });
+            return allG;
+        }
+        const selT = types.find((t) => t.slug === alertFilterType);
+        return selT ? (selT.groups || []).map((g) => ({ number: g.number, name: g.name, typeName: selT.name })) : [];
+    }, [alertFilterType, types]);
+
+    // Items filtered by current Type, Group, and Code (base scope for counts)
+    const scopedAlerts = useMemo(() => {
+        return (lowStockAlerts || []).filter((item) => {
+            if (alertFilterType !== "all" && item.type_slug !== alertFilterType) {
+                return false;
+            }
+            if (alertFilterGroup !== "all" && String(item.group_number) !== alertFilterGroup) {
+                return false;
+            }
+            if (alertFilterCode.trim()) {
+                const query = alertFilterCode.trim().toLowerCase();
+                const matchesCode = (item.code || "").toLowerCase().includes(query);
+                const matchesPart = (item.part_number || "").toLowerCase().includes(query);
+                const matchesConsecutive = (item.consecutive || "").toLowerCase().includes(query);
+                const matchesName = (item.name || "").toLowerCase().includes(query);
+                if (!matchesCode && !matchesPart && !matchesConsecutive && !matchesName) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }, [lowStockAlerts, alertFilterType, alertFilterGroup, alertFilterCode]);
+
+    // Dynamic counts reflecting the currently selected Type, Group, and Code
+    const alertTotalCount = scopedAlerts.length;
+    const alertOutOfStockCount = useMemo(() => scopedAlerts.filter((i) => i.stock <= 0).length, [scopedAlerts]);
+    const alertLowStockCount = useMemo(() => scopedAlerts.filter((i) => i.stock > 0 && i.stock <= i.min_stock).length, [scopedAlerts]);
+
+    // Final filtered alerts to display in the table (applying status tab)
+    const filteredAlerts = useMemo(() => {
+        if (alertFilterStatus === "out_of_stock") {
+            return scopedAlerts.filter((i) => i.stock <= 0);
+        }
+        if (alertFilterStatus === "low_stock") {
+            return scopedAlerts.filter((i) => i.stock > 0 && i.stock <= i.min_stock);
+        }
+        return scopedAlerts;
+    }, [scopedAlerts, alertFilterStatus]);
 
     const allSelected = items.data.length > 0 && items.data.every((i) => selectedIds.includes(i.id));
 
@@ -169,11 +266,13 @@ export default function ProductsIndex({
 
     // Form for Create/Edit
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
+        consecutive: "0001",
         code: "",
+        part_number: "",
         name: "",
         description: "",
-        type_slug: selectedType || types[0]?.slug || "materiales",
-        group_number: types.find((t) => t.slug === (selectedType || types[0]?.slug))?.groups[0]?.number || 1,
+        type_slug: selectedType && selectedType !== "all" ? selectedType : (types[0]?.slug || "refaccionamiento-equipos-de-envasado"),
+        group_number: types.find((t) => t.slug === (selectedType && selectedType !== "all" ? selectedType : types[0]?.slug))?.groups[0]?.number || 101,
         unit: "PZA",
         unit_cost: 0,
         stock: 0,
@@ -182,9 +281,63 @@ export default function ProductsIndex({
         is_inventoried: true,
     });
 
+    const [subgroupSearch, setSubgroupSearch] = useState("");
+
+    // Synchronize selectedGroup and selectedType with incoming props/filters
+    useEffect(() => {
+        setSelectedGroup(filters.group_number || "");
+    }, [filters.group_number]);
+
+    useEffect(() => {
+        setSelectedType(filters.type || (selectedTypeSlug !== "all" ? selectedTypeSlug : "") || "");
+    }, [filters.type, selectedTypeSlug]);
+
     const activeTypeObj = types.find((t) => t.slug === selectedType);
-    const currentTypeGroups = activeTypeObj?.groups || [];
+    const currentTypeGroups = useMemo(() => {
+        if (!selectedType) return [];
+        if (selectedType === "all") {
+            const allG: SupplyGroup[] = [];
+            types.forEach((t) => {
+                (t.groups || []).forEach((g) => allG.push(g));
+            });
+            return allG;
+        }
+        return activeTypeObj?.groups || [];
+    }, [selectedType, activeTypeObj, types]);
+
+    const currentGroupObj = useMemo(() => {
+        if (!selectedGroup) return null;
+        for (const t of types) {
+            const found = (t.groups || []).find((g) => String(g.number) === String(selectedGroup));
+            if (found) return found;
+        }
+        return null;
+    }, [selectedGroup, types]);
+
     const availableGroupsForForm = types.find((t) => t.slug === data.type_slug)?.groups || [];
+
+    const getGroupStats = (groupNumber: number) => {
+        const groupItems = (allItemsSummary || []).filter(
+            (item) => Number(item.group_number) === Number(groupNumber)
+        );
+        const count = groupItems.length;
+        const totalStock = groupItems.reduce((acc, i) => acc + (Number(i.stock) || 0), 0);
+        const totalValue = groupItems.reduce((acc, i) => acc + ((Number(i.stock) || 0) * (Number(i.unit_cost) || 0)), 0);
+        const outOfStockCount = groupItems.filter((i) => (Number(i.stock) || 0) <= 0).length;
+        const lowStockCount = groupItems.filter((i) => (Number(i.stock) || 0) > 0 && (Number(i.stock) || 0) <= (Number(i.min_stock) || 0)).length;
+        return { count, totalStock, totalValue, outOfStockCount, lowStockCount };
+    };
+
+    const handleSelectGroup = (groupNumber: number | string) => {
+        const groupStr = String(groupNumber);
+        setSelectedGroup(groupStr);
+        handleFilterChange({ group_number: groupStr });
+    };
+
+    const handleBackToGroups = () => {
+        setSelectedGroup("");
+        handleFilterChange({ group_number: undefined });
+    };
 
     // Filter handling
     const handleFilterChange = (newFilters: Partial<typeof filters>) => {
@@ -235,43 +388,44 @@ export default function ProductsIndex({
     };
 
     const generateProductCode = (typeSlug: string, groupNumber: number) => {
-        const typeObj = types.find((t) => t.slug === typeSlug);
-        const typeId = typeObj?.id || 1;
-        const typePad = String(typeId).padStart(2, "0");
-        const groupPad = String(groupNumber).padStart(2, "0");
-        const prefix = `${typePad}-${groupPad}`;
-
         const matchingItems = (allItemsSummary || items?.data || []).filter(
-            (i: any) => (i.type_slug === typeSlug || Number(i.type_id) === Number(typeId)) && Number(i.group_number || groupNumber) === Number(groupNumber)
+            (i: any) => Number(i.group_number || groupNumber) === Number(groupNumber)
         );
 
-        let maxNum = matchingItems.length;
+        let maxNum = 0;
         matchingItems.forEach((i: any) => {
             if (i.code) {
-                const parts = i.code.split("-");
-                const lastPart = parseInt(parts[parts.length - 1], 10);
-                if (!isNaN(lastPart) && lastPart > maxNum) {
-                    maxNum = lastPart;
+                const numStr = String(i.code).replace(/[^0-9]/g, "");
+                if (numStr.length >= 4) {
+                    const lastPart = parseInt(numStr.slice(-4), 10);
+                    if (!isNaN(lastPart) && lastPart > maxNum) {
+                        maxNum = lastPart;
+                    }
                 }
             }
         });
 
         const nextCount = maxNum + 1;
-        return `${prefix}-${String(nextCount).padStart(4, "0")}`;
+        return `${groupNumber}${String(nextCount).padStart(4, "0")}`;
     };
 
     const openCreateModal = () => {
         clearErrors();
         reset();
-        const defaultType = (selectedType && selectedType !== "all") ? selectedType : (types[0]?.slug || "materiales");
-        const defaultGroup = types.find((t) => t.slug === defaultType)?.groups[0]?.number || 1;
-        const autoCode = generateProductCode(defaultType, defaultGroup);
+        const defaultType = (selectedType && selectedType !== "all") ? selectedType : (types[0]?.slug || "refaccionamiento-equipos-de-envasado");
+        const defaultTypeObj = types.find((t) => t.slug === defaultType);
+        const targetGroupNumber = selectedGroup ? Number(selectedGroup) : (defaultTypeObj?.groups[0]?.number || 101);
+        const targetGroupObj = defaultTypeObj?.groups.find(g => g.number === targetGroupNumber) || defaultTypeObj?.groups[0];
+        const autoCode = generateProductCode(defaultType, targetGroupNumber);
+        const autoConsecutive = targetGroupObj?.consecutive || "0001";
         setData({
+            consecutive: autoConsecutive,
             code: autoCode,
+            part_number: "",
             name: "",
             description: "",
             type_slug: defaultType,
-            group_number: defaultGroup,
+            group_number: targetGroupNumber,
             unit: "PZA",
             unit_cost: 0,
             stock: 0,
@@ -287,7 +441,9 @@ export default function ProductsIndex({
         clearErrors();
         setEditingItem(item);
         setData({
+            consecutive: item.consecutive || "0001",
             code: item.code,
+            part_number: item.part_number || "",
             name: item.name,
             description: item.description || "",
             type_slug: item.type_slug,
@@ -384,8 +540,9 @@ export default function ProductsIndex({
 
     const filteredSummary = summaryList.filter((item) => {
         const matchesType = (selectedType && selectedType !== "all") ? item.type_slug === selectedType : true;
+        const matchesGroup = selectedGroup ? String(item.group_number) === String(selectedGroup) : true;
         const matchesWarehouse = selectedWarehouse === "all" ? true : ((item.location || "Almacén General").trim().toLowerCase() === selectedWarehouse.trim().toLowerCase());
-        return matchesType && matchesWarehouse;
+        return matchesType && matchesGroup && matchesWarehouse;
     });
 
     const isAll = selectedType === "all";
@@ -423,12 +580,12 @@ export default function ProductsIndex({
                                     {isAll ? "TODOS LOS INSUMOS" : activeTypeObj ? activeTypeObj.name : "PRODUCTOS / INSUMOS"}
                                 </h1>
                                 <span className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-md border border-indigo-200">
-                                    {isAll ? "CATÁLOGO GENERAL" : activeTypeObj ? `TIPO ${activeTypeObj.id}` : "9 SUBMÓDULOS"}
+                                    {isAll ? "CATÁLOGO GENERAL" : activeTypeObj ? `TIPO ${activeTypeObj.id}` : `${types.length} SUBMÓDULOS`}
                                 </span>
                             </div>
                             <p className="text-gray-500 text-xs sm:text-sm mt-0.5">
                                 {isAll
-                                    ? "Catálogo general unificado de todos los 9 submódulos y grupos de insumos."
+                                    ? `Catálogo general unificado de todos los ${types.length} submódulos y grupos de insumos.`
                                     : activeTypeObj
                                     ? `${activeTypeObj.description} (${activeTypeObj.groups.length} grupos configurados)`
                                     : "Selecciona un submódulo de insumo en el menú desplegable para consultar su catálogo y existencias."}
@@ -509,7 +666,7 @@ export default function ProductsIndex({
                                 {displayedProductsCount}
                             </span>
                             <span className="text-xs text-indigo-600 font-medium mt-1 block truncate max-w-[180px]">
-                                {selectedWarehouse !== "all" ? `En ${selectedWarehouse}` : (isAll ? "Catálogo General" : activeTypeObj ? `En ${activeTypeObj.name}` : "Total en catálogo")}
+                                {selectedWarehouse !== "all" ? `En ${selectedWarehouse}` : (selectedGroup && currentGroupObj ? `En G${selectedGroup}: ${currentGroupObj.name}` : (isAll ? "Catálogo General" : activeTypeObj ? `En ${activeTypeObj.name}` : "Total en catálogo"))}
                             </span>
                         </div>
                         <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
@@ -553,14 +710,30 @@ export default function ProductsIndex({
                         </div>
                     </div>
 
-                    {/* Card 4: ALERTAS DE STOCK */}
-                    <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center justify-between">
+                    {/* Card 4: ALERTAS DE STOCK - CLICKABLE TO OPEN ALERTS FILTER MENU */}
+                    <div
+                        onClick={() => {
+                            setAlertFilterType(selectedType || "all");
+                            setAlertFilterGroup("all");
+                            setAlertFilterCode("");
+                            setAlertFilterStatus("all");
+                            setIsAlertModalOpen(true);
+                        }}
+                        title="Haz clic para abrir el menú de alertas y filtrar por tipo, grupo y código"
+                        className="bg-white rounded-2xl p-5 border border-amber-200 hover:border-amber-400 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between group relative overflow-hidden"
+                    >
+                        <div className="absolute top-0 right-0 w-2 h-full bg-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                         <div>
-                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
-                                ALERTAS DE STOCK
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-amber-900 uppercase tracking-wider block">
+                                    ALERTAS DE STOCK
+                                </span>
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                                    Ver menú ➜
+                                </span>
+                            </div>
                             <div className="flex items-center gap-2 mt-1">
-                                <span className="text-3xl font-black text-amber-600">
+                                <span className="text-3xl font-black text-amber-600 group-hover:scale-105 transition-transform">
                                     {displayedOutOfStock}
                                 </span>
                                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${displayedOutOfStock > 0 ? "bg-red-100 text-red-800" : displayedLowStock > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
@@ -568,10 +741,10 @@ export default function ProductsIndex({
                                 </span>
                             </div>
                             <span className="text-xs text-gray-500 font-medium mt-1 block">
-                                {displayedLowStock} con stock bajo
+                                {displayedLowStock} con stock bajo · <span className="text-amber-700 font-semibold underline decoration-dotted">Clic para filtrar</span>
                             </span>
                         </div>
-                        <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl">
+                        <div className="p-3 bg-amber-50 text-amber-600 group-hover:bg-amber-100 group-hover:scale-110 rounded-2xl transition-all">
                             <AlertTriangle className="w-6 h-6" />
                         </div>
                     </div>
@@ -612,7 +785,7 @@ export default function ProductsIndex({
                                         </span>
                                         {isAll && (
                                             <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-300">
-                                                9 SUBMÓDULOS
+                                                {types.length} SUBMÓDULOS
                                             </span>
                                         )}
                                         {activeTypeObj && (
@@ -623,10 +796,10 @@ export default function ProductsIndex({
                                     </div>
                                     <p className="text-xs text-gray-500 truncate mt-0.5">
                                         {isAll
-                                            ? "Visualizando catálogo consolidado con todos los productos de los 9 tipos de insumos"
+                                            ? `Visualizando catálogo consolidado con todos los productos de los ${types.length} tipos de insumos`
                                             : activeTypeObj
                                             ? `${activeTypeObj.description} • ${activeTypeObj.groups.length} grupos configurados`
-                                            : "Haz clic aquí para desplegar la lista de los 9 submódulos disponibles"}
+                                            : `Haz clic aquí para desplegar la lista de los ${types.length} submódulos disponibles`}
                                     </p>
                                 </div>
                             </div>
@@ -654,7 +827,7 @@ export default function ProductsIndex({
                         {isDropdownOpen && (
                             <div className="absolute top-full left-0 right-0 mt-2 z-40 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-fadeIn divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
                                 <div className="p-3 bg-slate-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between">
-                                    <span>Lista de Submódulos de Insumos (9 Tipos):</span>
+                                    <span>Lista de Submódulos de Insumos ({types.length} Tipos):</span>
                                     <button
                                         onClick={() => handleSelectType("all")}
                                         className="text-xs text-indigo-600 hover:text-indigo-800 font-bold capitalize underline"
@@ -682,7 +855,7 @@ export default function ProductsIndex({
                                                 Todos los Insumos (Catálogo General)
                                             </div>
                                             <div className="text-xs text-gray-500">
-                                                Visualizar todos los productos de todos los 9 submódulos
+                                                Visualizar todos los productos de todos los {types.length} submódulos
                                             </div>
                                         </div>
                                     </div>
@@ -764,7 +937,7 @@ export default function ProductsIndex({
                             Ningún Insumo Seleccionado
                         </h3>
                         <p className="text-sm text-gray-500 max-w-lg mx-auto mt-1.5 mb-6">
-                            Para visualizar la tabla de productos, existencias y costos, por favor despliega el menú superior y selecciona alguno de los 9 submódulos de insumos configurados.
+                            Para visualizar la tabla de productos, existencias y costos, por favor despliega el menú superior y selecciona alguno de los {types.length} submódulos de insumos configurados.
                         </p>
                         <button
                             type="button"
@@ -775,8 +948,365 @@ export default function ProductsIndex({
                             <span>Seleccionar Insumo del Menú</span>
                         </button>
                     </div>
+                ) : !selectedGroup ? (
+                    /* PASO 2: SELECCIÓN DE SUBGRUPO (Tarjetas de Subgrupos) */
+                    <div className="space-y-6 animate-fadeIn">
+                        {/* Subgroups Step Header Banner */}
+                        <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-start sm:items-center gap-3.5">
+                                <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs">
+                                    <FolderKanban className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 uppercase tracking-wider">
+                                            Paso 2: Selección de Subgrupo
+                                        </span>
+                                        <span className="text-xs text-gray-500 font-bold">
+                                            {currentTypeGroups.length} {currentTypeGroups.length === 1 ? "subgrupo configurado" : "subgrupos configurados"}
+                                        </span>
+                                    </div>
+                                    <h3 className="text-lg sm:text-xl font-black text-gray-900 mt-1">
+                                        {isAll ? "Todos los Subgrupos del Catálogo" : `Subgrupos de ${activeTypeObj?.name}`}
+                                    </h3>
+                                    <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+                                        Elige a continuación el subgrupo de insumos que deseas consultar para ver sus productos y existencias.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Buscador Rápido de Subgrupos */}
+                            {currentTypeGroups.length > 3 && (
+                                <div className="relative min-w-[260px] sm:min-w-[320px]">
+                                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={subgroupSearch}
+                                        onChange={(e) => setSubgroupSearch(e.target.value)}
+                                        placeholder="Filtrar subgrupo por nombre o clave..."
+                                        className="w-full pl-10 pr-16 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-gray-800"
+                                    />
+                                    {subgroupSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSubgroupSearch("")}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 hover:text-gray-700 bg-gray-200 hover:bg-gray-300 px-2 py-0.5 rounded cursor-pointer"
+                                        >
+                                            Limpiar
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Tabla de Subgrupos */}
+                        {isAll ? (
+                            types.map((typeCategory) => {
+                                const groupsInCat = (typeCategory.groups || []).filter((g) => {
+                                    if (!subgroupSearch.trim()) return true;
+                                    const q = subgroupSearch.trim().toLowerCase();
+                                    return (
+                                        g.name.toLowerCase().includes(q) ||
+                                        String(g.number).includes(q) ||
+                                        (g.code && g.code.toLowerCase().includes(q)) ||
+                                        (g.consecutive && g.consecutive.toLowerCase().includes(q))
+                                    );
+                                });
+
+                                if (groupsInCat.length === 0) return null;
+
+                                return (
+                                    <div key={typeCategory.slug} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                                        <div className="p-4 sm:p-5 bg-slate-50 border-b border-gray-200 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <span className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shadow-xs">
+                                                    {typeCategory.id}
+                                                </span>
+                                                <div>
+                                                    <h4 className="font-extrabold text-gray-900 text-base">
+                                                        Tipo {typeCategory.id}: {typeCategory.name}
+                                                    </h4>
+                                                    <p className="text-xs text-gray-500">
+                                                        {typeCategory.description}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className="text-xs font-bold text-gray-600 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-2xs">
+                                                {groupsInCat.length} subgrupos
+                                            </span>
+                                        </div>
+
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-[#1e1b4b] text-white text-[11px] uppercase tracking-wider font-extrabold">
+                                                        <th className="py-4 px-4 text-center w-28">GRUPO</th>
+                                                        <th className="py-4 px-4 text-center w-32">CÓDIGO BASE</th>
+                                                        <th className="py-4 px-4">NOMBRE DEL SUBGRUPO</th>
+                                                        <th className="py-4 px-4 text-center">CONSECUTIVO BASE</th>
+                                                        <th className="py-4 px-4 text-center">TOTAL INSUMOS</th>
+                                                        <th className="py-4 px-4 text-center">STOCK EN ALMACÉN</th>
+                                                        <th className="py-4 px-4 text-center">ESTATUS DE STOCK</th>
+                                                        <th className="py-4 px-4 text-center w-40">ACCIÓN</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 text-xs">
+                                                    {groupsInCat.map((group) => {
+                                                        const stats = getGroupStats(group.number);
+                                                        return (
+                                                            <tr
+                                                                key={group.number}
+                                                                onClick={() => handleSelectGroup(group.number)}
+                                                                className="hover:bg-indigo-50/50 transition-colors cursor-pointer group"
+                                                            >
+                                                                <td className="py-4 px-4 text-center">
+                                                                    <span className="inline-flex items-center px-3 py-1 rounded-xl bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-200 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                                                        G{group.number}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-4 px-4 text-center font-mono font-bold text-gray-800">
+                                                                    <span className="bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
+                                                                        {group.code || `${group.number}0001`}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-4 px-4">
+                                                                    <div className="font-extrabold text-gray-900 text-sm sm:text-base group-hover:text-indigo-600 transition-colors">
+                                                                        {group.name}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="py-4 px-4 text-center">
+                                                                    <span className="font-mono font-bold text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg border border-gray-200">
+                                                                        #{group.consecutive || "0001"}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-4 px-4 text-center">
+                                                                    <span className="text-sm font-black text-gray-900">{stats.count}</span>
+                                                                    <span className="text-xs text-gray-500 font-medium ml-1">
+                                                                        {stats.count === 1 ? "producto" : "productos"}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-4 px-4 text-center">
+                                                                    <span className="text-sm font-black text-emerald-600">
+                                                                        {Number(stats.totalStock).toLocaleString("es-MX", { maximumFractionDigits: 0 })}
+                                                                    </span>
+                                                                    <span className="text-xs text-gray-500 font-medium ml-1">u.</span>
+                                                                </td>
+                                                                <td className="py-4 px-4 text-center">
+                                                                    {stats.outOfStockCount > 0 ? (
+                                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-red-100 text-red-800 border border-red-200">
+                                                                            <span>🔴</span> {stats.outOfStockCount} sin stock
+                                                                        </span>
+                                                                    ) : stats.lowStockCount > 0 ? (
+                                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                                            <span>🟡</span> {stats.lowStockCount} stock bajo
+                                                                        </span>
+                                                                    ) : stats.count > 0 ? (
+                                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                            <span>🟢</span> Existencias óptimas
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                                                                            ⚪ Sin productos
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="py-4 px-4 text-center">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleSelectGroup(group.number);
+                                                                        }}
+                                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer group/btn"
+                                                                        title={`Ir a los insumos de ${group.name}`}
+                                                                    >
+                                                                        <span>Ver Insumos</span>
+                                                                        <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-[#1e1b4b] text-white text-[11px] uppercase tracking-wider font-extrabold">
+                                                <th className="py-4 px-4 text-center w-28">GRUPO</th>
+                                                <th className="py-4 px-4 text-center w-32">CÓDIGO BASE</th>
+                                                <th className="py-4 px-4">NOMBRE DEL SUBGRUPO</th>
+                                                <th className="py-4 px-4 text-center">CONSECUTIVO BASE</th>
+                                                <th className="py-4 px-4 text-center">TOTAL INSUMOS</th>
+                                                <th className="py-4 px-4 text-center">STOCK EN ALMACÉN</th>
+                                                <th className="py-4 px-4 text-center">ESTATUS DE STOCK</th>
+                                                <th className="py-4 px-4 text-center w-40">ACCIÓN</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 text-xs">
+                                            {currentTypeGroups
+                                                .filter((g) => {
+                                                    if (!subgroupSearch.trim()) return true;
+                                                    const q = subgroupSearch.trim().toLowerCase();
+                                                    return (
+                                                        g.name.toLowerCase().includes(q) ||
+                                                        String(g.number).includes(q) ||
+                                                        (g.code && g.code.toLowerCase().includes(q)) ||
+                                                        (g.consecutive && g.consecutive.toLowerCase().includes(q))
+                                                    );
+                                                })
+                                                .map((group) => {
+                                                    const stats = getGroupStats(group.number);
+                                                    return (
+                                                        <tr
+                                                            key={group.number}
+                                                            onClick={() => handleSelectGroup(group.number)}
+                                                            className="hover:bg-indigo-50/50 transition-colors cursor-pointer group"
+                                                        >
+                                                            <td className="py-4 px-4 text-center">
+                                                                <span className="inline-flex items-center px-3 py-1 rounded-xl bg-indigo-50 text-indigo-700 font-mono font-black text-xs border border-indigo-200 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                                                    G{group.number}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-4 px-4 text-center font-mono font-bold text-gray-800">
+                                                                <span className="bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
+                                                                    {group.code || `${group.number}0001`}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-4 px-4">
+                                                                <div className="font-extrabold text-gray-900 text-sm sm:text-base group-hover:text-indigo-600 transition-colors">
+                                                                    {group.name}
+                                                                </div>
+                                                                <div className="text-[11px] text-gray-400 font-medium">
+                                                                    {activeTypeObj?.name}
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-4 px-4 text-center">
+                                                                <span className="font-mono font-bold text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg border border-gray-200">
+                                                                    #{group.consecutive || "0001"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-4 px-4 text-center">
+                                                                <span className="text-sm font-black text-gray-900">{stats.count}</span>
+                                                                <span className="text-xs text-gray-500 font-medium ml-1">
+                                                                    {stats.count === 1 ? "producto" : "productos"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-4 px-4 text-center">
+                                                                <span className="text-sm font-black text-emerald-600">
+                                                                    {Number(stats.totalStock).toLocaleString("es-MX", { maximumFractionDigits: 0 })}
+                                                                </span>
+                                                                <span className="text-xs text-gray-500 font-medium ml-1">u.</span>
+                                                            </td>
+                                                            <td className="py-4 px-4 text-center">
+                                                                {stats.outOfStockCount > 0 ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-red-100 text-red-800 border border-red-200">
+                                                                        <span>🔴</span> {stats.outOfStockCount} {stats.outOfStockCount === 1 ? "sin stock" : "sin stock"}
+                                                                    </span>
+                                                                ) : stats.lowStockCount > 0 ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                                        <span>🟡</span> {stats.lowStockCount} con stock bajo
+                                                                    </span>
+                                                                ) : stats.count > 0 ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                        <span>🟢</span> Existencias óptimas
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                                                                        ⚪ Sin productos registrados
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-4 px-4 text-center">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleSelectGroup(group.number);
+                                                                    }}
+                                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer group/btn"
+                                                                    title={`Ir a los insumos de ${group.name}`}
+                                                                >
+                                                                    <span>Ver Insumos</span>
+                                                                    <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 ) : (
+                    /* PASO 3: TABLA DE INSUMOS DEL SUBGRUPO SELECCIONADO */
                     <div className="animate-fadeIn">
+                        {/* Subgroup Navigation Bar */}
+                        <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-sm mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fadeIn">
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <button
+                                    type="button"
+                                    onClick={handleBackToGroups}
+                                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs sm:text-sm rounded-xl border border-indigo-200 transition-all hover:-translate-x-0.5 cursor-pointer shadow-xs"
+                                >
+                                    <ArrowLeft className="w-4 h-4" />
+                                    <span>Volver a Subgrupos de {activeTypeObj?.name || "este Tipo"}</span>
+                                </button>
+
+                                <div className="flex items-center gap-2.5 pl-3 border-l border-gray-200">
+                                    <span className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-mono font-black text-xs flex items-center justify-center shadow-xs">
+                                        G{selectedGroup}
+                                    </span>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-extrabold text-gray-900 text-sm sm:text-base">
+                                                {currentGroupObj?.name || `Subgrupo G${selectedGroup}`}
+                                            </span>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                                SUBGRUPO ACTIVO
+                                            </span>
+                                        </div>
+                                        <span className="text-xs text-gray-500 block">
+                                            Consecutivo #{currentGroupObj?.consecutive || "0001"} · Clave Base: {currentGroupObj?.code || selectedGroup + "0001"} · {items.total} {items.total === 1 ? "insumo registrado" : "insumos registrados"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Quick Subgroup Switcher */}
+                            <div className="flex items-center gap-2 shrink-0">
+                                <label className="text-xs font-bold text-gray-500 whitespace-nowrap hidden sm:inline">
+                                    Cambiar Subgrupo:
+                                </label>
+                                <select
+                                    value={selectedGroup}
+                                    onChange={(e) => {
+                                        if (!e.target.value) {
+                                            handleBackToGroups();
+                                        } else {
+                                            handleSelectGroup(e.target.value);
+                                        }
+                                    }}
+                                    className="py-2 px-3 bg-slate-50 border border-gray-300 rounded-xl text-xs sm:text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-xs"
+                                >
+                                    <option value="">📁 ← Volver a ver todos los subgrupos</option>
+                                    {currentTypeGroups.map((g) => (
+                                        <option key={g.number} value={g.number}>
+                                            G{g.number}: {g.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
                         {/* Filter and Search Bar for the selected Insumo */}
                         <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm mb-6">
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
@@ -788,7 +1318,7 @@ export default function ProductsIndex({
                                         value={search}
                                         onChange={(e) => setSearch(e.target.value)}
                                         onKeyDown={(e) => e.key === "Enter" && handleFilterChange({ search })}
-                                        placeholder={`Buscar en ${activeTypeObj ? activeTypeObj.name : "todos los insumos"} por nombre, clave o ubicación...`}
+                                        placeholder={`Buscar en ${currentGroupObj ? currentGroupObj.name : "este subgrupo"} por nombre o clave...`}
                                         className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
                                     />
                                 </div>
@@ -798,16 +1328,15 @@ export default function ProductsIndex({
                                     <select
                                         value={selectedGroup}
                                         onChange={(e) => {
-                                            setSelectedGroup(e.target.value);
-                                            handleFilterChange({ group_number: e.target.value || undefined });
+                                            if (!e.target.value) {
+                                                handleBackToGroups();
+                                            } else {
+                                                handleSelectGroup(e.target.value);
+                                            }
                                         }}
                                         className="w-full py-2 px-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-gray-700 font-medium"
                                     >
-                                        <option value="">
-                                            {currentTypeGroups.length > 0
-                                                ? `TODOS LOS GRUPOS (${currentTypeGroups.length})`
-                                                : "TODOS LOS GRUPOS"}
-                                        </option>
+                                        <option value="">📁 ← Volver a Subgrupos</option>
                                         {currentTypeGroups.map((g) => (
                                             <option key={g.number} value={g.number}>
                                                 G{g.number}: {g.name}
@@ -896,14 +1425,14 @@ export default function ProductsIndex({
                                                     title="Seleccionar todos los productos de la página"
                                                 />
                                             </th>
-                                            <th className="py-4 px-4 text-center">CLAVE / CÓDIGO</th>
+                                            <th className="py-4 px-3 text-center">CONSECUTIVO</th>
+                                            <th className="py-4 px-3 text-center">CÓDIGO</th>
+                                            <th className="py-4 px-3 text-center">N. DE PARTE</th>
                                             <th className="py-4 px-4">PRODUCTO / INSUMO</th>
                                             <th className="py-4 px-4">GRUPO DE INSUMO</th>
                                             <th className="py-4 px-3 text-center">UNIDAD</th>
                                             <th className="py-4 px-4 text-center">EXISTENCIA (STOCK)</th>
                                             <th className="py-4 px-4 text-right">COSTO / VALOR</th>
-                                            <th className="py-4 px-4">UBICACIÓN</th>
-                                            <th className="py-4 px-3 text-center">ESTATUS</th>
                                             <th className="py-4 px-4 text-center">ACCIONES</th>
                                         </tr>
                                     </thead>
@@ -929,11 +1458,29 @@ export default function ProductsIndex({
                                                             />
                                                         </td>
 
+                                                        {/* Consecutivo */}
+                                                        <td className="py-4 px-3 text-center font-mono font-bold">
+                                                            <span className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-md text-xs border border-amber-200">
+                                                                {item.consecutive || "0001"}
+                                                            </span>
+                                                        </td>
+
                                                         {/* Clave / Código */}
-                                                        <td className="py-4 px-4 text-center font-mono font-bold text-gray-700">
+                                                        <td className="py-4 px-3 text-center font-mono font-bold text-gray-800">
                                                             <span className="bg-gray-100 px-2.5 py-1 rounded-md text-xs border border-gray-200">
                                                                 {item.code}
                                                             </span>
+                                                        </td>
+
+                                                        {/* N. DE PARTE */}
+                                                        <td className="py-4 px-3 text-center font-mono text-xs">
+                                                            {item.part_number ? (
+                                                                <span className="bg-sky-50 text-sky-800 font-bold px-2 py-0.5 rounded border border-sky-200">
+                                                                    {item.part_number}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-gray-400 font-mono text-xs">—</span>
+                                                            )}
                                                         </td>
 
                                                         {/* Producto / Insumo */}
@@ -948,19 +1495,14 @@ export default function ProductsIndex({
                                                             )}
                                                         </td>
 
-                                                        {/* Grupo de Insumo - CLICKABLE PILL TO DEDICATED GROUP INTERFACE */}
+                                                        {/* Grupo de Insumo */}
                                                         <td className="py-4 px-4">
-                                                            <Link
-                                                                href={route("apt.inventory.products.group", [item.type_slug, item.group_number])}
-                                                                title={`Ver tabla exclusiva del grupo ${item.group_name}`}
-                                                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full border border-indigo-200 transition-all hover:scale-105 shadow-sm group/btn"
-                                                            >
-                                                                <span className="w-2 h-2 rounded-full bg-indigo-600 group-hover/btn:animate-ping" />
+                                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-full border border-indigo-200">
+                                                                <span className="w-2 h-2 rounded-full bg-indigo-600" />
                                                                 <span>
                                                                     G{item.group_number}: {item.group_name}
                                                                 </span>
-                                                                <ChevronRight className="w-3.5 h-3.5 ml-0.5 opacity-60 group-hover/btn:opacity-100 transition-opacity" />
-                                                            </Link>
+                                                            </span>
                                                         </td>
 
                                                         {/* Unidad */}
@@ -996,25 +1538,6 @@ export default function ProductsIndex({
                                                             </div>
                                                         </td>
 
-                                                        {/* Ubicación */}
-                                                        <td className="py-4 px-4">
-                                                            <div className="flex items-center gap-1.5 text-gray-600 text-xs font-medium">
-                                                                <Warehouse className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                                                                <span>{item.location || "Almacén General"}</span>
-                                                            </div>
-                                                        </td>
-
-                                                        {/* Estatus */}
-                                                        <td className="py-4 px-3 text-center">
-                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                                                                item.is_inventoried
-                                                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                                    : "bg-gray-100 text-gray-600 border border-gray-200"
-                                                            }`}>
-                                                                {item.is_inventoried ? "Inventariado" : "No Inventariado"}
-                                                            </span>
-                                                        </td>
-
                                                         {/* Acciones */}
                                                         <td className="py-4 px-4 text-center">
                                                             <div className="flex items-center justify-center gap-1.5">
@@ -1041,17 +1564,17 @@ export default function ProductsIndex({
                                             <tr>
                                                 <td colSpan={10} className="text-center py-12 text-gray-500">
                                                     <Boxes className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                                                    <p className="text-sm font-semibold">
-                                                        No se encontraron productos registrados en {activeTypeObj ? activeTypeObj.name : "este submódulo"}
+                                                    <p className="text-sm font-semibold text-gray-800">
+                                                        No se encontraron productos registrados en el subgrupo {currentGroupObj ? `G${selectedGroup}: ${currentGroupObj.name}` : `G${selectedGroup}`}
                                                     </p>
                                                     <p className="text-xs text-gray-400 mt-1">
-                                                        Intenta ajustar los filtros de búsqueda o da de alta un nuevo producto.
+                                                        Intenta ajustar los filtros de búsqueda o da de alta un nuevo insumo en este subgrupo.
                                                     </p>
                                                     <button
                                                         onClick={openCreateModal}
-                                                        className="mt-3 text-xs font-bold text-indigo-600 hover:underline"
+                                                        className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition-colors"
                                                     >
-                                                        + Dar de alta producto ahora
+                                                        + Dar de alta producto en este subgrupo ahora
                                                     </button>
                                                 </td>
                                             </tr>
@@ -1092,6 +1615,280 @@ export default function ProductsIndex({
                 )}
             </div>
 
+            {/* MODAL DE ALERTAS DE STOCK CON FILTRADO POR TIPO, GRUPO Y CÓDIGO */}
+            {isAlertModalOpen && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+                        {/* Modal Header */}
+                        <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-white flex items-start justify-between relative shadow-md">
+                            <div className="flex items-center gap-3">
+                                <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-xs shadow-inner">
+                                    <AlertTriangle className="w-7 h-7 text-white" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-lg sm:text-xl font-black">
+                                            Centro de Alertas de Stock
+                                        </h3>
+                                        <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-xs font-bold text-amber-100 backdrop-blur-xs">
+                                            {alertTotalCount} {alertTotalCount === 1 ? "Insumo" : "Insumos"}
+                                        </span>
+                                    </div>
+                                    <p className="text-amber-100 text-xs sm:text-sm mt-0.5">
+                                        Filtra por Tipo, Grupo y Código los insumos que requieren reabastecimiento urgente.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsAlertModalOpen(false)}
+                                className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Filter Bar: Tipo, Grupo, Código y Estatus de Alerta */}
+                        <div className="p-4 sm:p-5 bg-slate-50 border-b border-gray-200">
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                {/* Filtro por Tipo */}
+                                <div className="sm:col-span-4">
+                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1">
+                                        1. Filtrar por Tipo / Submódulo
+                                    </label>
+                                    <select
+                                        value={alertFilterType}
+                                        onChange={(e) => {
+                                            setAlertFilterType(e.target.value);
+                                            setAlertFilterGroup("all");
+                                        }}
+                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    >
+                                        <option value="all">📦 TODOS LOS TIPOS (GLOBAL)</option>
+                                        {types.map((t) => (
+                                            <option key={t.slug} value={t.slug}>
+                                                Tipo {t.id}: {t.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Filtro por Grupo */}
+                                <div className="sm:col-span-4">
+                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1">
+                                        2. Filtrar por Grupo
+                                    </label>
+                                    <select
+                                        value={alertFilterGroup}
+                                        onChange={(e) => setAlertFilterGroup(e.target.value)}
+                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    >
+                                        <option value="all">📁 TODOS LOS GRUPOS</option>
+                                        {alertModalGroups.map((g) => (
+                                            <option key={`${g.number}-${g.name}`} value={String(g.number)}>
+                                                G{g.number}: {g.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Filtro por Código / Nombre */}
+                                <div className="sm:col-span-4">
+                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1">
+                                        3. Buscar Código, Parte o Nombre
+                                    </label>
+                                    <div className="relative">
+                                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            value={alertFilterCode}
+                                            onChange={(e) => setAlertFilterCode(e.target.value)}
+                                            placeholder="Ej. 1010001, CS-001..."
+                                            className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sub-bar: Status Tabs & Result count */}
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                                <div className="flex items-center gap-1.5 text-xs">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAlertFilterStatus("all")}
+                                        className={`px-3 py-1 rounded-lg font-bold transition-colors ${alertFilterStatus === "all" ? "bg-amber-600 text-white shadow-xs" : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"}`}
+                                    >
+                                        Todas las Alertas ({alertTotalCount})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAlertFilterStatus("out_of_stock")}
+                                        className={`px-3 py-1 rounded-lg font-bold transition-colors ${alertFilterStatus === "out_of_stock" ? "bg-red-600 text-white shadow-xs" : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"}`}
+                                    >
+                                        🔴 Sin Stock ({alertOutOfStockCount})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAlertFilterStatus("low_stock")}
+                                        className={`px-3 py-1 rounded-lg font-bold transition-colors ${alertFilterStatus === "low_stock" ? "bg-amber-500 text-white shadow-xs" : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"}`}
+                                    >
+                                        🟡 Stock Bajo ({alertLowStockCount})
+                                    </button>
+                                </div>
+
+                                {(alertFilterType !== "all" || alertFilterGroup !== "all" || alertFilterCode.trim() !== "" || alertFilterStatus !== "all") && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setAlertFilterType("all");
+                                            setAlertFilterGroup("all");
+                                            setAlertFilterCode("");
+                                            setAlertFilterStatus("all");
+                                        }}
+                                        className="text-xs text-amber-700 hover:text-amber-900 font-bold underline cursor-pointer"
+                                    >
+                                        Limpiar filtros
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Modal Body / Table of Low Stock Items */}
+                        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+                            {filteredAlerts.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-100 text-slate-700 text-[10px] uppercase tracking-wider font-extrabold border-b border-slate-200">
+                                                <th className="py-2.5 px-3 text-center">CÓDIGO</th>
+                                                <th className="py-2.5 px-3">PRODUCTO / INSUMO</th>
+                                                <th className="py-2.5 px-3">SUBMÓDULO & GRUPO</th>
+                                                <th className="py-2.5 px-3 text-center">EXISTENCIA ACTUAL</th>
+                                                <th className="py-2.5 px-3 text-center">STOCK MÍNIMO</th>
+                                                <th className="py-2.5 px-3 text-center">ESTADO / DÉFICIT</th>
+                                                <th className="py-2.5 px-3 text-center">ACCIÓN</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 text-xs">
+                                            {filteredAlerts.map((alertItem) => {
+                                                const isOut = alertItem.stock <= 0;
+                                                return (
+                                                    <tr key={alertItem.id} className="hover:bg-amber-50/50 transition-colors">
+                                                        <td className="py-3 px-3 text-center font-mono font-bold text-gray-900">
+                                                            <div className="bg-slate-100 px-2 py-0.5 rounded text-xs inline-block">
+                                                                {alertItem.code}
+                                                            </div>
+                                                            {alertItem.part_number && (
+                                                                <div className="text-[10px] text-sky-700 font-medium mt-0.5">
+                                                                    N/P: {alertItem.part_number}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 px-3">
+                                                            <div className="font-bold text-gray-900">
+                                                                {alertItem.name}
+                                                            </div>
+                                                            {alertItem.consecutive && (
+                                                                <div className="text-[10px] text-gray-400">
+                                                                    Consecutivo: #{alertItem.consecutive}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 px-3">
+                                                            <div className="text-[10px] font-extrabold text-indigo-700 uppercase">
+                                                                {alertItem.type_name}
+                                                            </div>
+                                                            <div className="text-[11px] text-gray-600 font-semibold">
+                                                                G{alertItem.group_number}: {alertItem.group_name}
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3 px-3 text-center">
+                                                            <span className={`font-black text-sm ${isOut ? "text-red-600" : "text-amber-600"}`}>
+                                                                {alertItem.stock} {alertItem.unit}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3 px-3 text-center">
+                                                            <span className="font-bold text-gray-700 text-xs">
+                                                                {alertItem.min_stock} {alertItem.unit}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3 px-3 text-center">
+                                                            {isOut ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-100 text-red-800 border border-red-200">
+                                                                    🔴 Sin Stock
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                                    🟡 Faltan {alertItem.deficit} {alertItem.unit}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 px-3 text-center">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setIsAlertModalOpen(false);
+                                                                    handleFilterChange({
+                                                                        type: alertItem.type_slug,
+                                                                        group_number: String(alertItem.group_number),
+                                                                        search: alertItem.code,
+                                                                    });
+                                                                }}
+                                                                title="Ver producto en la tabla principal"
+                                                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-xl font-bold text-xs transition-colors shadow-xs cursor-pointer"
+                                                            >
+                                                                <span>Ir a Tabla</span>
+                                                                <ExternalLink className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="text-center py-12 text-gray-500">
+                                    <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-2" />
+                                    <p className="text-sm font-bold text-gray-800">
+                                        No se encontraron insumos con alerta bajo los filtros seleccionados
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        Todos los insumos correspondientes a estos criterios cuentan con existencias superiores al stock mínimo.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                            <span className="text-xs text-gray-500">
+                                Mostrando <strong>{filteredAlerts.length}</strong> de <strong>{alertTotalCount}</strong> insumos en alerta
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsAlertModalOpen(false);
+                                        handleFilterChange({ stock_status: "low_stock" });
+                                    }}
+                                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-xl text-xs sm:text-sm transition-colors cursor-pointer"
+                                >
+                                    Ver todos en tabla principal
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAlertModalOpen(false)}
+                                    className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-xl text-xs sm:text-sm transition-colors cursor-pointer"
+                                >
+                                    Cerrar Menú
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Modal Create/Edit Product */}
             {isCreateModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
@@ -1129,12 +1926,16 @@ export default function ProductsIndex({
                                         value={data.type_slug}
                                         onChange={(e) => {
                                             const newTypeSlug = e.target.value;
-                                            const firstGroup = types.find((t) => t.slug === newTypeSlug)?.groups[0]?.number || 1;
+                                            const targetTypeObj = types.find((t) => t.slug === newTypeSlug);
+                                            const firstGroupObj = targetTypeObj?.groups[0];
+                                            const firstGroup = firstGroupObj?.number || 101;
                                             const autoCode = generateProductCode(newTypeSlug, firstGroup);
+                                            const autoConsecutive = firstGroupObj?.consecutive || "0001";
                                             setData({
                                                 ...data,
                                                 type_slug: newTypeSlug,
                                                 group_number: firstGroup,
+                                                consecutive: autoConsecutive,
                                                 code: autoCode,
                                             });
                                         }}
@@ -1158,10 +1959,13 @@ export default function ProductsIndex({
                                         value={data.group_number}
                                         onChange={(e) => {
                                             const newGroupNum = Number(e.target.value);
+                                            const selGroup = availableGroupsForForm.find((g) => g.number === newGroupNum);
                                             const autoCode = generateProductCode(data.type_slug, newGroupNum);
+                                            const autoConsecutive = selGroup?.consecutive || "0001";
                                             setData({
                                                 ...data,
                                                 group_number: newGroupNum,
+                                                consecutive: autoConsecutive,
                                                 code: autoCode,
                                             });
                                         }}
@@ -1170,7 +1974,7 @@ export default function ProductsIndex({
                                     >
                                         {availableGroupsForForm.map((g) => (
                                             <option key={g.number} value={g.number}>
-                                                G{g.number}: {g.name}
+                                                {g.number}: {g.name}
                                             </option>
                                         ))}
                                     </select>
@@ -1178,24 +1982,53 @@ export default function ProductsIndex({
                                 </div>
                             </div>
 
-                            {/* Code and Name */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                                        Clave / Código *
+                            {/* Consecutive, Code, Part Number and Name */}
+                            <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+                                <div className="sm:col-span-1">
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1 whitespace-nowrap">
+                                        Consecutivo
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={data.consecutive}
+                                        onChange={(e) => setData("consecutive", e.target.value)}
+                                        placeholder="0001"
+                                        required
+                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    {errors.consecutive && <p className="text-red-500 text-xs mt-1">{errors.consecutive}</p>}
+                                </div>
+
+                                <div className="sm:col-span-1">
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1 whitespace-nowrap">
+                                        Código *
                                     </label>
                                     <input
                                         type="text"
                                         value={data.code}
                                         onChange={(e) => setData("code", e.target.value)}
-                                        placeholder="Ej. MAT-ACE-001"
+                                        placeholder="1010001"
                                         required
                                         className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     />
                                     {errors.code && <p className="text-red-500 text-xs mt-1">{errors.code}</p>}
                                 </div>
 
-                                <div className="sm:col-span-2">
+                                <div className="sm:col-span-1">
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1 whitespace-nowrap">
+                                        N. de Parte
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={data.part_number}
+                                        onChange={(e) => setData("part_number", e.target.value)}
+                                        placeholder="Ej. CS-001"
+                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    {errors.part_number && <p className="text-red-500 text-xs mt-1">{errors.part_number}</p>}
+                                </div>
+
+                                <div className="sm:col-span-3">
                                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
                                         Nombre del Producto / Insumo *
                                     </label>
@@ -1203,7 +2036,7 @@ export default function ProductsIndex({
                                         type="text"
                                         value={data.name}
                                         onChange={(e) => setData("name", e.target.value)}
-                                        placeholder="Ej. Varilla Corrugada 3/8 Grado 42"
+                                        placeholder="Ej. Banda de transmision A-32"
                                         required
                                         className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     />
@@ -1286,35 +2119,6 @@ export default function ProductsIndex({
                                         className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-amber-600"
                                     />
                                     {errors.min_stock && <p className="text-red-500 text-xs mt-1">{errors.min_stock}</p>}
-                                </div>
-                            </div>
-
-                            {/* Location and Is Inventoried */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                                        Ubicación en Almacén
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={data.location}
-                                        onChange={(e) => setData("location", e.target.value)}
-                                        placeholder="Ej. Patio de Materiales A, Estante F-2..."
-                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                </div>
-
-                                <div className="flex items-center gap-3 pt-6">
-                                    <input
-                                        type="checkbox"
-                                        id="is_inventoried"
-                                        checked={data.is_inventoried}
-                                        onChange={(e) => setData("is_inventoried", e.target.checked)}
-                                        className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
-                                    />
-                                    <label htmlFor="is_inventoried" className="text-xs font-bold text-gray-700 cursor-pointer">
-                                        Sujeto a Control de Inventario Activo
-                                    </label>
                                 </div>
                             </div>
 

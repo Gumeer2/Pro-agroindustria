@@ -46,11 +46,38 @@ class SupplyInventoryController extends Controller
     public function productsHub(Request $request)
     {
         // Summaries for supply items
-        $totalProducts = SupplyInventoryItem::count();
-        $totalStock = (float) SupplyInventoryItem::sum('stock');
-        $totalValue = (float) SupplyInventoryItem::sum(DB::raw('stock * unit_cost'));
-        $lowStockCount = SupplyInventoryItem::where('stock', '>', 0)->whereColumn('stock', '<=', 'min_stock')->count();
-        $outOfStockCount = SupplyInventoryItem::where('stock', '<=', 0)->count();
+        $allItems = SupplyInventoryItem::all();
+        $totalProducts = $allItems->count();
+        $totalStock = (float) $allItems->sum('stock');
+        $totalValue = (float) $allItems->sum(fn($i) => (float)$i->stock * (float)$i->unit_cost);
+        $lowStockCount = $allItems->filter(fn($i) => $i->stock > 0 && $i->stock <= $i->min_stock)->count();
+        $outOfStockCount = $allItems->filter(fn($i) => $i->stock <= 0)->count();
+
+        $lowStockAlerts = $allItems->filter(function ($i) {
+            return $i->stock <= $i->min_stock || $i->stock <= 0;
+        })->map(function ($i) {
+            return [
+                'id' => $i->id,
+                'name' => $i->name,
+                'code' => $i->code,
+                'part_number' => $i->part_number,
+                'consecutive' => $i->consecutive,
+                'type_id' => $i->type_id,
+                'type_slug' => $i->type_slug,
+                'type_name' => $i->type_name,
+                'group_number' => $i->group_number,
+                'group_name' => $i->group_name,
+                'unit' => $i->unit,
+                'stock' => (float) $i->stock,
+                'min_stock' => (float) $i->min_stock,
+                'unit_cost' => (float) $i->unit_cost,
+                'location' => $i->location ?: 'Almacén General',
+                'deficit' => max(0, (float) $i->min_stock - (float) $i->stock),
+                'is_out_of_stock' => (float) $i->stock <= 0,
+            ];
+        })->values();
+
+        $types = array_values(SupplyInventoryCatalog::getTypes());
 
         // Summaries for movements
         $totalEntriesMonth = SupplyInventoryMovement::where('movement_type', 'entry')
@@ -68,14 +95,14 @@ class SupplyInventoryController extends Controller
                 'id' => 'products',
                 'name' => 'Productos',
                 'slug' => 'products',
-                'description' => 'Catálogo general de insumos y materiales clasificados en 9 grupos con altas, bajas y control de existencias.',
+                'description' => 'Catálogo general de insumos clasificados en 4 submódulos (Refaccionamiento, Maquinaria, Herramientas y Consumibles) con altas, bajas y control de existencias.',
                 'icon' => 'Boxes',
                 'color' => 'bg-blue-50 text-blue-600',
                 'border' => 'border-blue-200',
                 'hover' => 'hover:border-blue-500 hover:shadow-blue-100',
                 'accent' => 'blue',
                 'href' => route('apt.inventory.products.index'),
-                'badge' => '9 Submódulos',
+                'badge' => '4 Submódulos',
                 'stats_label' => 'Total Productos',
                 'stats_value' => $totalProducts,
                 'secondary_label' => 'Stock total:',
@@ -126,6 +153,8 @@ class SupplyInventoryController extends Controller
                 'low_stock_count' => $lowStockCount,
                 'out_of_stock_count' => $outOfStockCount,
             ],
+            'lowStockAlerts' => $lowStockAlerts,
+            'types' => $types,
         ]);
     }
 
@@ -260,6 +289,7 @@ class SupplyInventoryController extends Controller
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                       ->orWhere('code', 'like', "%{$search}%")
+                      ->orWhere('part_number', 'like', "%{$search}%")
                       ->orWhere('group_name', 'like', "%{$search}%")
                       ->orWhere('type_name', 'like', "%{$search}%")
                       ->orWhere('location', 'like', "%{$search}%");
@@ -285,7 +315,7 @@ class SupplyInventoryController extends Controller
                 }
             }
 
-            $items = $query->orderBy('type_id')->orderBy('group_number')->orderBy('name')->paginate(15)->withQueryString();
+            $items = $query->orderBy('type_id')->orderBy('group_number')->orderBy('code')->orderBy('id')->paginate(15)->withQueryString();
         } else {
             $items = new \Illuminate\Pagination\LengthAwarePaginator(
                 collect([]),
@@ -334,13 +364,47 @@ class SupplyInventoryController extends Controller
             ]);
         }, array_values($types));
 
+        $lowStockAlerts = $allItems->filter(function ($i) {
+            return $i->stock <= $i->min_stock || $i->stock <= 0;
+        })->map(function ($i) {
+            return [
+                'id' => $i->id,
+                'name' => $i->name,
+                'code' => $i->code,
+                'part_number' => $i->part_number,
+                'consecutive' => $i->consecutive,
+                'type_id' => $i->type_id,
+                'type_slug' => $i->type_slug,
+                'type_name' => $i->type_name,
+                'group_number' => $i->group_number,
+                'group_name' => $i->group_name,
+                'unit' => $i->unit,
+                'stock' => (float) $i->stock,
+                'min_stock' => (float) $i->min_stock,
+                'unit_cost' => (float) $i->unit_cost,
+                'location' => $i->location ?: 'Almacén General',
+                'deficit' => max(0, (float) $i->min_stock - (float) $i->stock),
+                'is_out_of_stock' => (float) $i->stock <= 0,
+            ];
+        })->values();
+
         return Inertia::render('APT/Inventory/Products/Index', [
             'items' => $items,
             'metrics' => $metrics,
             'locations' => $locations,
+            'lowStockAlerts' => $lowStockAlerts,
             'allItemsSummary' => $allItems->map(fn($i) => [
                 'id' => $i->id,
+                'name' => $i->name,
                 'type_slug' => $i->type_slug,
+                'type_name' => $i->type_name,
+                'type_id' => $i->type_id,
+                'group_number' => $i->group_number,
+                'group_name' => $i->group_name,
+                'consecutive' => $i->consecutive,
+                'code' => $i->code,
+                'part_number' => $i->part_number,
+                'unit' => $i->unit,
                 'stock' => (float) $i->stock,
                 'min_stock' => (float) $i->min_stock,
                 'unit_cost' => (float) $i->unit_cost,
@@ -386,11 +450,12 @@ class SupplyInventoryController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('code', 'like', "%{$search}%")
+                  ->orWhere('part_number', 'like', "%{$search}%")
                   ->orWhere('location', 'like', "%{$search}%");
             });
         }
 
-        $items = $query->orderBy('name')->paginate(15)->withQueryString();
+        $items = $query->orderBy('code')->orderBy('id')->paginate(15)->withQueryString();
 
         $allGroupItems = SupplyInventoryItem::where('type_slug', $type['slug'])->where('group_number', $group_number)->get();
         $metrics = [
@@ -401,11 +466,36 @@ class SupplyInventoryController extends Controller
             'out_of_stock_count' => $allGroupItems->filter(fn($i) => $i->stock <= 0)->count(),
         ];
 
+        $groupLowStockAlerts = $allGroupItems->filter(function ($i) {
+            return $i->stock <= $i->min_stock || $i->stock <= 0;
+        })->map(function ($i) {
+            return [
+                'id' => $i->id,
+                'name' => $i->name,
+                'code' => $i->code,
+                'part_number' => $i->part_number,
+                'consecutive' => $i->consecutive,
+                'type_id' => $i->type_id,
+                'type_slug' => $i->type_slug,
+                'type_name' => $i->type_name,
+                'group_number' => $i->group_number,
+                'group_name' => $i->group_name,
+                'unit' => $i->unit,
+                'stock' => (float) $i->stock,
+                'min_stock' => (float) $i->min_stock,
+                'unit_cost' => (float) $i->unit_cost,
+                'location' => $i->location ?: 'Almacén General',
+                'deficit' => max(0, (float) $i->min_stock - (float) $i->stock),
+                'is_out_of_stock' => (float) $i->stock <= 0,
+            ];
+        })->values();
+
         return Inertia::render('APT/Inventory/Products/GroupView', [
             'type' => $type,
             'group' => $group,
             'items' => $items,
             'metrics' => $metrics,
+            'lowStockAlerts' => $groupLowStockAlerts,
             'filters' => $request->only(['search']),
         ]);
     }
@@ -956,6 +1046,8 @@ class SupplyInventoryController extends Controller
         $validated = $request->validate([
             'group_number' => 'required|integer',
             'code' => 'nullable|string|max:100',
+            'consecutive' => 'nullable|string|max:50',
+            'part_number' => 'nullable|string|max:100',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'unit' => 'required|string|max:50',
@@ -968,32 +1060,42 @@ class SupplyInventoryController extends Controller
         ]);
 
         $groupName = 'GENERAL';
+        $groupConsecutive = '0001';
         $isInventoriedDefault = true;
         foreach ($type['groups'] as $grp) {
             if ($grp['number'] === (int) $validated['group_number']) {
                 $groupName = $grp['name'];
+                $groupConsecutive = $grp['consecutive'] ?? '0001';
                 $isInventoriedDefault = $grp['is_inventoried'];
                 break;
             }
         }
 
-        $code = $validated['code'];
+        $consecutive = $validated['consecutive'] ?? null;
+        $code = $validated['code'] ?? null;
         if (empty($code)) {
-            $typePad = str_pad($type['id'], 2, '0', STR_PAD_LEFT);
-            $groupPad = str_pad($validated['group_number'], 2, '0', STR_PAD_LEFT);
-            $lastCount = SupplyInventoryItem::where('type_id', $type['id'])
-                ->where('group_number', $validated['group_number'])
-                ->count() + 1;
-            $code = "{$typePad}-{$groupPad}-" . str_pad($lastCount, 4, '0', STR_PAD_LEFT);
+            $maxCode = SupplyInventoryItem::where('group_number', $validated['group_number'])
+                ->where('code', 'regexp', '^[0-9]{7}$')
+                ->orderBy('code', 'desc')
+                ->value('code');
+            $lastNum = $maxCode ? (int) substr($maxCode, -4) : 0;
+            $code = sprintf('%d%04d', (int) $validated['group_number'], $lastNum + 1);
+            if (empty($consecutive)) {
+                $consecutive = sprintf('%04d', $lastNum + 1);
+            }
         }
 
-        SupplyInventoryItem::create([
+        $consecutive = $consecutive ?? $groupConsecutive;
+
+        $item = SupplyInventoryItem::create([
             'type_id' => $type['id'],
             'type_name' => $type['name'],
             'type_slug' => $type['slug'],
             'group_number' => (int) $validated['group_number'],
             'group_name' => $groupName,
+            'consecutive' => $consecutive,
             'code' => $code,
+            'part_number' => !empty($validated['part_number']) ? trim($validated['part_number']) : null,
             'name' => trim($validated['name']),
             'description' => $validated['description'] ?? null,
             'unit' => strtoupper(trim($validated['unit'])),
@@ -1006,6 +1108,47 @@ class SupplyInventoryController extends Controller
             'user_id' => auth()->id(),
             'notes' => $validated['notes'] ?? null,
         ]);
+
+        if ($item->stock > 0) {
+            $maxRef = SupplyInventoryMovement::where('movement_type', 'entry')
+                ->where('reference_document', 'like', 'ENT-%')
+                ->get()
+                ->map(function ($m) {
+                    return (int) preg_replace('/[^0-9]/', '', $m->reference_document);
+                })
+                ->max() ?? 0;
+            $maxId = (int) (SupplyInventoryMovement::max('id') ?? 0);
+            $nextFolioNum = max($maxRef, $maxId) + 1;
+            $refDoc = 'ENT-' . str_pad((string) $nextFolioNum, 4, '0', STR_PAD_LEFT);
+
+            $unitCost = (float) $item->unit_cost;
+            $qty = (float) $item->stock;
+            $today = now()->toDateString();
+
+            SupplyInventoryMovement::create([
+                'movement_type' => 'entry',
+                'item_id' => $item->id,
+                'item_code' => $item->code,
+                'item_name' => $item->name,
+                'type_id' => $item->type_id,
+                'type_name' => $item->type_name,
+                'type_slug' => $item->type_slug,
+                'group_number' => $item->group_number,
+                'group_name' => $item->group_name,
+                'quantity' => $qty,
+                'unit' => $item->unit,
+                'unit_cost' => $unitCost,
+                'total_cost' => $qty * $unitCost,
+                'reference_document' => $refDoc,
+                'responsible_person' => auth()->user()?->name ?: 'Admin VECODE',
+                'location' => $item->location ?: 'Almacén General',
+                'user_id' => auth()->id(),
+                'notes' => !empty($item->notes) ? $item->notes : 'Alta inicial de producto en catálogo',
+                'movement_date' => $today,
+                'entry_date' => $today,
+                'exit_date' => null,
+            ]);
+        }
 
         return redirect()->back()->with('success', 'Producto dado de alta correctamente en ' . $type['name'] . '.');
     }
@@ -1026,6 +1169,8 @@ class SupplyInventoryController extends Controller
         $validated = $request->validate([
             'group_number' => 'required|integer',
             'code' => 'nullable|string|max:100',
+            'consecutive' => 'nullable|string|max:50',
+            'part_number' => 'nullable|string|max:100',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'unit' => 'required|string|max:50',
@@ -1048,7 +1193,9 @@ class SupplyInventoryController extends Controller
         $item->update([
             'group_number' => (int) $validated['group_number'],
             'group_name' => $groupName,
+            'consecutive' => $validated['consecutive'] ?? $item->consecutive,
             'code' => $validated['code'] ?? $item->code,
+            'part_number' => !empty($validated['part_number']) ? trim($validated['part_number']) : null,
             'name' => trim($validated['name']),
             'description' => $validated['description'] ?? null,
             'unit' => strtoupper(trim($validated['unit'])),

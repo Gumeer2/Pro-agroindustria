@@ -675,6 +675,16 @@ export default function EntriesIndex({
                                                     <span className="bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-md text-xs border border-emerald-200">
                                                         {formatFolio(m.reference_document, m.id)}
                                                     </span>
+                                                    {m.items_summary && m.items_summary.length === 1 && (
+                                                        <div className="text-[11px] font-sans font-medium text-gray-600 mt-1 max-w-[220px] truncate mx-auto" title={m.items_summary[0]}>
+                                                            {m.items_summary[0]}
+                                                        </div>
+                                                    )}
+                                                    {m.items_summary && m.items_summary.length > 1 && (
+                                                        <div className="text-[10px] font-sans font-semibold text-emerald-700 mt-1" title={m.items_summary.join("\n")}>
+                                                            ({m.items_count} insumos)
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="py-4 px-4 text-right">
                                                     <div className="font-bold text-gray-900 text-sm">

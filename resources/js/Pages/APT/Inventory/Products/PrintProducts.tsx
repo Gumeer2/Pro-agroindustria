@@ -4,7 +4,9 @@ import { ArrowLeft, Printer } from "lucide-react";
 
 interface InventoryItem {
     id: number;
+    consecutive?: string;
     code: string;
+    part_number?: string;
     name: string;
     description?: string;
     type_id: number;
@@ -259,7 +261,9 @@ export default function PrintProducts({ items = [], mode }: Props) {
                             <thead>
                                 <tr className="bg-[#1e1b4b] text-white font-extrabold uppercase text-[10px] tracking-wider">
                                     <th className="py-3 px-3 text-center border-r border-slate-700 w-12">#</th>
-                                    <th className="py-3 px-4 text-center border-r border-slate-700 w-36">CLAVE / SKU</th>
+                                    <th className="py-3 px-3 text-center border-r border-slate-700 w-24">CONSECUTIVO</th>
+                                    <th className="py-3 px-4 text-center border-r border-slate-700 w-28">CÓDIGO</th>
+                                    <th className="py-3 px-3 text-center border-r border-slate-700 w-28">N. DE PARTE</th>
                                     <th className="py-3 px-5 border-r border-slate-700">DESCRIPCIÓN DEL INSUMO / ESPECIFICACIONES</th>
                                     <th className={`py-3 px-4 ${!isCatalog ? "border-r border-slate-700 w-52" : "w-60"}`}>SUBMÓDULO & GRUPO</th>
                                     {!isCatalog && (
@@ -278,8 +282,14 @@ export default function PrintProducts({ items = [], mode }: Props) {
                                         <td className="py-3 px-3 text-center font-bold text-gray-500 border-r border-gray-200 text-[11px]">
                                             {idx + 1}
                                         </td>
-                                        <td className="py-3 px-4 text-center font-mono font-bold text-gray-800 bg-gray-50 border-r border-gray-200">
+                                        <td className="py-3 px-3 text-center font-mono font-bold text-amber-800 bg-amber-50/40 border-r border-gray-200 text-xs">
+                                            {item.consecutive || String(idx + 1).padStart(4, "0")}
+                                        </td>
+                                        <td className="py-3 px-4 text-center font-mono font-bold text-gray-800 bg-gray-50 border-r border-gray-200 text-xs">
                                             {item.code}
+                                        </td>
+                                        <td className="py-3 px-3 text-center font-mono font-bold text-sky-800 bg-sky-50/30 border-r border-gray-200 text-xs">
+                                            {item.part_number || "—"}
                                         </td>
                                         <td className="py-3 px-5 border-r border-gray-200">
                                             <div className="font-black text-gray-900 text-xs">
@@ -290,11 +300,7 @@ export default function PrintProducts({ items = [], mode }: Props) {
                                                     {item.description}
                                                 </div>
                                             )}
-                                            {item.location && (
-                                                <div className="text-gray-400 text-[10px]">
-                                                    Ubicación: {item.location}
-                                                </div>
-                                            )}
+
                                         </td>
                                         <td className={`py-3 px-4 ${!isCatalog ? "border-r border-gray-200" : ""}`}>
                                             <div className="text-[11px] font-semibold text-gray-800">{item.type_name}</div>
@@ -322,7 +328,7 @@ export default function PrintProducts({ items = [], mode }: Props) {
                             {!isCatalog && (
                                 <tfoot>
                                     <tr className="bg-slate-100 font-bold border-t-2 border-slate-300 text-xs">
-                                        <td colSpan={4} className="py-2.5 px-4 text-right uppercase text-gray-600">
+                                        <td colSpan={5} className="py-2.5 px-4 text-right uppercase text-gray-600">
                                             TOTALES GENERALES ({items.length} INSUMOS):
                                         </td>
                                         <td></td>

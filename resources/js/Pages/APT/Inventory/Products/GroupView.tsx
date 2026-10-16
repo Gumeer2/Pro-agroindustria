@@ -13,7 +13,6 @@ import {
     Edit3,
     Trash2,
     X,
-    Warehouse,
     Plus,
     FolderKanban,
     ChevronRight,
@@ -22,6 +21,8 @@ import {
 
 interface SupplyGroup {
     number: number;
+    consecutive?: string;
+    code?: string;
     name: string;
     description?: string;
 }
@@ -38,7 +39,9 @@ interface SupplyType {
 
 interface InventoryItem {
     id: number;
+    consecutive?: string;
     code: string;
+    part_number?: string;
     name: string;
     description?: string;
     type_id: number;
@@ -101,7 +104,9 @@ export default function GroupView({
     const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
 
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
+        consecutive: group.consecutive || "0001",
         code: "",
+        part_number: "",
         name: "",
         description: "",
         type_slug: type.slug,
@@ -124,28 +129,25 @@ export default function GroupView({
     };
 
     const generateProductCode = (typeSlug: string, groupNumber: number) => {
-        const typeId = type.id || 1;
-        const typePad = String(typeId).padStart(2, "0");
-        const groupPad = String(groupNumber).padStart(2, "0");
-        const prefix = `${typePad}-${groupPad}`;
-
         const matchingItems = (items?.data || []).filter(
             (i: any) => Number(i.group_number || group.number) === Number(groupNumber)
         );
 
-        let maxNum = matchingItems.length;
+        let maxNum = 0;
         matchingItems.forEach((i: any) => {
             if (i.code) {
-                const parts = i.code.split("-");
-                const lastPart = parseInt(parts[parts.length - 1], 10);
-                if (!isNaN(lastPart) && lastPart > maxNum) {
-                    maxNum = lastPart;
+                const numStr = String(i.code).replace(/[^0-9]/g, "");
+                if (numStr.length >= 4) {
+                    const lastPart = parseInt(numStr.slice(-4), 10);
+                    if (!isNaN(lastPart) && lastPart > maxNum) {
+                        maxNum = lastPart;
+                    }
                 }
             }
         });
 
         const nextCount = maxNum + 1;
-        return `${prefix}-${String(nextCount).padStart(4, "0")}`;
+        return `${groupNumber}${String(nextCount).padStart(4, "0")}`;
     };
 
     const openCreateModal = () => {
@@ -153,7 +155,9 @@ export default function GroupView({
         reset();
         const autoCode = generateProductCode(type.slug, group.number);
         setData({
+            consecutive: group.consecutive || "0001",
             code: autoCode,
+            part_number: "",
             name: "",
             description: "",
             type_slug: type.slug,
@@ -173,7 +177,9 @@ export default function GroupView({
         clearErrors();
         setEditingItem(item);
         setData({
+            consecutive: item.consecutive || group.consecutive || "0001",
             code: item.code,
+            part_number: item.part_number || "",
             name: item.name,
             description: item.description || "",
             type_slug: item.type_slug,
@@ -412,14 +418,14 @@ export default function GroupView({
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-[#1e1b4b] text-white text-[11px] uppercase tracking-wider font-extrabold">
-                                    <th className="py-4 px-4 text-center">CLAVE / CÓDIGO</th>
+                                    <th className="py-4 px-3 text-center">CONSECUTIVO</th>
+                                    <th className="py-4 px-3 text-center">CÓDIGO</th>
+                                    <th className="py-4 px-3 text-center">N. DE PARTE</th>
                                     <th className="py-4 px-4">PRODUCTO / INSUMO</th>
                                     <th className="py-4 px-4">GRUPO DE INSUMO</th>
                                     <th className="py-4 px-3 text-center">UNIDAD</th>
                                     <th className="py-4 px-4 text-center">EXISTENCIA (STOCK)</th>
                                     <th className="py-4 px-4 text-right">COSTO / VALOR</th>
-                                    <th className="py-4 px-4">UBICACIÓN</th>
-                                    <th className="py-4 px-3 text-center">ESTATUS</th>
                                     <th className="py-4 px-4 text-center">ACCIONES</th>
                                 </tr>
                             </thead>
@@ -434,11 +440,29 @@ export default function GroupView({
                                                 key={item.id}
                                                 className="hover:bg-slate-50/80 transition-colors"
                                             >
+                                                {/* Consecutivo */}
+                                                <td className="py-4 px-3 text-center font-mono font-bold">
+                                                    <span className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-md text-xs border border-amber-200">
+                                                        {item.consecutive || group.consecutive || "0001"}
+                                                    </span>
+                                                </td>
+
                                                 {/* Clave / Código */}
-                                                <td className="py-4 px-4 text-center font-mono font-bold text-gray-700">
+                                                <td className="py-4 px-3 text-center font-mono font-bold text-gray-800">
                                                     <span className="bg-gray-100 px-2.5 py-1 rounded-md text-xs border border-gray-200">
                                                         {item.code}
                                                     </span>
+                                                </td>
+
+                                                {/* N. DE PARTE */}
+                                                <td className="py-4 px-3 text-center font-mono text-xs">
+                                                    {item.part_number ? (
+                                                        <span className="bg-sky-50 text-sky-800 font-bold px-2 py-0.5 rounded border border-sky-200">
+                                                            {item.part_number}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-gray-400 font-mono text-xs">—</span>
+                                                    )}
                                                 </td>
 
                                                 {/* Producto / Insumo */}
@@ -492,25 +516,6 @@ export default function GroupView({
                                                     <div className="text-[11px] text-gray-500 mt-0.5">
                                                         Tot: ${(Number(item.stock || 0) * Number(item.unit_cost || 0)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
-                                                </td>
-
-                                                {/* Ubicación */}
-                                                <td className="py-4 px-4">
-                                                    <div className="flex items-center gap-1.5 text-gray-600 text-xs font-medium">
-                                                        <Warehouse className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                                                        <span>{item.location || "Almacén General"}</span>
-                                                    </div>
-                                                </td>
-
-                                                {/* Estatus */}
-                                                <td className="py-4 px-3 text-center">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                                                        item.is_inventoried
-                                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                            : "bg-gray-100 text-gray-600 border border-gray-200"
-                                                    }`}>
-                                                        {item.is_inventoried ? "Inventariado" : "No Inventariado"}
-                                                    </span>
                                                 </td>
 
                                                 {/* Acciones */}
@@ -610,24 +615,53 @@ export default function GroupView({
                         </div>
 
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            {/* Code and Name */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
+                            {/* Consecutive, Code, Part Number and Name */}
+                            <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+                                <div className="sm:col-span-1">
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1 whitespace-nowrap">
+                                        Consecutivo
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={data.consecutive}
+                                        onChange={(e) => setData("consecutive", e.target.value)}
+                                        placeholder="0001"
+                                        required
+                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    {errors.consecutive && <p className="text-red-500 text-xs mt-1">{errors.consecutive}</p>}
+                                </div>
+
+                                <div className="sm:col-span-1">
                                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                                        Clave / Código *
+                                        Código *
                                     </label>
                                     <input
                                         type="text"
                                         value={data.code}
                                         onChange={(e) => setData("code", e.target.value)}
-                                        placeholder="Ej. MAT-001"
+                                        placeholder="1010001"
                                         required
                                         className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     />
                                     {errors.code && <p className="text-red-500 text-xs mt-1">{errors.code}</p>}
                                 </div>
 
-                                <div className="sm:col-span-2">
+                                <div className="sm:col-span-1">
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                                        N. de Parte
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={data.part_number}
+                                        onChange={(e) => setData("part_number", e.target.value)}
+                                        placeholder="Ej. CS-001"
+                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                    {errors.part_number && <p className="text-red-500 text-xs mt-1">{errors.part_number}</p>}
+                                </div>
+
+                                <div className="sm:col-span-3">
                                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
                                         Nombre del Producto / Insumo *
                                     </label>
@@ -714,35 +748,6 @@ export default function GroupView({
                                         onChange={(e) => setData("min_stock", Number(e.target.value))}
                                         className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-amber-600"
                                     />
-                                </div>
-                            </div>
-
-                            {/* Location and Inventoried */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                                        Ubicación en Almacén
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={data.location}
-                                        onChange={(e) => setData("location", e.target.value)}
-                                        placeholder="Ej. Patio A, Bahía 3, Estante F-2..."
-                                        className="w-full py-2 px-3 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                </div>
-
-                                <div className="flex items-center gap-3 pt-6">
-                                    <input
-                                        type="checkbox"
-                                        id="group_is_inventoried"
-                                        checked={data.is_inventoried}
-                                        onChange={(e) => setData("is_inventoried", e.target.checked)}
-                                        className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
-                                    />
-                                    <label htmlFor="group_is_inventoried" className="text-xs font-bold text-gray-700 cursor-pointer">
-                                        Sujeto a Control de Inventario Activo
-                                    </label>
                                 </div>
                             </div>
 
