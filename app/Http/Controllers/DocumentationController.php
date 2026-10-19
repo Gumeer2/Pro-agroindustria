@@ -125,13 +125,8 @@ class DocumentationController extends Controller
             'scale_operator_id' => 'nullable|exists:users,id',
         ]);
 
-        // 1. Validation: Programmed Tons <= OV Balance
+        // 1. Sales Order reference (Permitido guardar aunque exceda saldo para permitir Ajuste de Órdenes de Venta posterior)
         $salesOrder = SalesOrder::findOrFail($validated['sales_order_id']);
-        if ($validated['programmed_tons'] > $salesOrder->balance) {
-            return back()->withErrors([
-                'programmed_tons' => 'El tonelaje programado (' . $validated['programmed_tons'] . ' TM) excede el saldo disponible de la Orden de Venta (' . $salesOrder->balance . ' TM).'
-            ])->withInput();
-        }
 
         // 2. Normalize casing for identifiers
         $toUpperFields = [
@@ -846,19 +841,16 @@ class DocumentationController extends Controller
             'scale_operator_id' => 'nullable|exists:users,id',
         ]);
 
-        // Validate Balance again if programmed tons changed
-        if ($validated['sales_order_id'] != $order->sales_order_id || $validated['programmed_tons'] != $order->programmed_tons) {
-            $salesOrder = SalesOrder::findOrFail($validated['sales_order_id']);
-            // Re-calculate available balance logic if needed, simplify for update:
-            // If changing amount, check against current balance + previous amount (to not double count)
-            $currentAvailable = $salesOrder->balance + ($order->sales_order_id == $salesOrder->id ? $order->programmed_tons : 0);
-
-            if ($validated['programmed_tons'] > $currentAvailable) {
-                return back()->withErrors([
-                    'programmed_tons' => 'El tonelaje programado excede el saldo disponible de la OV.'
-                ])->withInput();
-            }
-        }
+        // Validate Balance again if programmed tons changed (Permitido para permitir documentar la OE y luego aplicar Ajuste)
+        // if ($validated['sales_order_id'] != $order->sales_order_id || $validated['programmed_tons'] != $order->programmed_tons) {
+        //     $salesOrder = SalesOrder::findOrFail($validated['sales_order_id']);
+        //     $currentAvailable = $salesOrder->balance + ($order->sales_order_id == $salesOrder->id ? $order->programmed_tons : 0);
+        //     if ($validated['programmed_tons'] > $currentAvailable) {
+        //         return back()->withErrors([
+        //             'programmed_tons' => 'El tonelaje programado excede el saldo disponible de la OV.'
+        //         ])->withInput();
+        //     }
+        // }
 
         // Normalize casing for identifiers
         $toUpperFields = [

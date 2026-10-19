@@ -151,6 +151,9 @@ export default function Index({
             setBreakdownData(data.data || []);
             setBreakdownLinks(data.links || []);
             setTotalTripPages(data.last_page || 1);
+            if (data.order) {
+                setSelectedOrder((prev) => (prev ? { ...prev, ...data.order } : data.order));
+            }
         } catch (error) {
             console.error("Error fetching breakdown:", error);
         } finally {
@@ -509,7 +512,7 @@ export default function Index({
                 <Pagination links={orders.links} />
             </div>
 
-            <Modal show={!!selectedOrder} onClose={() => setSelectedOrder(null)} maxWidth="5xl">
+            <Modal show={!!selectedOrder} onClose={() => setSelectedOrder(null)} maxWidth="6xl">
                 <div className="flex flex-col max-h-[85vh]">
                     {/* Header - Sticky */}
                     <div className="p-6 border-b border-gray-100 bg-indigo-50/50 sticky top-0 z-10">
@@ -563,6 +566,7 @@ export default function Index({
                                         <th className="px-6 py-3 text-left text-[10px] font-black text-indigo-900/50 uppercase tracking-widest bg-gray-50/50">Viaje / Ticket</th>
                                         <th className="px-6 py-3 text-left text-[10px] font-black text-indigo-900/50 uppercase tracking-widest bg-gray-50/50">Operador</th>
                                         <th className="px-6 py-3 text-center text-[10px] font-black text-indigo-900/50 uppercase tracking-widest bg-gray-50/50">Estatus Báscula</th>
+                                        <th className="px-6 py-3 text-left text-[10px] font-black text-indigo-900/50 uppercase tracking-widest bg-gray-50/50">Observaciones</th>
                                         <th className="px-6 py-3 text-right text-[10px] font-black text-indigo-900/50 uppercase tracking-widest bg-gray-50/50 border-l border-indigo-50">Peso (TM)</th>
                                     </tr>
                                 </thead>
@@ -570,9 +574,15 @@ export default function Index({
                                     {breakdownData.length > 0 ? (
                                         breakdownData.map((trip) => {
                                             const isCompleted = trip.weight_ticket?.weighing_status === 'completed';
-                                            const weight = isCompleted
-                                                ? (trip.weight_ticket?.net_weight || 0) / 1000
-                                                : (trip.programmed_tons || 0);
+                                            const weight = trip.weight !== undefined
+                                                ? Number(trip.weight)
+                                                : (isCompleted
+                                                    ? (trip.weight_ticket?.net_weight || 0) / 1000
+                                                    : (trip.programmed_tons || 0));
+
+                                            const isAdj = !!trip.is_adjustment;
+                                            const isDestinationAdj = trip.adjustment_type === 'destination';
+                                            const isOriginAdj = trip.adjustment_type === 'origin';
 
                                             const getStatusTranslation = (status: string) => {
                                                 const translations: Record<string, string> = {
@@ -586,42 +596,107 @@ export default function Index({
                                             };
 
                                             return (
-                                                <tr key={trip.id} className="hover:bg-indigo-50/30 transition-colors group">
+                                                <tr key={trip.id} className={`hover:bg-indigo-50/30 transition-colors group ${isDestinationAdj ? 'bg-purple-50/30' : ''}`}>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-800">
-                                                        {trip.shipment_order?.folio || 'N/A'}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="text-sm font-black text-gray-900">{trip.folio}</div>
-                                                        <div className="text-[10px] font-bold text-indigo-400 flex items-center">
-                                                            <FileText className="w-3 h-3 mr-1" />
-                                                            {trip.weight_ticket?.ticket_number || 'SIN TICKET'}
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span>{trip.shipment_order?.folio || 'N/A'}</span>
+                                                            {isDestinationAdj && (
+                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-700 uppercase tracking-wider">
+                                                                    Ajuste de OV
+                                                                </span>
+                                                            )}
+                                                            {isOriginAdj && (
+                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-800 uppercase tracking-wider">
+                                                                    Ajustado
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="text-sm font-bold text-gray-700 group-hover:text-indigo-900 transition-colors uppercase">{trip.driver?.name || '---'}</div>
-                                                        <div className="text-[10px] font-medium text-gray-400 uppercase tracking-tighter">{trip.transporter?.name || 'FLOTA INTERNA'}</div>
+                                                        <div className="text-sm font-black text-gray-900">
+                                                            {isDestinationAdj ? (
+                                                                <div className="flex items-center text-purple-700">
+                                                                    {trip.weight_ticket?.ticket_number && (
+                                                                        <FileText className="w-3.5 h-3.5 mr-1 text-purple-500 flex-shrink-0" />
+                                                                    )}
+                                                                    <span>
+                                                                        {trip.weight_ticket?.ticket_number || trip.adjustment_folio || trip.folio}
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                trip.folio
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[10px] font-bold text-indigo-400 flex items-center mt-0.5">
+                                                            {isDestinationAdj ? (
+                                                                <span className="text-purple-600 font-semibold">
+                                                                    {trip.weight_ticket?.ticket_number ? (trip.adjustment_folio || trip.folio) : 'REASIGNACIÓN'}
+                                                                </span>
+                                                            ) : (
+                                                                <>
+                                                                    <FileText className="w-3 h-3 mr-1 flex-shrink-0" />
+                                                                    {trip.weight_ticket?.ticket_number || 'SIN TICKET'}
+                                                                    {isOriginAdj && trip.adjustment_folio && (
+                                                                        <span className="ml-1 text-purple-600 font-semibold">({trip.adjustment_folio})</span>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="text-sm font-bold text-gray-700 group-hover:text-indigo-900 transition-colors uppercase">
+                                                            {trip.driver?.name || '---'}
+                                                        </div>
+                                                        <div className="text-[10px] font-medium text-gray-400 uppercase tracking-tighter">
+                                                            {trip.transporter?.name || 'FLOTA INTERNA'}
+                                                        </div>
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                                                        <div className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-flex items-center shadow-sm 
-                                                        ${isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                                                                trip.weight_ticket ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                                                                    'bg-gray-100 text-gray-400 border border-gray-200'}`}>
-                                                            {isCompleted && <CheckCircle className="w-3 h-3 mr-1" />}
-                                                            {trip.weight_ticket?.weighing_status ? getStatusTranslation(trip.weight_ticket.weighing_status) : 'PENDIENTE'}
-                                                        </div>
-                                                        <div className="text-[10px] text-indigo-300 font-bold mt-1 uppercase tracking-tighter">
-                                                            {getStatusTranslation(trip.status)}
-                                                        </div>
+                                                        {isDestinationAdj ? (
+                                                            <div className="px-2.5 py-1 rounded-full text-[10px] font-black inline-flex items-center shadow-sm bg-purple-100 text-purple-800 border border-purple-200">
+                                                                <CheckCircle className="w-3 h-3 mr-1" />
+                                                                AJUSTE APLICADO
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <div className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-flex items-center shadow-sm 
+                                                                ${isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                                                                        trip.weight_ticket ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                                                                            'bg-gray-100 text-gray-400 border border-gray-200'}`}>
+                                                                    {isCompleted && <CheckCircle className="w-3 h-3 mr-1" />}
+                                                                    {trip.weight_ticket?.weighing_status ? getStatusTranslation(trip.weight_ticket.weighing_status) : 'PENDIENTE'}
+                                                                </div>
+                                                                <div className="text-[10px] text-indigo-300 font-bold mt-1 uppercase tracking-tighter">
+                                                                    {getStatusTranslation(trip.status)}
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-xs text-gray-600 max-w-xs">
+                                                        {trip.observations && trip.observations !== '---' ? (
+                                                            <span className={`inline-block font-medium ${isAdj ? 'text-purple-900 font-semibold' : 'text-gray-700'}`}>
+                                                                {trip.observations}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-gray-300 italic">Sin observaciones</span>
+                                                        )}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-right text-emerald-700 bg-emerald-50/10 border-l border-indigo-50">
-                                                        {formatter.format(weight)} TM
+                                                        <div>
+                                                            {formatter.format(weight)} TM
+                                                        </div>
+                                                        {isOriginAdj && trip.original_weight && trip.original_weight !== weight && (
+                                                            <div className="text-[10px] text-gray-400 font-normal line-through">
+                                                                Orig: {formatter.format(trip.original_weight)} TM
+                                                            </div>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
                                         })
                                     ) : (
                                         <tr>
-                                            <td colSpan={5} className="px-6 py-16 text-center text-gray-400 italic font-medium">
+                                            <td colSpan={6} className="px-6 py-16 text-center text-gray-400 italic font-medium">
                                                 <Truck className="w-12 h-12 mx-auto mb-4 opacity-10" />
                                                 No se encontraron viajes registrados para esta orden
                                             </td>

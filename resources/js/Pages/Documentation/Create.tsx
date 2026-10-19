@@ -927,15 +927,19 @@ export default function Create({
                                     value={data.programmed_tons}
                                     onWheel={(e) => e.currentTarget.blur()}
                                     onChange={(e) => setData("programmed_tons", e.target.value)}
-                                    className={`w-full rounded-lg shadow-sm focus:ring-indigo-500 py-2.5 px-3 font-bold ${(Number(data.programmed_tons) > Number(data.balance) || (data.programmed_tons !== "" && Number(data.programmed_tons) <= 0))
-                                        ? 'border-red-500 focus:border-red-500 bg-red-50'
-                                        : 'border-gray-300 focus:border-indigo-500'
-                                        }`}
+                                    className={`w-full rounded-lg shadow-sm focus:ring-indigo-500 py-2.5 px-3 font-bold ${
+                                        data.programmed_tons !== "" && Number(data.programmed_tons) <= 0
+                                            ? 'border-red-500 focus:border-red-500 bg-red-50'
+                                            : Number(data.programmed_tons) > Number(data.balance)
+                                            ? 'border-amber-400 focus:border-amber-500 bg-amber-50/40 text-amber-900'
+                                            : 'border-gray-300 focus:border-indigo-500'
+                                    }`}
                                     placeholder="0.00"
                                 />
                                 {Number(data.programmed_tons) > Number(data.balance) && (
-                                    <p className="text-red-600 text-[10px] mt-1 font-bold animate-pulse">
-                                        ❌ Excede el saldo de la OV ({data.balance} TM)
+                                    <p className="text-amber-700 text-[11px] mt-1 font-semibold flex items-center gap-1">
+                                        <span>⚠️</span>
+                                        <span>Excede el saldo de la OV ({data.balance} TM) — Se permitirá guardar para ajuste de peso posterior.</span>
                                     </p>
                                 )}
                                 {data.programmed_tons !== "" && Number(data.programmed_tons) <= 0 && (

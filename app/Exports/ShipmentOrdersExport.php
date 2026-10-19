@@ -57,6 +57,7 @@ class ShipmentOrdersExport implements FromQuery, WithHeadings, WithMapping, Shou
                 'creator',
                 'loadingOrders.weight_ticket.lot',
                 'items.product',
+                'activeAdjustment.items.salesOrder.client',
             ]);
 
         // Filter by SADER
@@ -308,42 +309,101 @@ class ShipmentOrdersExport implements FromQuery, WithHeadings, WithMapping, Shou
             ?? $order->folio
             ?? 'N/A';
 
-        // Unified Mapping (Tons for all reports)
-        return [
-            $ticketFolio,
-            $fechaCarga,
-            'SIN DATOS',
-            ($order->origin_name ?: 'N/A'),
-            $order->sale_order_folio ?? ($order->sales_order?->folio ?? 'N/A'),
-            $order->folio,
-            $order->client?->business_name ?? ($order->client_name ?? 'N/A'),
-            $order->consigned_to ?? 'N/A',
-            'SIN DATOS',
-            $order->destination ?? 'N/A',
-            $order->state ?? 'N/A',
-            $productCode,
-            $productName,
-            $order->presentation ?? 'N/A',
-            $lotFolio,
-            ($ticket->gross_weight ?? 0) / 1000,
-            ($ticket->tare_weight ?? 0) / 1000,
-            ($ticket->net_weight ?? 0) / 1000,
-            (float) ($order->programmed_tons ?? 0),
-            $sacksValue,
-            $ticket->packaging_type ?? 'N/A',
-            $almacen,
-            $ticket && $ticket->weigh_in_at ? Carbon::parse($ticket->weigh_in_at)->format('h:i A') : '---',
-            $ticket && $ticket->weigh_out_at ? Carbon::parse($ticket->weigh_out_at)->format('h:i A') : '---',
-            $order->transport_company ?? 'N/A',
-            $order->operator_name ?? ($order->driver->name ?? 'N/A'),
-            $order->carta_porte ?? 'N/A',
-            $order->unit_type ?? 'N/A',
-            $order->tractor_plate ?? 'N/A',
-            $order->economic_number ?? 'N/A',
-            $order->trailer_plate ?? 'N/A',
-            $order->creator->name ?? 'DOCUMENTACIÓN',
-            $ticket->weighmaster->name ?? '---'
-        ];
+        $buildRow = function ($soFolio, $clientName, $pb, $pt, $pn) use (
+            $ticketFolio, $fechaCarga, $order, $productCode, $productName,
+            $lotFolio, $sacksValue, $ticket, $almacen
+        ) {
+            return [
+                $ticketFolio,
+                $fechaCarga,
+                'SIN DATOS',
+                ($order->origin_name ?: 'N/A'),
+                $soFolio,
+                $order->folio,
+                $clientName,
+                $order->consigned_to ?? 'N/A',
+                'SIN DATOS',
+                $order->destination ?? 'N/A',
+                $order->state ?? 'N/A',
+                $productCode,
+                $productName,
+                $order->presentation ?? 'N/A',
+                $lotFolio,
+                $pb,
+                $pt,
+                $pn,
+                (float) ($order->programmed_tons ?? 0),
+                $sacksValue,
+                $ticket->packaging_type ?? 'N/A',
+                $almacen,
+                $ticket && $ticket->weigh_in_at ? Carbon::parse($ticket->weigh_in_at)->format('h:i A') : '---',
+                $ticket && $ticket->weigh_out_at ? Carbon::parse($ticket->weigh_out_at)->format('h:i A') : '---',
+                $order->transport_company ?? 'N/A',
+                $order->operator_name ?? ($order->driver->name ?? 'N/A'),
+                $order->carta_porte ?? 'N/A',
+                $order->unit_type ?? 'N/A',
+                $order->tractor_plate ?? 'N/A',
+                $order->economic_number ?? 'N/A',
+                $order->trailer_plate ?? 'N/A',
+                $order->creator->name ?? 'DOCUMENTACIÓN',
+                $ticket->weighmaster->name ?? '---'
+            ];
+        };
+
+        // If this shipment order has an active adjustment, output split rows per allocation matching PDF example
+        $activeAdj = $order->activeAdjustment;
+        if ($activeAdj && $activeAdj->items && $activeAdj->items->isNotEmpty()) {
+            $adjItems = $activeAdj->items
+                ->sortBy(fn($item) => $item->order_type === 'origin' ? 0 : 1)
+                ->values();
+
+            $grossWeight = ($ticket && $ticket->gross_weight) ? ((float)$ticket->gross_weight / 1000) : null;
+            $tareWeight = ($ticket && $ticket->tare_weight) ? ((float)$ticket->tare_weight / 1000) : null;
+            $totalItems = $adjItems->count();
+
+            $rows = [];
+            foreach ($adjItems as $idx => $adjItem) {
+                $so = $adjItem->salesOrder;
+                $soFolio = $so?->folio ?? ($order->sale_order_folio ?? ($order->sales_order?->folio ?? 'N/A'));
+                $clientName = $so?->client?->business_name ?? ($order->client?->business_name ?? ($order->client_name ?? 'N/A'));
+
+                // Weight distribution matching example PDF:
+                // If multiple allocations:
+                // Row 1 (index 0, origin): PB empty, PT = Tare, PN = assigned weight
+                // Row 2 (index 1, destination): PB = Gross, PT empty, PN = assigned weight
+                // Row 3+ (if any): PB empty, PT empty, PN = assigned weight
+                if ($totalItems > 1) {
+                    if ($idx === 0) {
+                        $pb = null;
+                        $pt = $tareWeight;
+                    } elseif ($idx === 1) {
+                        $pb = $grossWeight;
+                        $pt = null;
+                    } else {
+                        $pb = null;
+                        $pt = null;
+                    }
+                } else {
+                    $pb = $grossWeight;
+                    $pt = $tareWeight;
+                }
+
+                $pn = (float)$adjItem->assigned_weight;
+
+                $rows[] = $buildRow($soFolio, $clientName, $pb, $pt, $pn);
+            }
+
+            return $rows;
+        }
+
+        // Standard single row without active adjustments
+        $defaultSoFolio = $order->sale_order_folio ?? ($order->sales_order?->folio ?? 'N/A');
+        $defaultClientName = $order->client?->business_name ?? ($order->client_name ?? 'N/A');
+        $defaultPb = ($ticket->gross_weight ?? 0) / 1000;
+        $defaultPt = ($ticket->tare_weight ?? 0) / 1000;
+        $defaultPn = ($ticket->net_weight ?? 0) / 1000;
+
+        return $buildRow($defaultSoFolio, $defaultClientName, $defaultPb, $defaultPt, $defaultPn);
     }
 
     public function styles(Worksheet $sheet)

@@ -1,6 +1,6 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link } from "@inertiajs/react";
-import { FileText, Anchor, ClipboardList, Clock } from "lucide-react";
+import { FileText, Anchor, ClipboardList, Clock, SlidersHorizontal } from "lucide-react";
 
 export default function Index({ auth }: { auth: any }) {
     const menuItems = [
@@ -44,6 +44,14 @@ export default function Index({ auth }: { auth: any }) {
             color: "bg-blue-50 text-blue-600",
             hover: "hover:border-blue-500",
         },
+        {
+            name: "Ajuste de Órdenes de Venta",
+            icon: SlidersHorizontal,
+            href: route("documentation.sales-order-adjustments.index"),
+            description: "Distribución de peso de un embarque entre órdenes de venta sin perder trazabilidad.",
+            color: "bg-teal-50 text-teal-600",
+            hover: "hover:border-teal-500",
+        },
     ];
 
     return (
@@ -52,12 +60,12 @@ export default function Index({ auth }: { auth: any }) {
 
             <div className="py-12">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {menuItems.map((item, index) => (
                             <Link
                                 key={index}
                                 href={item.href}
-                                className={`group bg-white rounded-xl shadow-md border-2 border-transparent p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${item.color.includes("indigo") ? "hover:border-indigo-500" : "hover:border-amber-500"}`}
+                                className={`group bg-white rounded-xl shadow-md border-2 border-transparent p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${item.hover || "hover:border-indigo-500"}`}
                             >
                                 <div
                                     className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-transform transform group-hover:scale-110 ${item.color}`}

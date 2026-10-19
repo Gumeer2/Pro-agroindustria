@@ -105,6 +105,16 @@ class ShipmentOrder extends Model
         return $this->hasOne(ShipmentProcessHistory::class, 'shipment_order_id')->latestOfMany();
     }
 
+    public function adjustments()
+    {
+        return $this->hasMany(SalesOrderAdjustment::class, 'shipment_order_id');
+    }
+
+    public function activeAdjustment()
+    {
+        return $this->hasOne(SalesOrderAdjustment::class, 'shipment_order_id')->where('status', 'applied');
+    }
+
     /**
      * Get the folios of the associated Sales Order if it exists.
      * This provides a safe fallback for the removed 'sale_order' column.

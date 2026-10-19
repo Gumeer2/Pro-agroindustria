@@ -74,6 +74,11 @@ class SalesOrder extends Model
         return (float) $this->attributes['loaded_quantity'];
     }
 
+    public function adjustmentItems()
+    {
+        return $this->hasMany(SalesOrderAdjustmentItem::class, 'sales_order_id');
+    }
+
     /**
      * The original heavy calculation logic, now available as a helper.
      * $cutOff allows calculating state at a specific point in time.
@@ -89,7 +94,7 @@ class SalesOrder extends Model
                       $sq->where('sales_order_id', $this->id);
                   });
             })
-            ->with(['weight_ticket'])
+            ->with(['weight_ticket', 'shipment_order.activeAdjustment.items'])
             ->where('status', '!=', 'cancelled');
 
         if ($cutOff) {
@@ -98,8 +103,27 @@ class SalesOrder extends Model
 
         $trips = $tripsQuery->get();
 
+        // Track shipment orders that have active adjustments so we only count their assigned weight once
+        $adjustedShipmentIds = [];
+
         // Sum net weight for trips that have completed weighing (Destare)
         foreach ($trips as $trip) {
+            $shipmentOrder = $trip->shipment_order;
+            $activeAdj = $shipmentOrder?->activeAdjustment;
+
+            if ($activeAdj) {
+                $soId = $shipmentOrder->id;
+                if (!in_array($soId, $adjustedShipmentIds)) {
+                    $adjustedShipmentIds[] = $soId;
+                    // Find the assigned weight item for THIS SalesOrder
+                    $item = $activeAdj->items->firstWhere('sales_order_id', $this->id);
+                    if ($item) {
+                        $total += (float) $item->assigned_weight;
+                    }
+                }
+                continue;
+            }
+
             if ($trip->weight_ticket) {
                 $ticket = $trip->weight_ticket;
                 $isCompletedAtTime = ($ticket->weighing_status === 'completed' && (!$cutOff || ($ticket->weigh_out_at ? $ticket->weigh_out_at <= $cutOff : $ticket->created_at <= $cutOff)));
@@ -108,6 +132,39 @@ class SalesOrder extends Model
                     $total += ((float) $ticket->net_weight / 1000);
                 }
             }
+        }
+
+        // Also check if THIS SalesOrder was assigned weight as DESTINATION in any active adjustments
+        $destinationAdjustments = SalesOrderAdjustmentItem::where('sales_order_id', $this->id)
+            ->where('order_type', 'destination')
+            ->whereHas('adjustment', function ($q) use ($cutOff) {
+                $q->where('status', 'applied');
+                if ($cutOff) {
+                    $q->where('created_at', '<=', $cutOff);
+                }
+            })
+            ->get();
+
+        foreach ($destinationAdjustments as $adjItem) {
+            $total += (float) $adjItem->assigned_weight;
+        }
+
+        // Origin adjustments on shipment orders that had no loading orders / trips yet
+        $originAdjustmentsWithoutTrips = SalesOrderAdjustmentItem::where('sales_order_id', $this->id)
+            ->where('order_type', 'origin')
+            ->whereHas('adjustment', function ($q) use ($cutOff, $adjustedShipmentIds) {
+                $q->where('status', 'applied');
+                if (!empty($adjustedShipmentIds)) {
+                    $q->whereNotIn('shipment_order_id', $adjustedShipmentIds);
+                }
+                if ($cutOff) {
+                    $q->where('created_at', '<=', $cutOff);
+                }
+            })
+            ->get();
+
+        foreach ($originAdjustmentsWithoutTrips as $origItem) {
+            $total += (float) $origItem->assigned_weight;
         }
 
         return (float) $total;

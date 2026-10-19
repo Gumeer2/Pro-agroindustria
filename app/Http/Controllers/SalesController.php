@@ -100,18 +100,253 @@ class SalesController extends Controller
     }
 
     /**
-     * Get detailed trip breakdown for a specific Sales Order (AJAX)
+     * Get detailed trip and adjustment breakdown for a specific Sales Order (AJAX)
      */
     public function breakdown(Request $request, string $id)
     {
         $order = \App\Models\SalesOrder::findOrFail($id);
 
-        $loading_orders = $order->loading_orders()
-            ->with(['weight_ticket', 'shipment_order', 'driver', 'transporter'])
-            ->orderBy('created_at', 'desc')
-            ->paginate(15);
+        // Recalculate fresh loaded quantity and sync if needed
+        $freshLoaded = $order->calculateLoadedQuantity();
+        if (abs((float)$order->loaded_quantity - $freshLoaded) > 0.0001) {
+            $order->updateQuietly(['loaded_quantity' => $freshLoaded]);
+        }
+        $balance = max(0, (float)$order->total_quantity - (float)$freshLoaded);
 
-        return response()->json($loading_orders);
+        // 1. Fetch direct trips linked to this sales order
+        $trips = \App\Models\LoadingOrder::where(function ($q) use ($order) {
+                $q->where('sales_order_id', $order->id)
+                  ->orWhereHas('shipment_order', function ($sq) use ($order) {
+                      $sq->where('sales_order_id', $order->id);
+                  });
+            })
+            ->with([
+                'weight_ticket',
+                'shipment_order.driver',
+                'shipment_order.transporter',
+                'shipment_order.activeAdjustment.items',
+                'driver',
+                'transporter'
+            ])
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $items = [];
+        $handledShipmentIds = [];
+
+        foreach ($trips as $trip) {
+            $shipment = $trip->shipment_order;
+            $activeAdj = $shipment?->activeAdjustment;
+            $isCompleted = $trip->weight_ticket?->weighing_status === 'completed';
+            $rawWeight = $isCompleted
+                ? ((float)($trip->weight_ticket?->net_weight ?? 0) / 1000)
+                : ((float)($trip->programmed_tons ?? 0));
+
+            $isAdjusted = false;
+            $adjustedWeight = $rawWeight;
+            $adjustmentFolio = null;
+            $observations = $trip->observations ?: ($trip->weight_ticket?->observations ?: '');
+
+            if ($activeAdj) {
+                $adjItem = $activeAdj->items->firstWhere('sales_order_id', $order->id);
+                if ($adjItem) {
+                    $isAdjusted = true;
+                    $adjustedWeight = (float)$adjItem->assigned_weight;
+                    $adjustmentFolio = $activeAdj->folio;
+                    $observations = $adjItem->notes ?: ($activeAdj->notes ?: $observations);
+                }
+                if ($shipment) {
+                    $handledShipmentIds[] = $shipment->id;
+                }
+            }
+
+            $driverName = $trip->driver?->name ?: ($trip->operator_name ?: ($shipment?->driver?->name ?: '---'));
+            $transporterName = $trip->transporter?->name ?: ($shipment?->transporter?->name ?: 'FLOTA INTERNA');
+
+            $items[] = [
+                'id' => $trip->id,
+                'is_adjustment' => $isAdjusted,
+                'adjustment_type' => $isAdjusted ? 'origin' : null,
+                'adjustment_folio' => $adjustmentFolio,
+                'shipment_order' => [
+                    'folio' => $shipment?->folio ?? 'N/A',
+                ],
+                'folio' => $trip->folio,
+                'weight_ticket' => [
+                    'ticket_number' => $trip->weight_ticket?->ticket_number ?? ($isAdjusted ? 'AJUSTE' : 'SIN TICKET'),
+                    'net_weight' => $trip->weight_ticket?->net_weight ?? 0,
+                    'weighing_status' => $trip->weight_ticket?->weighing_status ?? 'pending',
+                ],
+                'driver' => [
+                    'name' => $driverName,
+                ],
+                'transporter' => [
+                    'name' => $transporterName,
+                ],
+                'status' => $trip->status ?? 'completed',
+                'programmed_tons' => (float)($trip->programmed_tons ?? 0),
+                'weight' => $adjustedWeight,
+                'original_weight' => $isAdjusted ? $rawWeight : null,
+                'observations' => $observations ?: '---',
+                'created_at' => $trip->created_at?->toISOString() ?? now()->toISOString(),
+            ];
+        }
+
+        // 2. Fetch destination adjustment allocations for this Sales Order
+        $destinationItems = \App\Models\SalesOrderAdjustmentItem::where('sales_order_id', $order->id)
+            ->where('order_type', 'destination')
+            ->whereHas('adjustment', function ($q) {
+                $q->where('status', 'applied');
+            })
+            ->with([
+                'adjustment.shipmentOrder.loadingOrders.weight_ticket',
+                'adjustment.shipmentOrder.loadingOrders.driver',
+                'adjustment.shipmentOrder.loadingOrders.transporter',
+                'adjustment.shipmentOrder.driver',
+                'adjustment.shipmentOrder.transporter',
+                'adjustment.originSalesOrder',
+            ])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        foreach ($destinationItems as $item) {
+            $adj = $item->adjustment;
+            $shipment = $adj?->shipmentOrder;
+            $firstTrip = $shipment?->loadingOrders?->first();
+
+            $driverName = $firstTrip?->driver?->name ?: ($shipment?->driver?->name ?: ($firstTrip?->operator_name ?: 'Ajuste de Distribución'));
+            $transporterName = $firstTrip?->transporter?->name ?: ($shipment?->transporter?->name ?: 'FLOTA INTERNA');
+            $ticketNumber = $firstTrip?->weight_ticket?->ticket_number ?: ($shipment?->weight_ticket?->ticket_number ?: 'AJUSTE');
+
+            $obs = $item->notes ?: ($adj?->notes ?: 'Ajuste por saldo insuficiente');
+
+            $items[] = [
+                'id' => 'adj-' . $item->id,
+                'is_adjustment' => true,
+                'adjustment_type' => 'destination',
+                'adjustment_folio' => $adj?->folio ?? 'AJUSTE',
+                'shipment_order' => [
+                    'folio' => $shipment?->folio ?? 'N/A',
+                ],
+                'folio' => $adj?->folio ?? 'AJUSTE',
+                'weight_ticket' => [
+                    'ticket_number' => $ticketNumber,
+                    'net_weight' => (float)$item->assigned_weight * 1000,
+                    'weighing_status' => 'completed',
+                ],
+                'driver' => [
+                    'name' => $driverName,
+                ],
+                'transporter' => [
+                    'name' => $transporterName,
+                ],
+                'status' => 'completed',
+                'programmed_tons' => (float)$item->assigned_weight,
+                'weight' => (float)$item->assigned_weight,
+                'original_weight' => null,
+                'observations' => $obs,
+                'created_at' => $item->created_at?->toISOString() ?? now()->toISOString(),
+            ];
+        }
+
+        // 3. Origin adjustments on shipment orders that had no loading orders / trips yet
+        $originAdjustmentsWithoutTrips = \App\Models\SalesOrderAdjustmentItem::where('sales_order_id', $order->id)
+            ->where('order_type', 'origin')
+            ->whereHas('adjustment', function ($q) use ($handledShipmentIds) {
+                $q->where('status', 'applied');
+                if (!empty($handledShipmentIds)) {
+                    $q->whereNotIn('shipment_order_id', $handledShipmentIds);
+                }
+            })
+            ->with([
+                'adjustment.shipmentOrder.driver',
+                'adjustment.shipmentOrder.transporter',
+            ])
+            ->get();
+
+        foreach ($originAdjustmentsWithoutTrips as $item) {
+            $adj = $item->adjustment;
+            $shipment = $adj?->shipmentOrder;
+            $obs = $item->notes ?: ($adj?->notes ?: 'Saldo consumido de la orden original del embarque');
+
+            $items[] = [
+                'id' => 'adj-orig-' . $item->id,
+                'is_adjustment' => true,
+                'adjustment_type' => 'origin',
+                'adjustment_folio' => $adj?->folio ?? 'AJUSTE',
+                'shipment_order' => [
+                    'folio' => $shipment?->folio ?? 'N/A',
+                ],
+                'folio' => $adj?->folio ?? 'AJUSTE',
+                'weight_ticket' => [
+                    'ticket_number' => 'AJUSTE',
+                    'net_weight' => (float)$item->assigned_weight * 1000,
+                    'weighing_status' => 'completed',
+                ],
+                'driver' => [
+                    'name' => $shipment?->driver?->name ?: 'Ajuste de Distribución',
+                ],
+                'transporter' => [
+                    'name' => $shipment?->transporter?->name ?: 'FLOTA INTERNA',
+                ],
+                'status' => 'completed',
+                'programmed_tons' => (float)$item->assigned_weight,
+                'weight' => (float)$item->assigned_weight,
+                'original_weight' => (float)($adj?->base_weight ?? $item->assigned_weight),
+                'observations' => $obs,
+                'created_at' => $item->created_at?->toISOString() ?? now()->toISOString(),
+            ];
+        }
+
+        // Sort items by created_at descending
+        usort($items, function ($a, $b) {
+            return strcmp($b['created_at'], $a['created_at']);
+        });
+
+        // Pagination
+        $page = max(1, (int)$request->input('page', 1));
+        $perPage = 15;
+        $total = count($items);
+        $offset = ($page - 1) * $perPage;
+        $slice = array_slice($items, $offset, $perPage);
+        $lastPage = max(1, (int)ceil($total / $perPage));
+
+        $links = [];
+        $links[] = [
+            'url' => $page > 1 ? url()->current() . '?page=' . ($page - 1) : null,
+            'label' => '&laquo; Anterior',
+            'active' => false,
+        ];
+        for ($i = 1; $i <= $lastPage; $i++) {
+            $links[] = [
+                'url' => url()->current() . '?page=' . $i,
+                'label' => (string)$i,
+                'active' => $i === $page,
+            ];
+        }
+        $links[] = [
+            'url' => $page < $lastPage ? url()->current() . '?page=' . ($page + 1) : null,
+            'label' => 'Siguiente &raquo;',
+            'active' => false,
+        ];
+
+        return response()->json([
+            'data' => $slice,
+            'current_page' => $page,
+            'last_page' => $lastPage,
+            'total' => $total,
+            'per_page' => $perPage,
+            'links' => $links,
+            'order' => [
+                'id' => $order->id,
+                'folio' => $order->folio,
+                'total_quantity' => (float)$order->total_quantity,
+                'loaded_quantity' => (float)$freshLoaded,
+                'balance' => $balance,
+                'status' => $order->status,
+            ]
+        ]);
     }
 
     public function create()

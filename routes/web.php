@@ -346,6 +346,11 @@ Route::middleware('auth')->group(function () {
         }
         );
 
+        // Sales Order Adjustments (Ajuste de Órdenes de Venta)
+        Route::get('/documentation/sales-order-adjustments', [\App\Http\Controllers\SalesOrderAdjustmentController::class , 'index'])->name('documentation.sales-order-adjustments.index');
+        Route::post('/documentation/sales-order-adjustments', [\App\Http\Controllers\SalesOrderAdjustmentController::class , 'store'])->name('documentation.sales-order-adjustments.store');
+        Route::patch('/documentation/sales-order-adjustments/{id}/revert', [\App\Http\Controllers\SalesOrderAdjustmentController::class , 'revert'])->name('documentation.sales-order-adjustments.revert');
+
         // Shipment Origins (Manageable Origins)
         Route::get('/shipment-origins', [\App\Http\Controllers\ShipmentOriginController::class , 'index'])->name('shipment-origins.index');
         Route::post('/shipment-origins', [\App\Http\Controllers\ShipmentOriginController::class , 'store'])->name('shipment-origins.store');
