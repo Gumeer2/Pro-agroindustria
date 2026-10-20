@@ -646,9 +646,6 @@ export default function Index({
                                             </p>
                                         </div>
                                     </div>
-                                    <span className="text-xs bg-teal-900/60 text-teal-200 px-3 py-1 rounded-full font-mono border border-teal-500/30">
-                                        Pág. 6 PDF
-                                    </span>
                                 </div>
 
                                 {/* Top 4 Fields Bar (Page 6 Mockup) */}
@@ -766,7 +763,7 @@ export default function Index({
                                             <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
                                             <div className="text-sm">
                                                 <strong>Esta OE ya tiene un ajuste activo ({selectedShipment.active_adjustment_folio}).</strong>{" "}
-                                                Por regla de negocio (Pág. 7 PDF), no se permite un segundo ajuste activo.
+                                                Por regla de negocio, no se permite un segundo ajuste activo.
                                                 Debes revertir el ajuste anterior antes de crear uno nuevo.
                                             </div>
                                         </div>
@@ -1032,9 +1029,9 @@ export default function Index({
                                         </table>
                                     </div>
 
-                                    {/* General notes & proposal disclaimer */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                                        <div className="md:col-span-2 space-y-1">
+                                    {/* General notes */}
+                                    <div className="pt-2">
+                                        <div className="space-y-1">
                                             <label className="block text-xs font-bold uppercase tracking-wider text-gray-700">
                                                 Observaciones del ajuste / Folio externo
                                             </label>
@@ -1045,12 +1042,6 @@ export default function Index({
                                                 placeholder="Ej. Saldo insuficiente al cierre de embarque, remanente asignado a orden suplementaria..."
                                                 className="w-full text-sm rounded-xl border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500"
                                             />
-                                        </div>
-
-                                        <div className="flex flex-col justify-end">
-                                            <p className="text-xs text-gray-500 italic pb-1">
-                                                "El sistema propone el saldo pendiente y calcula el remanente; el usuario confirma antes de guardar." (Pág. 6 PDF)
-                                            </p>
                                         </div>
                                     </div>
 

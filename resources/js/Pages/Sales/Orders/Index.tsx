@@ -192,21 +192,11 @@ export default function Index({
                     <div className="flex-1 min-w-0">
                         <div className="mb-4">
                             <Link
-                                href={
-                                    new URLSearchParams(window.location.search).get("from") === "documentation"
-                                        ? route("documentation.index")
-                                        : auth.user?.roles?.includes("Documentador")
-                                            ? route("documentation.index")
-                                            : route("sales.index")
-                                }
+                                href={route("documentation.index")}
                                 className="text-gray-500 hover:text-gray-900 flex items-center text-sm font-medium transition-colors"
                             >
                                 <ArrowLeft className="w-4 h-4 mr-1" />
-                                {new URLSearchParams(window.location.search).get("from") === "documentation"
-                                    ? "Volver a Documentación"
-                                    : auth.user?.roles?.includes("Documentador")
-                                        ? "Volver a Documentación"
-                                        : "Volver a Comercialización"}
+                                Volver a Documentación
                             </Link>
                         </div>
                         <h2 className="text-2xl font-bold leading-7 text-indigo-900 sm:text-3xl sm:truncate flex items-center">
