@@ -189,6 +189,11 @@ class SurveillanceController extends Controller
                 $primaryLog->shipmentOrders()->sync($mergedOrderIds);
             }
 
+            $latestEntry = collect($logsInGroup)->max('entry_at');
+            if ($latestEntry && $latestEntry > $primaryLog->entry_at) {
+                $primaryLog->update(['entry_at' => $latestEntry]);
+            }
+
             // Close duplicate older logs
             for ($i = 1; $i < count($logsInGroup); $i++) {
                 $dupLog = $logsInGroup[$i];
@@ -520,6 +525,9 @@ class SurveillanceController extends Controller
 
         $log = AccessLog::findOrFail($logId);
         $log->shipmentOrders()->sync($request->order_ids);
+        $log->update([
+            'entry_at' => Carbon::now(),
+        ]);
 
         return back()->with('success', 'Órdenes de embarque vinculadas correctamente.');
     }
@@ -1453,7 +1461,10 @@ class SurveillanceController extends Controller
             $mergedOrderIds = array_slice(array_unique(array_merge($existingOrderIds, [$order->id])), 0, 3);
             $log->shipmentOrders()->sync($mergedOrderIds);
             $notes = $log->notes ? ($log->notes . " | Orden vinculada: {$order->folio}") : "Entrada registrada con orden {$order->folio}";
-            $log->update(['notes' => $notes]);
+            $log->update([
+                'entry_at' => $now,
+                'notes'    => $notes,
+            ]);
         } else {
             // Automatically create in_plant AccessLog with current timestamp
             $log = AccessLog::create([
@@ -1633,7 +1644,10 @@ class SurveillanceController extends Controller
             $mergedOrderIds = array_slice(array_unique(array_merge($existingOrderIds, $orderIds)), 0, 3);
             $log->shipmentOrders()->sync($mergedOrderIds);
             $notes = $request->notes ?? ($log->notes ? ($log->notes . " | Orden vinculada: {$order->folio}") : "Entrada con orden {$order->folio}");
-            $log->update(['notes' => $notes]);
+            $log->update([
+                'entry_at' => $now,
+                'notes'    => $notes,
+            ]);
         } else {
             // Create new in_plant AccessLog directly with entry timestamp NOW
             $log = AccessLog::create([
