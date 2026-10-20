@@ -54777,3 +54777,29 @@ Stack trace:
 #0 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/82d48d15-d008-4ed6-b8ad-29b8805548af/scratch/list_candidates.php(9): ReflectionClass->getMethod('getCandidateShi...')
 #1 {main}
 "} 
+[2026-10-20 09:12:55] local.ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'supply_inventory_item_id' in 'field list' (Connection: mysql, SQL: select distinct `supply_inventory_item_id` from `supply_inventory_movements` where `movement_type` = entry) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'supply_inventory_item_id' in 'field list' (Connection: mysql, SQL: select distinct `supply_inventory_item_id` from `supply_inventory_movements` where `movement_type` = entry) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select distinct...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select distinct...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select distinct...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3362): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3358): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(991): Illuminate/Database/Query/Builder->pluck('supply_inventor...', NULL)
+#7 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/59b5305b-ead7-4bd0-902b-726bd9327e28/scratch/check_inventory.php(15): Illuminate/Database/Eloquent/Builder->pluck('supply_inventor...')
+#8 {main}
+
+[previous exception] [object] (PDOException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'supply_inventory_item_id' in 'field list' at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:407)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): PDO->prepare('select distinct...')
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select distinct...', Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select distinct...', Array, Object(Closure))
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select distinct...', Array, Object(Closure))
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select distinct...', Array, true)
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3362): Illuminate/Database/Query/Builder->runSelect()
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3358): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(991): Illuminate/Database/Query/Builder->pluck('supply_inventor...', NULL)
+#9 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/59b5305b-ead7-4bd0-902b-726bd9327e28/scratch/check_inventory.php(15): Illuminate/Database/Eloquent/Builder->pluck('supply_inventor...')
+#10 {main}
+"} 

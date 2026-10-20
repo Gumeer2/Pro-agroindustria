@@ -732,6 +732,41 @@ export default function EntriesIndex({
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination */}
+                    {movements.links && movements.links.length > 3 && (
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                            <div className="text-xs text-gray-500 font-medium">
+                                Mostrando <span className="font-bold text-gray-800">{movements.from || 0}</span> a{" "}
+                                <span className="font-bold text-gray-800">{movements.to || 0}</span> de{" "}
+                                <span className="font-bold text-gray-800">{movements.total}</span> entradas
+                            </div>
+                            <div className="flex items-center gap-1 flex-wrap justify-center">
+                                {movements.links.map((link, idx) => (
+                                    <button
+                                        key={idx}
+                                        disabled={!link.url}
+                                        onClick={() =>
+                                            link.url &&
+                                            router.get(
+                                                link.url,
+                                                {},
+                                                { preserveState: true, preserveScroll: true }
+                                            )
+                                        }
+                                        className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-all ${
+                                            link.active
+                                                ? "bg-emerald-600 text-white font-bold shadow-sm"
+                                                : link.url
+                                                ? "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 hover:border-gray-300 cursor-pointer"
+                                                : "text-gray-300 bg-gray-50 border border-gray-100 cursor-not-allowed"
+                                        }`}
+                                        dangerouslySetInnerHTML={{ __html: link.label }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
