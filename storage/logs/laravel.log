@@ -54892,3 +54892,10 @@ Stack trace:
 #9 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/59b5305b-ead7-4bd0-902b-726bd9327e28/scratch/test_shipments_controller.php(6): Illuminate/Foundation/Http/Kernel->handle(Object(Illuminate/Http/Request))
 #10 {main}
 "} 
+[2026-10-20 10:41:29] local.ERROR: Undefined array key "props" {"exception":"[object] (ErrorException(code: 0): Undefined array key \"props\" at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/View/View.php:392)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php(258): Illuminate/Foundation/Bootstrap/HandleExceptions->handleError(2, 'Undefined array...', 'C://xampp//htdocs...', 392)
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/View/View.php(392): Illuminate/Foundation/Bootstrap/HandleExceptions->Illuminate/Foundation/Bootstrap/{closure}(2, 'Undefined array...', 'C://xampp//htdocs...', 392)
+#2 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/59b5305b-ead7-4bd0-902b-726bd9327e28/scratch/test_endpoint.php(11): Illuminate/View/View->offsetGet('props')
+#3 {main}
+"} 

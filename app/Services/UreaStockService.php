@@ -220,15 +220,55 @@ class UreaStockService
                 ?? ($so?->client_name
                 ?? ($lo?->client_name ?? 'N/D'));
 
+            $lotFolio = $ticket->lot?->folio
+                ?? $so?->lot?->folio
+                ?? $lo?->lot?->folio;
+
+            if (!$lotFolio) {
+                $lotId = $ticket->lot_id ?? $so?->lot_id ?? $lo?->lot_id;
+                if ($lotId) {
+                    $lotObj = \App\Models\Lot::find($lotId);
+                    $lotFolio = $lotObj?->folio;
+                }
+            }
+            $lotFolio = $lotFolio ?: 'Sin Lote';
+
+            $presentation = strtoupper(trim($so?->presentation ?? 'GRANEL'));
+            $isEnvasado = str_contains($presentation, 'ENVAS') || str_contains($presentation, 'SACO');
+
+            $programmedTons = null;
+            if ($so) {
+                if ((float) $so->programmed_tons > 0) {
+                    $prog = (float) $so->programmed_tons;
+                    $programmedTons = $prog >= 100 ? ($prog / 1000) : $prog;
+                } elseif ((float) $so->programmed_weight > 0) {
+                    $prog = (float) $so->programmed_weight;
+                    $programmedTons = $prog >= 100 ? ($prog / 1000) : $prog;
+                }
+            }
+
+            // Regla: En granel tomar el peso neto; en envasado tomar el peso programado
+            if ($isEnvasado && $programmedTons !== null && $programmedTons > 0) {
+                $finalTons = $programmedTons;
+                $weightType = 'programado';
+            } else {
+                $finalTons = $netTons;
+                $weightType = 'neto';
+            }
+
             $list->push([
                 'id' => $ticket->id,
                 'ticket_number' => $ticket->ticket_number,
                 'shipment_order_id' => $so?->id,
                 'shipment_folio' => $so?->folio ?? ($lo?->folio ?? 'N/D'),
                 'client' => $clientName,
+                'lot_folio' => $lotFolio,
                 'warehouse' => $warehouseKey,
                 'raw_warehouse' => $rawWarehouse,
-                'net_tons' => round($netTons, 3),
+                'net_tons' => round($finalTons, 3),
+                'real_net_tons' => round($netTons, 3),
+                'programmed_tons' => $programmedTons !== null ? round($programmedTons, 3) : null,
+                'weight_type' => $weightType,
                 'gross_tons' => round($grossTons, 3),
                 'tare_tons' => round($tareTons, 3),
                 'net_weight_kg' => round($net, 2),

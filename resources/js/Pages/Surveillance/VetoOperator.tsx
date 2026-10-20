@@ -31,6 +31,7 @@ import {
     UserMinus,
     ExternalLink,
     Eye,
+    Printer,
 } from "lucide-react";
 import axios from "axios";
 // @ts-ignore
@@ -406,6 +407,20 @@ export default function VetoOperator({
                                     Consulte el padrón de sancionados, aplique o retire vetos de acceso y audite la bitácora histórica.
                                 </p>
                             </div>
+                        </div>
+
+                        {/* Print Report Button */}
+                        <div className="flex items-center gap-3">
+                            <a
+                                href={route("surveillance.veto.report")}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-wider bg-red-700 hover:bg-red-800 text-white shadow-lg shadow-red-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 whitespace-nowrap cursor-pointer"
+                                title="Abrir e imprimir el reporte oficial de operadores vetados"
+                            >
+                                <Printer className="w-4 h-4" />
+                                <span>Imprimir Reporte de Vetados</span>
+                            </a>
                         </div>
                     </div>
 
@@ -808,6 +823,20 @@ export default function VetoOperator({
                                     {history_logs.total || 0}
                                 </span>
                             </button>
+                        </div>
+
+                        {/* Print Report Tab Action */}
+                        <div className="flex items-center pb-2 sm:pb-0">
+                            <a
+                                href={route("surveillance.veto.report")}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 shadow-2xs hover:shadow-xs transition-all cursor-pointer"
+                                title="Abrir versión para imprimir del padrón de operadores vetados"
+                            >
+                                <Printer className="w-4 h-4 text-red-600" />
+                                <span>Imprimir Reporte</span>
+                            </a>
                         </div>
                     </div>
 

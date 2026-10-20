@@ -121,6 +121,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/surveillance/scan-order', [\App\Http\Controllers\SurveillanceController::class, 'scanOrder'])->name('surveillance.scan-order');
         Route::post('/surveillance/authorize-order-entry', [\App\Http\Controllers\SurveillanceController::class, 'authorizeOrderEntry'])->name('surveillance.authorize-order-entry');
 
+        Route::get('/surveillance/veto/report', [\App\Http\Controllers\SurveillanceController::class , 'vetoReport'])->name('surveillance.veto.report');
         Route::get('/surveillance/veto', [\App\Http\Controllers\SurveillanceController::class , 'vetoIndex'])->name('surveillance.veto');
         Route::get('/surveillance/operators/search', [\App\Http\Controllers\SurveillanceController::class , 'searchOperators'])->name('surveillance.operators.search');
         Route::post('/surveillance/operators/{id}/veto', [\App\Http\Controllers\SurveillanceController::class , 'vetoOperator'])->name('surveillance.operators.veto');
@@ -236,6 +237,7 @@ Route::middleware('auth')->group(function () {
 
         // Urea Industrial Inventory Management (Daily Production & Initial Inventory)
         Route::get('/apt/inventory/urea-industrial', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'index'])->name('apt.inventory.urea-industrial.index');
+        Route::get('/apt/inventory/urea-industrial/shipments', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'shipments'])->name('apt.inventory.urea-industrial.shipments');
         Route::post('/apt/inventory/urea-industrial/daily', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'storeDaily'])->name('apt.inventory.urea-industrial.daily.store');
         Route::put('/apt/inventory/urea-industrial/daily/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-industrial.daily.update');
         Route::delete('/apt/inventory/urea-industrial/daily/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-industrial.daily.destroy');
@@ -245,6 +247,7 @@ Route::middleware('auth')->group(function () {
 
         // Urea Automotriz Inventory Management (Daily Production & Initial Inventory)
         Route::get('/apt/inventory/urea-automotriz', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'index'])->name('apt.inventory.urea-automotriz.index');
+        Route::get('/apt/inventory/urea-automotriz/shipments', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'shipments'])->name('apt.inventory.urea-automotriz.shipments');
         Route::post('/apt/inventory/urea-automotriz/daily', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'storeDaily'])->name('apt.inventory.urea-automotriz.daily.store');
         Route::put('/apt/inventory/urea-automotriz/daily/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-automotriz.daily.update');
         Route::delete('/apt/inventory/urea-automotriz/daily/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-automotriz.daily.destroy');

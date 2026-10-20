@@ -278,10 +278,10 @@ class UreaInventoryController extends Controller
 
         // Filter by warehouse
         if ($request->filled('warehouse') && $request->warehouse !== 'all') {
-            $warehouseFilter = $request->input('warehouse');
+            $warehouseFilter = UreaStockService::normalizeWarehouse($request->input('warehouse')) ?: trim($request->input('warehouse'));
             $filtered = $filtered->filter(function ($item) use ($warehouseFilter) {
-                return strcasecmp($item['warehouse'], $warehouseFilter) === 0
-                    || strcasecmp(str_replace('á', 'a', $item['warehouse']), str_replace('á', 'a', $warehouseFilter)) === 0;
+                $itemWh = UreaStockService::normalizeWarehouse($item['warehouse']) ?: trim($item['warehouse']);
+                return strcasecmp($itemWh, $warehouseFilter) === 0;
             });
         }
 
@@ -306,6 +306,7 @@ class UreaInventoryController extends Controller
             $filtered = $filtered->filter(function ($item) use ($search) {
                 return str_contains(mb_strtolower($item['ticket_number'] ?? ''), $search)
                     || str_contains(mb_strtolower($item['shipment_folio'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['lot_folio'] ?? ''), $search)
                     || str_contains(mb_strtolower($item['client'] ?? ''), $search)
                     || str_contains(mb_strtolower($item['operator_name'] ?? ''), $search)
                     || str_contains(mb_strtolower($item['transport_company'] ?? ''), $search)

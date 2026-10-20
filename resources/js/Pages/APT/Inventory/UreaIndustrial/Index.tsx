@@ -18,6 +18,7 @@ import {
     Edit,
     Trash2,
     Filter,
+    ExternalLink,
 } from "lucide-react";
 import Swal from "sweetalert2";
 
@@ -1149,7 +1150,16 @@ export default function UreaIndustrialInventoryIndex({
                                             <th className="px-5 py-4 text-left text-xs font-bold uppercase tracking-wider">Almacén</th>
                                             <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider">Inv. Inicial (TM)</th>
                                             <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider">Prod. Diaria (TM)</th>
-                                            <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-rose-300">Embarques (TM)</th>
+                                            <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-rose-300">
+                                                <Link
+                                                    href={route("apt.inventory.urea-industrial.shipments")}
+                                                    className="inline-flex items-center space-x-1.5 hover:text-white transition-colors"
+                                                    title="Ver salidas y embarques de Urea Industrial"
+                                                >
+                                                    <span>Embarques (TM)</span>
+                                                    <ExternalLink className="w-3.5 h-3.5 text-rose-300 opacity-80" />
+                                                </Link>
+                                            </th>
                                             <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-blue-300">Stock Disponible (TM)</th>
                                             <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider">% Distribución</th>
                                         </tr>

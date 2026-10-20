@@ -1183,14 +1183,7 @@ export default function UreaInventoryIndex({
                                                         {formatNumber(wh.daily_tons, 3)} TM
                                                     </td>
                                                     <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-bold text-rose-600">
-                                                        <Link
-                                                            href={route("apt.inventory.urea.shipments", { warehouse: wh.name })}
-                                                            className="inline-flex items-center justify-end group px-2 py-1 -mr-2 rounded-lg hover:bg-rose-50 hover:text-rose-800 transition-all font-bold"
-                                                            title={`Ver salidas de ${wh.name}`}
-                                                        >
-                                                            <span>{formatNumber(wh.shipped_tons ?? 0, 3)} TM</span>
-                                                            <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all text-rose-500" />
-                                                        </Link>
+                                                        {formatNumber(wh.shipped_tons ?? 0, 3)} TM
                                                     </td>
                                                     <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-black text-emerald-700 bg-emerald-50/40">
                                                         {formatNumber(wh.total_tons, 3)} TM
@@ -1218,14 +1211,7 @@ export default function UreaInventoryIndex({
                                                 {formatNumber(metrics?.totalDailyTons ?? 0, 3)} TM
                                             </td>
                                             <td className="px-5 py-4 text-right text-sm text-rose-800">
-                                                <Link
-                                                    href={route("apt.inventory.urea.shipments")}
-                                                    className="inline-flex items-center justify-end group px-2 py-1 -mr-2 rounded-lg hover:bg-rose-200/60 hover:text-rose-950 transition-all font-black"
-                                                    title="Ver todas las salidas de Urea Agrícola"
-                                                >
-                                                    <span>{formatNumber(metrics?.totalShippedTons ?? 0, 3)} TM</span>
-                                                    <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all text-rose-700" />
-                                                </Link>
+                                                {formatNumber(metrics?.totalShippedTons ?? 0, 3)} TM
                                             </td>
                                             <td className="px-5 py-4 text-right text-base text-emerald-900 bg-emerald-100/60">
                                                 {formatNumber(metrics?.totalStockTons ?? 0, 3)} TM

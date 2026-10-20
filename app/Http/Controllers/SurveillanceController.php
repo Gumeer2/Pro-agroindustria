@@ -21,12 +21,10 @@ class SurveillanceController extends Controller
      */
     public function index()
     {
+        $this->consolidateInPlantOperatorLogs();
         $pendingCount = AccessLog::whereIn('status', ['pending', 'rejected'])->count();
         $inPlantCount = AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
-            ->whereHas('shipmentOrders', function ($q) {
-                $q->whereNotIn('shipment_orders.status', ['closed']);
-            })
             ->count();
         $vetoedCount = ExitOperator::where('status', 'vetoed')->count();
 
@@ -42,6 +40,7 @@ class SurveillanceController extends Controller
      */
     public function accessIndex()
     {
+        $this->consolidateInPlantOperatorLogs();
         $pending = AccessLog::with(['subject', 'user', 'shipmentOrders'])
             ->whereIn('status', ['pending', 'rejected'])
             ->orderBy('created_at', 'desc')
@@ -49,9 +48,6 @@ class SurveillanceController extends Controller
 
         $inPlantCount = AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
-            ->whereHas('shipmentOrders', function ($q) {
-                $q->whereNotIn('shipment_orders.status', ['closed']);
-            })
             ->count();
 
         return Inertia::render('Surveillance/Access', [
@@ -127,13 +123,19 @@ class SurveillanceController extends Controller
     /**
      * Submodule 2: Salidas de Operadores (En Planta, Vincular Órdenes y Dar Salida)
      */
-    public function exitsIndex()
+    /**
+     * Consolidate duplicate in-plant access logs for the same operator.
+     * Keeps the most recent log as primary, merges all active shipment orders into it,
+     * and marks older redundant in-plant logs as completed/closed.
+     */
+    public function consolidateInPlantOperatorLogs()
     {
-        // Clean up duplicate empty logs for operators who already have an in-plant entry with orders
+        // 1. Clean up duplicate empty logs for operators who already have an in-plant entry with orders
         $inPlantWithOrdersOpIds = AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
             ->whereHas('shipmentOrders')
             ->pluck('subject_id')
+            ->filter()
             ->toArray();
 
         if (!empty($inPlantWithOrdersOpIds)) {
@@ -143,6 +145,69 @@ class SurveillanceController extends Controller
                 ->whereDoesntHave('shipmentOrders')
                 ->delete();
         }
+
+        // 2. Find all active in-plant logs
+        $inPlantLogs = AccessLog::with(['subject', 'shipmentOrders'])
+            ->where('status', 'in_plant')
+            ->whereNull('exit_at')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        // Group by operator identity (subject_type + operator name + tractor plate)
+        $grouped = [];
+        foreach ($inPlantLogs as $log) {
+            $subj = $log->subject;
+            $name = strtoupper(trim($subj?->operator_name ?? $subj?->name ?? ''));
+            $plate = strtoupper(trim($subj?->tractor_plate ?? ''));
+            $groupKey = !empty($name) ? ($log->subject_type . '|' . $name . '|' . $plate) : ($log->subject_type . '|' . $log->subject_id);
+
+            $grouped[$groupKey][] = $log;
+        }
+
+        foreach ($grouped as $key => $logsInGroup) {
+            if (count($logsInGroup) <= 1) {
+                continue;
+            }
+
+            // Primary log is the newest one (first in descending id order)
+            $primaryLog = $logsInGroup[0];
+            $mergedOrderIds = [];
+
+            foreach ($logsInGroup as $log) {
+                $orderIds = $log->shipmentOrders
+                    ->whereNotIn('status', ['closed', 'cancelled'])
+                    ->pluck('id')
+                    ->toArray();
+                foreach ($orderIds as $oid) {
+                    if (!in_array($oid, $mergedOrderIds)) {
+                        $mergedOrderIds[] = $oid;
+                    }
+                }
+            }
+
+            if (!empty($mergedOrderIds)) {
+                $primaryLog->shipmentOrders()->sync($mergedOrderIds);
+            }
+
+            // Close duplicate older logs
+            for ($i = 1; $i < count($logsInGroup); $i++) {
+                $dupLog = $logsInGroup[$i];
+                $dupLog->shipmentOrders()->detach();
+                $dupLog->update([
+                    'status'  => 'completed',
+                    'exit_at' => $primaryLog->entry_at ?? Carbon::now(),
+                    'notes'   => trim(($dupLog->notes ? $dupLog->notes . ' | ' : '') . "Consolidado en registro #{$primaryLog->id}"),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Submodule 2: Salidas de Operadores (En Planta, Vincular Órdenes y Dar Salida)
+     */
+    public function exitsIndex()
+    {
+        $this->consolidateInPlantOperatorLogs();
 
         $logs = AccessLog::with([
             'subject',
@@ -214,10 +279,17 @@ class SurveillanceController extends Controller
             return $log;
         });
 
+        // Ensure 1 unique entry per operator in plant
+        $uniqueInPlant = $inPlant->unique(function ($log) {
+            $name = strtoupper(trim($log->subject?->operator_name ?? $log->subject?->name ?? ''));
+            $plate = strtoupper(trim($log->subject?->tractor_plate ?? ''));
+            return !empty($name) ? ($name . '|' . $plate) : ('LOG_' . $log->id);
+        })->values();
+
         $pendingCount = AccessLog::whereIn('status', ['pending', 'rejected'])->count();
 
         return Inertia::render('Surveillance/Exits', [
-            'in_plant'      => $inPlant,
+            'in_plant'      => $uniqueInPlant,
             'pending_count' => $pendingCount,
         ]);
     }
@@ -861,6 +933,75 @@ class SurveillanceController extends Controller
         ]);
     }
 
+    /**
+     * Reporte Imprimible de Operadores Vetados (Padrón Oficial y Auditoría)
+     */
+    public function vetoReport(Request $request)
+    {
+        $search = trim($request->input('search', ''));
+        $dateFrom = $request->input('date_from', '');
+        $dateTo = $request->input('date_to', '');
+
+        // 1. Fetch all currently vetoed operators
+        $vetoedExitOperators = ExitOperator::with('vetoedByUser')
+            ->where('status', 'vetoed')
+            ->orderBy('vetoed_at', 'desc')
+            ->orderBy('updated_at', 'desc')
+            ->get()
+            ->map(fn($op) => $this->formatExitOperator($op));
+
+        $vetoedVesselOperators = VesselOperator::with('vetoedByUser')
+            ->where('status', 'vetoed')
+            ->orderBy('vetoed_at', 'desc')
+            ->orderBy('updated_at', 'desc')
+            ->get()
+            ->map(fn($vo) => $this->formatVesselOperator($vo));
+
+        $allVetoed = $vetoedExitOperators->concat($vetoedVesselOperators)->values();
+
+        // Optional search filter
+        if (!empty($search)) {
+            $q = mb_strtolower($search, 'UTF-8');
+            $allVetoed = $allVetoed->filter(function ($op) use ($q) {
+                return str_contains(mb_strtolower($op['name'] ?? '', 'UTF-8'), $q) ||
+                       str_contains(mb_strtolower($op['tractor_plate'] ?? '', 'UTF-8'), $q) ||
+                       str_contains(mb_strtolower($op['trailer_plate'] ?? '', 'UTF-8'), $q) ||
+                       str_contains(mb_strtolower($op['transport_line'] ?? '', 'UTF-8'), $q) ||
+                       str_contains(mb_strtolower($op['economic_number'] ?? '', 'UTF-8'), $q) ||
+                       str_contains(mb_strtolower($op['license'] ?? '', 'UTF-8'), $q) ||
+                       str_contains(mb_strtolower($op['veto_reason'] ?? '', 'UTF-8'), $q) ||
+                       str_contains((string)($op['id'] ?? ''), $q);
+            })->values();
+        }
+
+        // Optional date filters
+        if (!empty($dateFrom)) {
+            $allVetoed = $allVetoed->filter(function ($op) use ($dateFrom) {
+                return !empty($op['vetoed_at']) && Carbon::parse($op['vetoed_at'])->toDateString() >= $dateFrom;
+            })->values();
+        }
+
+        if (!empty($dateTo)) {
+            $allVetoed = $allVetoed->filter(function ($op) use ($dateTo) {
+                return !empty($op['vetoed_at']) && Carbon::parse($op['vetoed_at'])->toDateString() <= $dateTo;
+            })->values();
+        }
+
+        return Inertia::render('Surveillance/VetoReport', [
+            'operators'    => $allVetoed,
+            'filters'      => [
+                'search'    => $search,
+                'date_from' => $dateFrom,
+                'date_to'   => $dateTo,
+            ],
+            'auto_print'   => $request->boolean('print'),
+            'generated_at' => Carbon::now()->format('d/m/Y H:i'),
+            'supervisor'   => 'C. José Alfredo Fernández Jiadan',
+            'position'     => 'Jefe de Vigilancia Física',
+            'company'      => 'Pro-Agroindustria, S.A. de C.V.',
+        ]);
+    }
+
     public function searchOperators(Request $request)
     {
         $queryText = trim($request->input('q', ''));
@@ -1281,11 +1422,27 @@ class SurveillanceController extends Controller
             ->where('status', 'pending')
             ->delete();
 
-        // Check if operator already has an active in_plant log (e.g. from access QR scan)
-        $existingOpLog = AccessLog::where('subject_id', $subject->id)
-            ->where('subject_type', $type)
-            ->where('status', 'in_plant')
+        // Check if operator already has an active in_plant log (e.g. from access QR scan or prior order)
+        $opName = trim($subject->name ?? '');
+        $plate = trim($subject->tractor_plate ?? '');
+
+        $existingOpLog = AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
+            ->where(function ($q) use ($subject, $type, $opName, $plate) {
+                $q->where(function ($sq) use ($subject, $type) {
+                    $sq->where('subject_id', $subject->id)
+                       ->where('subject_type', $type);
+                });
+                if (!empty($opName)) {
+                    $q->orWhereHasMorph('subject', [ExitOperator::class], function ($oq) use ($opName, $plate) {
+                        $oq->where('name', $opName);
+                        if (!empty($plate) && $plate !== 'S/P') {
+                            $oq->where('tractor_plate', $plate);
+                        }
+                    });
+                }
+            })
+            ->latest('id')
             ->first();
 
         $now = Carbon::now();
@@ -1313,11 +1470,23 @@ class SurveillanceController extends Controller
         }
 
         // Clean up any other empty in-plant logs for this operator so they never appear twice
-        AccessLog::where('subject_id', $subject->id)
-            ->where('subject_type', $type)
-            ->where('status', 'in_plant')
+        AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
             ->where('id', '!=', $log->id)
+            ->where(function ($q) use ($subject, $type, $opName, $plate) {
+                $q->where(function ($sq) use ($subject, $type) {
+                    $sq->where('subject_id', $subject->id)
+                       ->where('subject_type', $type);
+                });
+                if (!empty($opName)) {
+                    $q->orWhereHasMorph('subject', [ExitOperator::class], function ($oq) use ($opName, $plate) {
+                        $oq->where('name', $opName);
+                        if (!empty($plate) && $plate !== 'S/P') {
+                            $oq->where('tractor_plate', $plate);
+                        }
+                    });
+                }
+            })
             ->whereDoesntHave('shipmentOrders')
             ->delete();
 
@@ -1433,11 +1602,27 @@ class SurveillanceController extends Controller
             ->where('status', 'pending')
             ->delete();
 
-        // Check if operator already has an active in_plant log (e.g. from access QR scan)
-        $existingOpLog = AccessLog::where('subject_id', $subject->id)
-            ->where('subject_type', $type)
-            ->where('status', 'in_plant')
+        // Check if operator already has an active in_plant log (e.g. from access QR scan or prior order)
+        $opName = trim($subject->name ?? '');
+        $plate = trim($subject->tractor_plate ?? '');
+
+        $existingOpLog = AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
+            ->where(function ($q) use ($subject, $type, $opName, $plate) {
+                $q->where(function ($sq) use ($subject, $type) {
+                    $sq->where('subject_id', $subject->id)
+                       ->where('subject_type', $type);
+                });
+                if (!empty($opName)) {
+                    $q->orWhereHasMorph('subject', [ExitOperator::class], function ($oq) use ($opName, $plate) {
+                        $oq->where('name', $opName);
+                        if (!empty($plate) && $plate !== 'S/P') {
+                            $oq->where('tractor_plate', $plate);
+                        }
+                    });
+                }
+            })
+            ->latest('id')
             ->first();
 
         $now = Carbon::now();
@@ -1465,11 +1650,23 @@ class SurveillanceController extends Controller
         }
 
         // Clean up any other empty in-plant logs for this operator so they never appear twice
-        AccessLog::where('subject_id', $subject->id)
-            ->where('subject_type', $type)
-            ->where('status', 'in_plant')
+        AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
             ->where('id', '!=', $log->id)
+            ->where(function ($q) use ($subject, $type, $opName, $plate) {
+                $q->where(function ($sq) use ($subject, $type) {
+                    $sq->where('subject_id', $subject->id)
+                       ->where('subject_type', $type);
+                });
+                if (!empty($opName)) {
+                    $q->orWhereHasMorph('subject', [ExitOperator::class], function ($oq) use ($opName, $plate) {
+                        $oq->where('name', $opName);
+                        if (!empty($plate) && $plate !== 'S/P') {
+                            $oq->where('tractor_plate', $plate);
+                        }
+                    });
+                }
+            })
             ->whereDoesntHave('shipmentOrders')
             ->delete();
 

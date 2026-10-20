@@ -202,10 +202,10 @@ export default function Exits({
         );
     };
 
-    const isItemSader = (item: { log: any; order: any }) => {
+    const isItemSader = (item: { log: any; order?: any }) => {
         if (item.order) {
             const o = item.order;
-            return (
+            return Boolean(
                 o.is_sader ||
                 (o.consigned_to && String(o.consigned_to).toUpperCase().includes("SADER")) ||
                 (o.client && String(o.client.business_name || o.client.name || o.client).toUpperCase().includes("SADER")) ||
@@ -218,12 +218,23 @@ export default function Exits({
 
     // Modal SADER and completion evaluations
     const modalHasSader = exitModalItems.some((item) => isItemSader(item));
-    const modalBlockedItems = exitModalItems.filter((item) => {
-        const o = item.order;
-        if (!o) return false;
-        const isCompleted = o.is_completed || o.has_destare || o.destare_status === "completed";
-        const isCancelled = o.is_cancelled || o.status === "cancelled";
-        return !isCompleted && !isCancelled;
+    const modalBlockedItems = exitModalItems.flatMap((item) => {
+        if (item.order) {
+            const o = item.order;
+            const isCompleted = o.is_completed || o.has_destare || o.destare_status === "completed";
+            const isCancelled = o.is_cancelled || o.status === "cancelled";
+            return (!isCompleted && !isCancelled) ? [{ log: item.log, order: o }] : [];
+        }
+        const orders = (item.log.shipment_orders_data || item.log.shipment_orders || []).filter(
+            (o: any) => o && o.status !== "closed"
+        );
+        return orders
+            .filter((o: any) => {
+                const isCompleted = o.is_completed || o.has_destare || o.destare_status === "completed";
+                const isCancelled = o.is_cancelled || o.status === "cancelled";
+                return !isCompleted && !isCancelled;
+            })
+            .map((o: any) => ({ log: item.log, order: o }));
     });
     const isModalExitBlocked = modalBlockedItems.length > 0;
 
@@ -269,7 +280,7 @@ export default function Exits({
                 {
                     onSuccess: () => {
                         setExitModalItems([]);
-                        setSelectedRowKeys((curr) => curr.filter((k) => k !== `${singleLogId}-order-${singleOrderId}`));
+                        setSelectedRowKeys([]);
                         setConvoyNumber("");
                         setConvoyValidated(false);
                         Swal.fire({
@@ -337,44 +348,26 @@ export default function Exits({
         return opName.includes(query) || plate.includes(query) || trailerPlate.includes(query) || econ.includes(query) || orders.includes(query);
     });
 
-    const inPlantWithOrdersCount = inPlantLogs.filter((log) => {
-        const orders = log.shipment_orders_data || log.shipment_orders;
-        return orders && orders.length > 0;
-    }).length;
+    const totalInPlantCount = inPlantLogs.length;
 
-    // Track operators that currently have orders linked
-    const operatorIdsWithOrders = new Set(
-        inPlantLogs
-            .filter((l) => {
-                const o = l.shipment_orders_data || l.shipment_orders;
-                return o && o.length > 0;
-            })
-            .map((l) => l.subject_id || l.subject?.id)
-            .filter(Boolean)
-    );
+    // 1 row per operator log (never duplicates operators)
+    const displayRows = filteredLogs.map((log) => {
+        const orders = (log.shipment_orders_data || log.shipment_orders || []).filter(
+            (o: any) => o && o.status !== "closed"
+        );
+        const uncompletedOrders = orders.filter(
+            (o: any) => !o.is_completed && !o.has_destare && o.destare_status !== "completed" && !o.is_cancelled && o.status !== "cancelled"
+        );
+        const hasUncompleted = uncompletedOrders.length > 0;
+        const canExit = !hasUncompleted;
 
-    // Flatten logs so each shipment order gets its own row
-    const displayRows = filteredLogs.flatMap((log) => {
-        const orders = log.shipment_orders_data || log.shipment_orders;
-        if (orders && orders.length > 0) {
-            return orders.map((order: any, idx: number) => ({
-                rowKey: `${log.id}-order-${order.id || idx}`,
-                log,
-                order,
-            }));
-        }
-
-        // If this operator already has an entry with an order, do not duplicate with an empty row
-        const opId = log.subject_id || log.subject?.id;
-        if (opId && operatorIdsWithOrders.has(opId)) {
-            return [];
-        }
-
-        return [{
-            rowKey: `${log.id}-no-order`,
+        return {
+            rowKey: `log-${log.id}`,
             log,
-            order: null,
-        }];
+            orders,
+            canExit,
+            uncompletedOrders,
+        };
     });
 
     // Toggle select all in-plant rows
@@ -439,7 +432,7 @@ export default function Exits({
                                         En Planta
                                     </p>
                                     <p className="text-lg font-black text-indigo-900 leading-none">
-                                        {inPlantWithOrdersCount}
+                                        {totalInPlantCount}
                                     </p>
                                 </div>
                             </div>
@@ -463,7 +456,9 @@ export default function Exits({
                             {selectedRowKeys.length > 0 && (
                                 <button
                                     onClick={() => {
-                                        const selected = displayRows.filter((r) => selectedRowKeys.includes(r.rowKey));
+                                        const selected = displayRows
+                                            .filter((r) => selectedRowKeys.includes(r.rowKey))
+                                            .map((r) => ({ log: r.log, order: null }));
                                         openExitModal(selected);
                                     }}
                                     className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-black text-xs uppercase tracking-wider bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-200 animate-pulse transition-all whitespace-nowrap"
@@ -537,10 +532,7 @@ export default function Exits({
                                         </td>
                                     </tr>
                                 ) : (
-                                    displayRows.map(({ rowKey, log, order }) => {
-                                        const isCancelled = order ? (order.is_cancelled || order.status === "cancelled") : false;
-                                        const isCompleted = order ? (order.is_completed || order.has_destare || order.destare_status === "completed") : true;
-                                        const rowCanExit = !order || isCompleted || isCancelled;
+                                    displayRows.map(({ rowKey, log, orders, canExit, uncompletedOrders }) => {
                                         const isChecked = selectedRowKeys.includes(rowKey);
 
                                         return (
@@ -574,55 +566,81 @@ export default function Exits({
                                                     </span>
                                                 </td>
 
-                                                {/* Column 2: Linked Shipment Order */}
+                                                {/* Column 2: Linked Shipment Orders (All orders for this operator stacked) */}
                                                 <td className="px-4 py-3.5">
-                                                    {order ? (
-                                                        <div
-                                                            className={`inline-flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold w-full max-w-md shadow-sm ${
-                                                                isCancelled
-                                                                    ? "bg-slate-100 border-slate-200 text-slate-700"
-                                                                    : isCompleted
-                                                                    ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                                                                    : "bg-amber-50 border-amber-200 text-amber-900"
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center gap-1.5">
-                                                                <FileText
-                                                                    className={`w-4 h-4 ${
-                                                                        isCancelled
-                                                                            ? "text-slate-500"
-                                                                            : isCompleted
-                                                                            ? "text-emerald-600"
-                                                                            : "text-amber-600"
-                                                                    }`}
-                                                                />
-                                                                <span className="font-mono">Folio: {order.folio ?? (order.id ? String(order.id).slice(0, 8) : "")}</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                                <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/80 font-bold uppercase text-gray-800 shadow-2xs">
-                                                                    {order.client?.business_name || order.client?.name || order.client || order.client_name || "Cliente"}
-                                                                </span>
-                                                                {order.is_sader && (
-                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase bg-emerald-600 text-white shadow-sm flex items-center gap-0.5">
-                                                                        🛡️ SADER / CONVOY
-                                                                    </span>
-                                                                )}
-                                                                <span
-                                                                    className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase border ${
-                                                                        isCancelled
-                                                                            ? "bg-slate-200 text-slate-800 border-slate-300"
-                                                                            : isCompleted
-                                                                            ? "bg-emerald-200 text-emerald-900 border-emerald-300"
-                                                                            : "bg-amber-200 text-amber-900 border-amber-300"
-                                                                    }`}
-                                                                >
-                                                                    {isCancelled
-                                                                        ? "Cancelada"
-                                                                        : isCompleted
-                                                                        ? "Completada / Destarada"
-                                                                        : "Pendiente Báscula"}
-                                                                </span>
-                                                            </div>
+                                                    {orders.length > 0 ? (
+                                                        <div className="flex flex-col gap-2 max-w-lg">
+                                                            {orders.map((order: any, idx: number) => {
+                                                                const isCancelled = order.is_cancelled || order.status === "cancelled";
+                                                                const isCompleted = order.is_completed || order.has_destare || order.destare_status === "completed";
+
+                                                                return (
+                                                                    <div
+                                                                        key={order.id || idx}
+                                                                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold w-full shadow-2xs transition-all ${
+                                                                            isCancelled
+                                                                                ? "bg-slate-100 border-slate-200 text-slate-700"
+                                                                                : isCompleted
+                                                                                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                                                                                : "bg-amber-50 border-amber-200 text-amber-900"
+                                                                        }`}
+                                                                    >
+                                                                        <div className="flex items-center gap-1.5 min-w-0">
+                                                                            <FileText
+                                                                                className={`w-4 h-4 flex-shrink-0 ${
+                                                                                    isCancelled
+                                                                                        ? "text-slate-500"
+                                                                                        : isCompleted
+                                                                                        ? "text-emerald-600"
+                                                                                        : "text-amber-600"
+                                                                                }`}
+                                                                            />
+                                                                            <span className="font-mono">Folio: {order.folio ?? (order.id ? String(order.id).slice(0, 8) : "")}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                                                            <span
+                                                                                className="text-[10px] px-2 py-0.5 rounded-md bg-white/90 font-bold uppercase text-gray-800 shadow-2xs max-w-[130px] truncate"
+                                                                                title={order.client?.business_name || order.client?.name || order.client || order.client_name || "Cliente"}
+                                                                            >
+                                                                                {order.client?.business_name || order.client?.name || order.client || order.client_name || "Cliente"}
+                                                                            </span>
+                                                                            {order.is_sader && (
+                                                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase bg-emerald-600 text-white shadow-sm flex items-center gap-0.5">
+                                                                                    🛡️ SADER / CONVOY
+                                                                                </span>
+                                                                            )}
+                                                                            <span
+                                                                                className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase border ${
+                                                                                    isCancelled
+                                                                                        ? "bg-slate-200 text-slate-800 border-slate-300"
+                                                                                        : isCompleted
+                                                                                        ? "bg-emerald-200 text-emerald-900 border-emerald-300"
+                                                                                        : "bg-amber-200 text-amber-900 border-amber-300"
+                                                                                }`}
+                                                                            >
+                                                                                {isCancelled
+                                                                                    ? "Cancelada"
+                                                                                    : isCompleted
+                                                                                    ? "Completada / Destarada"
+                                                                                    : "Pendiente Báscula"}
+                                                                            </span>
+                                                                            {orders.length > 1 && isCompleted && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        openExitModal([{ log, order }]);
+                                                                                    }}
+                                                                                    className="text-[9px] font-black text-rose-700 hover:text-white hover:bg-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md transition-all shadow-2xs"
+                                                                                    title={`Dar salida individual solo a esta orden (${order.folio})`}
+                                                                                >
+                                                                                    Salida Orden
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
                                                         </div>
                                                     ) : log.subject_type?.includes("Vessel") ? (
                                                         <span className="text-xs text-gray-400 italic">No aplica (Barco)</span>
@@ -664,26 +682,29 @@ export default function Exits({
                                                 {/* Column 5: Actions */}
                                                 <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium">
                                                     <div className="inline-flex items-center justify-center gap-2">
-                                                        {!rowCanExit ? (
+                                                        {!canExit ? (
                                                             <button
                                                                 onClick={() => {
+                                                                    const uncompletedFoliosStr = uncompletedOrders
+                                                                        .map((o: any) => o.folio || o.id)
+                                                                        .join(", ");
                                                                     Swal.fire({
                                                                         icon: "warning",
-                                                                        title: "Orden No Completada",
-                                                                        html: `<p class="text-sm font-medium">No se puede registrar la salida de la orden <b>${order?.folio || order?.id}</b> del operador <b>${log.subject?.operator_name || log.subject?.name}</b>.</p><div class="text-xs text-amber-900 bg-amber-50 p-3 rounded-xl mt-3 border border-amber-200 text-left"><b>Estado:</b> Pendiente en báscula / destare.<p class="mt-2 text-slate-600 font-normal">Debe completarse el proceso de pesaje / destare en báscula antes de marcar la salida de esta orden.</p></div>`,
+                                                                        title: "Salida Bloqueada por Báscula",
+                                                                        html: `<p class="text-sm font-medium">No se puede registrar la salida del operador <b>${log.subject?.operator_name || log.subject?.name}</b>.</p><div class="text-xs text-amber-900 bg-amber-50 p-3 rounded-xl mt-3 border border-amber-200 text-left"><b>Orden(es) pendiente(s) en báscula / destare:</b><p class="font-bold mt-1 text-slate-800">${uncompletedFoliosStr}</p><p class="mt-2 text-slate-600 font-normal">Debe completarse el proceso de pesaje y destare en báscula antes de autorizar la salida del vehículo.</p></div>`,
                                                                         confirmButtonColor: "#4f46e5",
                                                                         confirmButtonText: "Entendido",
                                                                     });
                                                                 }}
                                                                 className="text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-3 py-2 rounded-xl transition-all shadow-sm font-black text-xs uppercase inline-flex items-center gap-1.5"
-                                                                title="Salida bloqueada: Orden pendiente por completar en báscula"
+                                                                title="Salida bloqueada: Órdenes pendientes por completar en báscula"
                                                             >
                                                                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                                                                 Salida Bloqueada
                                                             </button>
                                                         ) : (
                                                             <button
-                                                                onClick={() => openExitModal([{ log, order }])}
+                                                                onClick={() => openExitModal([{ log, order: null }])}
                                                                 className="text-white bg-red-600 hover:bg-red-700 px-3.5 py-2 rounded-xl transition-all shadow-md shadow-red-100 font-black text-xs uppercase inline-flex items-center gap-1.5"
                                                             >
                                                                 <LogOut className="w-3.5 h-3.5" />
@@ -886,7 +907,7 @@ export default function Exits({
                                     </p>
 
                                     {/* Order information for single item */}
-                                    {exitModalItems[0]?.order && (
+                                    {exitModalItems[0]?.order ? (
                                         <div className="pt-2 border-t border-slate-200 mt-2 space-y-1">
                                             <p className="text-[11px] font-black uppercase text-slate-600 flex items-center gap-1">
                                                 <FileText className="w-3.5 h-3.5 text-indigo-600" />
@@ -899,35 +920,56 @@ export default function Exits({
                                                 </span>
                                             </div>
                                         </div>
-                                    )}
+                                    ) : (exitModalItems[0]?.log?.shipment_orders_data || exitModalItems[0]?.log?.shipment_orders || []).length > 0 ? (
+                                        <div className="pt-2 border-t border-slate-200 mt-2 space-y-1.5">
+                                            <p className="text-[11px] font-black uppercase text-slate-600 flex items-center gap-1">
+                                                <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                                                Órdenes vinculadas a salir ({(exitModalItems[0]?.log?.shipment_orders_data || exitModalItems[0]?.log?.shipment_orders || []).length}):
+                                            </p>
+                                            <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                                                {(exitModalItems[0]?.log?.shipment_orders_data || exitModalItems[0]?.log?.shipment_orders || []).map((o: any, idx: number) => (
+                                                    <div key={idx} className="text-xs font-bold text-indigo-950 flex justify-between bg-white px-3 py-2 rounded-xl border border-slate-200">
+                                                        <span>Folio: {o.folio ?? o.id}</span>
+                                                        <span className="font-normal text-slate-600 truncate max-w-[200px]">
+                                                            {o.client?.business_name || o.client?.name || o.client || o.client_name || ""}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : null}
                                 </div>
                             ) : (
                                 <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 max-h-48 overflow-y-auto space-y-1.5">
-                                    {exitModalItems.map((item, idx) => (
-                                        <div
-                                            key={`${item.log.id}-${item.order?.id || idx}`}
-                                            className="flex items-center justify-between text-xs font-bold bg-white p-2.5 rounded-xl border border-slate-100"
-                                        >
-                                            <div className="flex flex-col">
-                                                <span className="text-gray-900 uppercase truncate max-w-[200px]">
-                                                    {item.log.subject?.operator_name || item.log.subject?.name}
-                                                </span>
-                                                <span className="text-[10px] text-slate-500 font-normal">
-                                                    {item.order ? `Folio: ${item.order.folio ?? item.order.id}` : "Sin orden vinculada"}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <span className="font-mono text-[11px] text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
-                                                    T: {item.log.subject?.tractor_plate || "S/P"}
-                                                </span>
-                                                {item.log.subject?.trailer_plate && (
-                                                    <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
-                                                        R: {item.log.subject?.trailer_plate}
+                                    {exitModalItems.map((item, idx) => {
+                                        const itemOrders = item.order ? [item.order] : (item.log.shipment_orders_data || item.log.shipment_orders || []);
+                                        const orderFolios = itemOrders.map((o: any) => o.folio ?? o.id).join(", ");
+                                        return (
+                                            <div
+                                                key={`${item.log.id}-${item.order?.id || idx}`}
+                                                className="flex items-center justify-between text-xs font-bold bg-white p-2.5 rounded-xl border border-slate-100"
+                                            >
+                                                <div className="flex flex-col">
+                                                    <span className="text-gray-900 uppercase truncate max-w-[200px]">
+                                                        {item.log.subject?.operator_name || item.log.subject?.name}
                                                     </span>
-                                                )}
+                                                    <span className="text-[10px] text-slate-500 font-normal">
+                                                        {orderFolios ? `Folio(s): ${orderFolios}` : "Sin órdenes vinculadas"}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="font-mono text-[11px] text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                                                        T: {item.log.subject?.tractor_plate || "S/P"}
+                                                    </span>
+                                                    {item.log.subject?.trailer_plate && (
+                                                        <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                                                            R: {item.log.subject?.trailer_plate}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

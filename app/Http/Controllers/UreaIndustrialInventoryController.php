@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Lot;
 use App\Models\UreaDailyProduction;
 use App\Models\UreaInitialInventory;
+use App\Services\UreaStockService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
 use Illuminate\Validation\Rule;
 
@@ -255,5 +257,86 @@ class UreaIndustrialInventoryController extends Controller
         $inventory->delete();
 
         return redirect()->back()->with('success', 'Registro de inventario inicial de Urea Industrial eliminado correctamente.');
+    }
+
+    /**
+     * Display the Urea Industrial Shipments/Exits report page with date and warehouse filtering.
+     */
+    public function shipments(Request $request)
+    {
+        $allExits = UreaStockService::getCompletedExitsList('industrial');
+
+        $filtered = $allExits;
+
+        // Filter by warehouse
+        if ($request->filled('warehouse') && $request->warehouse !== 'all') {
+            $warehouseFilter = UreaStockService::normalizeWarehouse($request->input('warehouse')) ?: trim($request->input('warehouse'));
+            $filtered = $filtered->filter(function ($item) use ($warehouseFilter) {
+                $itemWh = UreaStockService::normalizeWarehouse($item['warehouse']) ?: trim($item['warehouse']);
+                return strcasecmp($itemWh, $warehouseFilter) === 0;
+            });
+        }
+
+        // Filter by date range
+        if ($request->filled('date_from')) {
+            $dateFrom = $request->input('date_from');
+            $filtered = $filtered->filter(function ($item) use ($dateFrom) {
+                return !empty($item['date_only']) && $item['date_only'] >= $dateFrom;
+            });
+        }
+
+        if ($request->filled('date_to')) {
+            $dateTo = $request->input('date_to');
+            $filtered = $filtered->filter(function ($item) use ($dateTo) {
+                return !empty($item['date_only']) && $item['date_only'] <= $dateTo;
+            });
+        }
+
+        // Filter by search query
+        if ($request->filled('search')) {
+            $search = mb_strtolower(trim($request->input('search')));
+            $filtered = $filtered->filter(function ($item) use ($search) {
+                return str_contains(mb_strtolower($item['ticket_number'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['shipment_folio'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['lot_folio'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['client'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['operator_name'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['transport_company'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['tractor_plate'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['trailer_plate'] ?? ''), $search)
+                    || str_contains(mb_strtolower($item['warehouse'] ?? ''), $search);
+            });
+        }
+
+        // Calculate totals for the filtered subset and overall
+        $filteredCount = $filtered->count();
+        $filteredTons = round($filtered->sum('net_tons'), 3);
+
+        $allCount = $allExits->count();
+        $allTons = round($allExits->sum('net_tons'), 3);
+
+        // Standard list of warehouses
+        $warehouses = ['Almacén 1', 'Almacén 2', 'Almacén 3', 'Almacén 4', 'Almacén 5'];
+
+        // Pagination
+        $perPage = 15;
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $results = $filtered->forPage($page, $perPage)->values();
+        $paginated = new LengthAwarePaginator($results, $filteredCount, $perPage, $page, [
+            'path' => $request->url(),
+            'query' => $request->query(),
+        ]);
+
+        return Inertia::render('APT/Inventory/UreaIndustrial/Shipments', [
+            'shipments' => $paginated,
+            'metrics' => [
+                'filtered_count' => $filteredCount,
+                'filtered_tons' => $filteredTons,
+                'total_count' => $allCount,
+                'total_tons' => $allTons,
+            ],
+            'warehouses' => $warehouses,
+            'filters' => $request->only(['warehouse', 'date_from', 'date_to', 'search']),
+        ]);
     }
 }
