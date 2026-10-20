@@ -145,29 +145,23 @@ class UreaStockService
     }
 
     /**
-     * Get completed sales / shipment exits grouped by warehouse for a product type.
-     * Returns array ['total' => float, 'by_warehouse' => ['Almacen 1' => float, ...]]
+     * Get the detailed list of completed sales / shipment exits for a product type.
+     * Returns an Illuminate\Support\Collection of arrays.
      */
-    public static function getCompletedExits(string $productType): array
+    public static function getCompletedExitsList(string $productType): \Illuminate\Support\Collection
     {
         $normalizedType = strtolower($productType);
-        $byWarehouse = [
-            'Almacen 1' => 0.0,
-            'Almacen 2' => 0.0,
-            'Almacen 3' => 0.0,
-            'Almacen 4' => 0.0,
-            'Almacen 5' => 0.0,
-        ];
-        $totalTons = 0.0;
+        $list = collect();
 
-        // Query all completed weight tickets that represent sales / shipment exits
         $tickets = WeightTicket::with([
             'loadingOrder.product',
             'loadingOrder.shipment_order.product',
             'loadingOrder.shipment_order.items.product',
+            'loadingOrder.shipment_order.client',
             'loadingOrder.lot',
             'shipmentOrder.product',
             'shipmentOrder.items.product',
+            'shipmentOrder.client',
             'shipmentOrder.lot',
             'lot',
         ])
@@ -183,13 +177,14 @@ class UreaStockService
                             });
                     });
             })
+            ->orderBy('weigh_out_at', 'desc')
+            ->orderBy('id', 'desc')
             ->get();
 
         foreach ($tickets as $ticket) {
             $lo = $ticket->loadingOrder;
             $so = $ticket->shipmentOrder ?? $lo?->shipment_order;
 
-            // Determine product type
             $type = null;
             if ($lo) {
                 $type = self::getOrderProductType($lo);
@@ -202,23 +197,76 @@ class UreaStockService
                 continue;
             }
 
-            // Calculate Net Weight in TM
             $net = (float) $ticket->net_weight;
             $netTons = $net >= 100 ? ($net / 1000) : $net;
+            $gross = (float) $ticket->gross_weight;
+            $grossTons = $gross >= 100 ? ($gross / 1000) : $gross;
+            $tare = (float) $ticket->tare_weight;
+            $tareTons = $tare >= 100 ? ($tare / 1000) : $tare;
 
-            // Determine Origin Warehouse
             $rawWarehouse = $ticket->lot?->warehouse
                 ?? $lo?->warehouse
                 ?? $so?->warehouse
                 ?? $so?->lot?->warehouse
                 ?? $lo?->lot?->warehouse;
 
-            $warehouseKey = self::normalizeWarehouse($rawWarehouse);
+            $warehouseKey = self::normalizeWarehouse($rawWarehouse) ?: ($rawWarehouse ?: 'Sin Almacén');
 
-            $totalTons += $netTons;
+            $dateObj = $ticket->weigh_out_at ?? $ticket->created_at;
+            $date = $dateObj ? $dateObj->format('Y-m-d H:i') : '';
+            $dateOnly = $dateObj ? $dateObj->format('Y-m-d') : '';
 
-            if ($warehouseKey && isset($byWarehouse[$warehouseKey])) {
-                $byWarehouse[$warehouseKey] += $netTons;
+            $clientName = $so?->client?->business_name
+                ?? ($so?->client_name
+                ?? ($lo?->client_name ?? 'N/D'));
+
+            $list->push([
+                'id' => $ticket->id,
+                'ticket_number' => $ticket->ticket_number,
+                'shipment_order_id' => $so?->id,
+                'shipment_folio' => $so?->folio ?? ($lo?->folio ?? 'N/D'),
+                'client' => $clientName,
+                'warehouse' => $warehouseKey,
+                'raw_warehouse' => $rawWarehouse,
+                'net_tons' => round($netTons, 3),
+                'gross_tons' => round($grossTons, 3),
+                'tare_tons' => round($tareTons, 3),
+                'net_weight_kg' => round($net, 2),
+                'tractor_plate' => $so?->tractor_plate ?? ($lo?->tractor_plate ?? 'N/D'),
+                'trailer_plate' => $so?->trailer_plate ?? ($lo?->trailer_plate ?? 'N/D'),
+                'operator_name' => $so?->operator_name ?? ($lo?->operator_name ?? 'N/D'),
+                'transport_company' => $so?->transport_company ?? ($lo?->transport_company ?? 'N/D'),
+                'presentation' => $so?->presentation ?? 'GRANEL',
+                'date' => $date,
+                'date_only' => $dateOnly,
+            ]);
+        }
+
+        return $list;
+    }
+
+    /**
+     * Get completed sales / shipment exits grouped by warehouse for a product type.
+     * Returns array ['total' => float, 'by_warehouse' => ['Almacen 1' => float, ...]]
+     */
+    public static function getCompletedExits(string $productType): array
+    {
+        $byWarehouse = [
+            'Almacen 1' => 0.0,
+            'Almacen 2' => 0.0,
+            'Almacen 3' => 0.0,
+            'Almacen 4' => 0.0,
+            'Almacen 5' => 0.0,
+        ];
+        $totalTons = 0.0;
+
+        $list = self::getCompletedExitsList($productType);
+
+        foreach ($list as $exit) {
+            $totalTons += $exit['net_tons'];
+            $wh = $exit['warehouse'];
+            if (isset($byWarehouse[$wh])) {
+                $byWarehouse[$wh] += $exit['net_tons'];
             }
         }
 

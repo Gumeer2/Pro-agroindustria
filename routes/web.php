@@ -226,6 +226,7 @@ Route::middleware('auth')->group(function () {
 
         // Urea Agrícola Inventory Management (Daily Production & Initial Inventory)
         Route::get('/apt/inventory/urea', [\App\Http\Controllers\UreaInventoryController::class, 'index'])->name('apt.inventory.urea.index');
+        Route::get('/apt/inventory/urea/shipments', [\App\Http\Controllers\UreaInventoryController::class, 'shipments'])->name('apt.inventory.urea.shipments');
         Route::post('/apt/inventory/urea/daily', [\App\Http\Controllers\UreaInventoryController::class, 'storeDaily'])->name('apt.inventory.urea.daily.store');
         Route::put('/apt/inventory/urea/daily/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'updateDaily'])->name('apt.inventory.urea.daily.update');
         Route::delete('/apt/inventory/urea/daily/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea.daily.destroy');
