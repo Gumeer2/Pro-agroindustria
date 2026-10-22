@@ -109,6 +109,7 @@ Route::middleware('auth')->group(function () {
 
         // Estatus de Unidades in Traffic
         Route::get('/traffic/unit-status', [\App\Http\Controllers\TrafficController::class, 'unitStatusIndex'])->name('traffic.unit-status.index');
+        Route::get('/traffic/unit-status/export', [\App\Http\Controllers\TrafficController::class, 'exportUnitStatusExcel'])->name('traffic.unit-status.export');
         Route::patch('/traffic/unit-status/{id}/observations', [\App\Http\Controllers\TrafficController::class, 'updateObservations'])->name('traffic.unit-status.observations');
 
         Route::resource('traffic', \App\Http\Controllers\TrafficController::class);

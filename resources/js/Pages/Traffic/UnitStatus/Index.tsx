@@ -16,7 +16,7 @@ import {
     Filter,
     Calendar,
     AlertCircle,
-    Printer,
+    FileSpreadsheet,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import axios from "axios";
@@ -84,9 +84,14 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
         });
     };
 
-    // Imprimir reporte
-    const handlePrint = () => {
-        window.print();
+    // Exportar reporte a Excel
+    const handleExportExcel = () => {
+        const params = new URLSearchParams();
+        if (search) params.append("search", search);
+        if (selectedStatus && selectedStatus !== "all") params.append("status", selectedStatus);
+        if (selectedDate) params.append("date", selectedDate);
+        const queryStr = params.toString();
+        window.location.href = route("traffic.unit-status.export") + (queryStr ? `?${queryStr}` : "");
     };
 
     // Aplicar filtros
@@ -271,12 +276,12 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
 
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={handlePrint}
-                            className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/10 flex items-center gap-2 text-xs font-bold shadow-sm"
-                            title="Imprimir reporte de estatus"
+                            onClick={handleExportExcel}
+                            className="p-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-xl transition-all border border-emerald-400/30 flex items-center gap-2 text-xs font-bold shadow-sm"
+                            title="Exportar reporte de estatus a Excel"
                         >
-                            <Printer className="w-4 h-4 text-blue-200" />
-                            <span>Imprimir</span>
+                            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                            <span>Exportar Excel</span>
                         </button>
 
                         <button

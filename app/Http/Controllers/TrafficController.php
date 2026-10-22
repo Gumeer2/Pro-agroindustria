@@ -15,6 +15,8 @@ use App\Models\AccessLog;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\UnitStatusExport;
 
 class TrafficController extends Controller
 {
@@ -131,8 +133,39 @@ class TrafficController extends Controller
 
     /**
      * Estatus de Unidades: Monitoreo operativo en tiempo real para Tráfico
+     */    public function unitStatusIndex(Request $request)
+    {
+        $data = $this->getUnitStatusData($request);
+
+        return Inertia::render('Traffic/UnitStatus/Index', [
+            'units' => $data['filteredRows'],
+            'filters' => [
+                'search' => $data['search'],
+                'status' => $data['statusFilter'],
+                'date' => $data['date'],
+            ],
+            'stats' => $data['stats'],
+        ]);
+    }
+
+    /**
+     * Exporta el reporte de Estatus de Unidades a Excel (.xlsx)
      */
-    public function unitStatusIndex(Request $request)
+    public function exportUnitStatusExcel(Request $request)
+    {
+        $data = $this->getUnitStatusData($request);
+        $fileName = 'Estatus_Unidades_' . date('Ymd_His') . '.xlsx';
+
+        return Excel::download(
+            new UnitStatusExport($data['filteredRows']),
+            $fileName
+        );
+    }
+
+    /**
+     * Resuelve los datos consolidados y filtrados para el módulo Estatus de Unidades
+     */
+    protected function getUnitStatusData(Request $request): array
     {
         $search = $request->input('search', '');
         $statusFilter = $request->input('status', 'all');
@@ -341,15 +374,14 @@ class TrafficController extends Controller
             'total_tons' => $allRows->sum('programmed_tons'),
         ];
 
-        return Inertia::render('Traffic/UnitStatus/Index', [
-            'units' => $filteredRows->values(),
-            'filters' => [
-                'search' => $search,
-                'status' => $statusFilter,
-                'date' => $date,
-            ],
+        return [
+            'filteredRows' => $filteredRows->values(),
+            'allRows' => $allRows,
+            'search' => $search,
+            'statusFilter' => $statusFilter,
+            'date' => $date,
             'stats' => $stats,
-        ]);
+        ];
     }
 
     /**
