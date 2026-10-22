@@ -107,6 +107,10 @@ Route::middleware('auth')->group(function () {
         Route::put('/traffic/products/{id}', [\App\Http\Controllers\TrafficController::class , 'productsUpdate'])->name('traffic.products.update');
         Route::delete('/traffic/products/{id}', [\App\Http\Controllers\TrafficController::class , 'productsDestroy'])->name('traffic.products.destroy');
 
+        // Estatus de Unidades in Traffic
+        Route::get('/traffic/unit-status', [\App\Http\Controllers\TrafficController::class, 'unitStatusIndex'])->name('traffic.unit-status.index');
+        Route::patch('/traffic/unit-status/{id}/observations', [\App\Http\Controllers\TrafficController::class, 'updateObservations'])->name('traffic.unit-status.observations');
+
         Route::resource('traffic', \App\Http\Controllers\TrafficController::class);
 
         Route::resource('surveillance', \App\Http\Controllers\SurveillanceController::class)->only(['index', 'store', 'destroy']);

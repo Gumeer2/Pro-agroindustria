@@ -3,10 +3,19 @@ import { Head, Link, router } from "@inertiajs/react";
 import {
     Box,
     ShieldCheck,
+    Truck,
 } from "lucide-react";
 
 export default function Index({ auth }: { auth: any }) {
     const menuItems = [
+        {
+            name: "Estatus de Unidades",
+            icon: Truck,
+            href: route("traffic.unit-status.index"),
+            description: "Seguimiento en tiempo real de unidades, carga, almacén y estatus.",
+            color: "bg-blue-50 text-blue-600",
+            hover: "hover:border-blue-500",
+        },
         {
             name: "Gestión Pesos Burreo",
             icon: ShieldCheck,
