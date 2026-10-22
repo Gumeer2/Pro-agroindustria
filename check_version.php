@@ -6,9 +6,11 @@ echo "<p>Current Server Time: " . date('Y-m-d H:i:s') . "</p>";
 
 $files = [
     'routes/web.php',
-    'app/Http/Controllers/WeightTicketController.php',
-    'resources/js/Pages/Scale/EntryMP.tsx',
-    'resources/js/Pages/Scale/Index.tsx'
+    'app/Exports/UnitStatusExport.php',
+    'app/Http/Controllers/TrafficController.php',
+    'resources/js/Pages/Traffic/UnitStatus/Index.tsx',
+    'public/build/manifest.json',
+    'public/build/assets/Index-CGRtczOP.js'
 ];
 
 echo "<table border='1' cellpadding='10'>";

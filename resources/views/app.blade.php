@@ -231,7 +231,7 @@
 
     <!-- Scripts -->
     @routes
-    <!-- Cache Buster: v=4.0-clean-labels -->
+    <!-- Cache Buster: v=4.1-unitstatus-excel -->
     @viteReactRefresh
     @vite('resources/js/app.tsx')
     @inertiaHead
