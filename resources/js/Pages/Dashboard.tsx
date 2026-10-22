@@ -79,13 +79,13 @@ export default function Dashboard({
 
     // --- HELPERS ---
     const formatTonnes = (val: number | any) =>
-        new Intl.NumberFormat("es-ES", {
+        new Intl.NumberFormat("en-US", {
             minimumFractionDigits: 3,
             maximumFractionDigits: 3,
         }).format((val || 0) / 1000);
 
     const formatMT = (val: number | any) =>
-        new Intl.NumberFormat("es-ES", {
+        new Intl.NumberFormat("en-US", {
             minimumFractionDigits: 3,
             maximumFractionDigits: 3,
         }).format(val || 0);
