@@ -138,7 +138,8 @@ class TrafficController extends Controller
         $data = $this->getUnitStatusData($request);
 
         return Inertia::render('Traffic/UnitStatus/Index', [
-            'units' => $data['filteredRows'],
+            'units' => $data['allRows']->values(),
+            'all_units' => $data['allRows']->values(),
             'filters' => [
                 'search' => $data['search'],
                 'status' => $data['statusFilter'],

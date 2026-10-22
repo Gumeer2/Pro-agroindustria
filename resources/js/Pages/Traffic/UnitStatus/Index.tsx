@@ -18,7 +18,7 @@ import {
     AlertCircle,
     FileSpreadsheet,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 
 interface UnitRow {
@@ -46,6 +46,7 @@ interface UnitRow {
 interface PageProps {
     auth: any;
     units: UnitRow[];
+    all_units?: UnitRow[];
     filters: {
         search: string;
         status: string;
@@ -59,7 +60,7 @@ interface PageProps {
     };
 }
 
-export default function Index({ auth, units, filters, stats }: PageProps) {
+export default function Index({ auth, units, all_units, filters, stats }: PageProps) {
     const [search, setSearch] = useState(filters.search || "");
     const [selectedStatus, setSelectedStatus] = useState(filters.status || "all");
     const [selectedDate, setSelectedDate] = useState(filters.date || "");
@@ -69,12 +70,64 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
     const [editingUnit, setEditingUnit] = useState<UnitRow | null>(null);
     const [obsText, setObsText] = useState("");
     const [isSavingObs, setIsSavingObs] = useState(false);
-    const [localUnits, setLocalUnits] = useState<UnitRow[]>(units);
 
-    // Sincronizar unidades locales al recibir nuevas props
+    // Conjunto base de unidades
+    const [allUnits, setAllUnits] = useState<UnitRow[]>(all_units && all_units.length > 0 ? all_units : units);
+
+    // Sincronizar unidades al recibir nuevas props
     useEffect(() => {
-        setLocalUnits(units);
-    }, [units]);
+        setAllUnits(all_units && all_units.length > 0 ? all_units : units);
+    }, [all_units, units]);
+
+    // Obtener ruta base relativa segura sin depender de APP_URL o Ziggy
+    const getBaseUrl = () => {
+        if (typeof window !== "undefined") {
+            return window.location.pathname.replace(/\/+$/, "");
+        }
+        return "/traffic/unit-status";
+    };
+
+    // Filtrado reactivo e instantáneo en cliente (0ms de latencia, inmune a diferencias de dominio)
+    const displayedUnits = useMemo(() => {
+        return allUnits.filter((row) => {
+            // Filtro por estatus
+            if (selectedStatus !== "all" && row.status_key !== selectedStatus) {
+                return false;
+            }
+
+            // Filtro por texto de búsqueda
+            if (search.trim()) {
+                const q = search.trim().toLowerCase();
+                const matchesFolio = (row.folio || "").toLowerCase().includes(q);
+                const matchesTractor = (row.tractor_plate || "").toLowerCase().includes(q);
+                const matchesTrailer = (row.trailer_plate || "").toLowerCase().includes(q);
+                const matchesOperator = (row.operator_name || "").toLowerCase().includes(q);
+                const matchesClient = (row.client || "").toLowerCase().includes(q);
+                const matchesProduct = (row.product || "").toLowerCase().includes(q);
+                const matchesTransport = (row.transport_company || "").toLowerCase().includes(q);
+                const matchesWarehouse = (row.warehouse || "").toLowerCase().includes(q);
+                const matchesLot = (row.lot_location || "").toLowerCase().includes(q);
+                const matchesObs = (row.observations || "").toLowerCase().includes(q);
+
+                if (
+                    !matchesFolio &&
+                    !matchesTractor &&
+                    !matchesTrailer &&
+                    !matchesOperator &&
+                    !matchesClient &&
+                    !matchesProduct &&
+                    !matchesTransport &&
+                    !matchesWarehouse &&
+                    !matchesLot &&
+                    !matchesObs
+                ) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }, [allUnits, selectedStatus, search]);
 
     // Recargar datos
     const refreshData = () => {
@@ -84,23 +137,38 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
         });
     };
 
-    // Exportar reporte a Excel
+    // Exportar reporte a Excel con ruta relativa segura
     const handleExportExcel = () => {
         const params = new URLSearchParams();
-        if (search) params.append("search", search);
+        if (search.trim()) params.append("search", search.trim());
         if (selectedStatus && selectedStatus !== "all") params.append("status", selectedStatus);
         if (selectedDate) params.append("date", selectedDate);
         const queryStr = params.toString();
-        window.location.href = route("traffic.unit-status.export") + (queryStr ? `?${queryStr}` : "");
+        window.location.href = `${getBaseUrl()}/export${queryStr ? `?${queryStr}` : ""}`;
     };
 
-    // Aplicar filtros
-    const handleFilterSubmit = (status = selectedStatus, date = selectedDate, text = search) => {
+    // Cambio instantáneo de estatus al hacer clic en cualquier botón
+    const handleStatusChange = (status: string) => {
+        setSelectedStatus(status);
+        try {
+            const url = new URL(window.location.href);
+            if (status && status !== "all") {
+                url.searchParams.set("status", status);
+            } else {
+                url.searchParams.delete("status");
+            }
+            window.history.replaceState({}, "", url.toString());
+        } catch (e) {}
+    };
+
+    // Aplicar filtro de fecha desde el servidor usando ruta relativa
+    const handleDateChange = (date: string) => {
+        setSelectedDate(date);
         router.get(
-            route("traffic.unit-status.index"),
+            window.location.pathname,
             {
-                search: text,
-                status: status,
+                search: search,
+                status: selectedStatus,
                 date: date,
             },
             {
@@ -113,25 +181,31 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
 
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
-            handleFilterSubmit();
+            try {
+                const url = new URL(window.location.href);
+                if (search.trim()) {
+                    url.searchParams.set("search", search.trim());
+                } else {
+                    url.searchParams.delete("search");
+                }
+                window.history.replaceState({}, "", url.toString());
+            } catch (err) {}
         }
-    };
-
-    const handleStatusChange = (status: string) => {
-        setSelectedStatus(status);
-        handleFilterSubmit(status, selectedDate, search);
-    };
-
-    const handleDateChange = (date: string) => {
-        setSelectedDate(date);
-        handleFilterSubmit(selectedStatus, date, search);
     };
 
     const clearFilters = () => {
         setSearch("");
         setSelectedStatus("all");
-        setSelectedDate("");
-        router.get(route("traffic.unit-status.index"), {}, { preserveState: true, replace: true });
+        try {
+            const url = new URL(window.location.href);
+            url.search = "";
+            window.history.replaceState({}, "", url.toString());
+        } catch (e) {}
+
+        if (selectedDate) {
+            setSelectedDate("");
+            router.get(window.location.pathname, {}, { preserveState: true, replace: true });
+        }
     };
 
     // Modal de observaciones
@@ -150,13 +224,13 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
         setIsSavingObs(true);
         try {
             await axios.patch(
-                route("traffic.unit-status.observations", editingUnit.id),
+                `${getBaseUrl()}/${editingUnit.id}/observations`,
                 { observations: obsText },
                 { headers: { Accept: "application/json" } }
             );
 
             // Actualizar en el estado local inmediatamente
-            setLocalUnits((prev) =>
+            setAllUnits((prev) =>
                 prev.map((u) =>
                     u.id === editingUnit.id ? { ...u, observations: obsText } : u
                 )
@@ -258,7 +332,7 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                         <div>
                             <div className="flex items-center gap-2 mb-0.5">
                                 <Link
-                                    href={route("traffic.index")}
+                                    href="/traffic"
                                     className="text-xs text-blue-200 hover:text-white flex items-center gap-1 font-semibold transition-colors"
                                 >
                                     <ArrowLeft className="w-3.5 h-3.5" />
@@ -372,9 +446,14 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                             />
                             {search && (
                                 <button
+                                    type="button"
                                     onClick={() => {
                                         setSearch("");
-                                        handleFilterSubmit(selectedStatus, selectedDate, "");
+                                        try {
+                                            const url = new URL(window.location.href);
+                                            url.searchParams.delete("search");
+                                            window.history.replaceState({}, "", url.toString());
+                                        } catch (e) {}
                                     }}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                                 >
@@ -396,6 +475,7 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                                 />
                                 {selectedDate && (
                                     <button
+                                        type="button"
                                         onClick={() => handleDateChange("")}
                                         className="text-gray-400 hover:text-red-500 ml-1"
                                         title="Quitar filtro de fecha"
@@ -406,16 +486,28 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                             </div>
 
                             <button
-                                onClick={() => handleFilterSubmit()}
-                                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all"
+                                type="button"
+                                onClick={() => {
+                                    try {
+                                        const url = new URL(window.location.href);
+                                        if (search.trim()) {
+                                            url.searchParams.set("search", search.trim());
+                                        } else {
+                                            url.searchParams.delete("search");
+                                        }
+                                        window.history.replaceState({}, "", url.toString());
+                                    } catch (e) {}
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
                             >
                                 Buscar
                             </button>
 
                             {(search || selectedStatus !== "all" || selectedDate) && (
                                 <button
+                                    type="button"
                                     onClick={clearFilters}
-                                    className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+                                    className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
                                 >
                                     Limpiar
                                 </button>
@@ -431,8 +523,9 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                         {statusTabs.map((tab) => (
                             <button
                                 key={tab.key}
+                                type="button"
                                 onClick={() => handleStatusChange(tab.key)}
-                                className={`px-3 py-1.5 rounded-lg font-bold transition-all whitespace-nowrap ${
+                                className={`px-3 py-1.5 rounded-lg font-bold transition-all whitespace-nowrap cursor-pointer ${
                                     selectedStatus === tab.key
                                         ? "bg-blue-600 text-white shadow-sm"
                                         : "bg-gray-100 hover:bg-gray-200 text-gray-600"
@@ -483,7 +576,7 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 bg-white">
-                                {localUnits.map((row) => (
+                                {displayedUnits.map((row) => (
                                     <tr
                                         key={row.id}
                                         className="hover:bg-blue-50/40 transition-colors duration-100 print:hover:bg-transparent"
@@ -604,7 +697,7 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                                     </tr>
                                 ))}
 
-                                {localUnits.length === 0 && (
+                                {displayedUnits.length === 0 && (
                                     <tr>
                                         <td
                                             colSpan={10}
@@ -629,7 +722,7 @@ export default function Index({ auth, units, filters, stats }: PageProps) {
                         <span>
                             Mostrando{" "}
                             <strong className="text-gray-700">
-                                {localUnits.length}
+                                {displayedUnits.length}
                             </strong>{" "}
                             unidades
                         </span>
