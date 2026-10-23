@@ -124,7 +124,10 @@ export default function Create({
 }) {
     const { flash } = usePage<any>().props;
     const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const isFromClients = from === "clients" || urlParams?.get("from") === "clients";
+    const [activeTab, setActiveTab] = useState<"assignments" | "standard">(
+        urlParams?.get("tab") === "standard" ? "standard" : "assignments"
+    );
+    const isFromClients = activeTab === "assignments";
 
     // Helper para determinar la fecha operativa con corte a las 5:00 AM (05:00 a 04:59 del día siguiente)
     const getClientOperationalDate = (dateString?: string) => {
@@ -421,6 +424,36 @@ export default function Create({
     return (
         <DashboardLayout user={auth.user} header={isFromClients ? "Asignación Operador - Cliente" : "Registro Operadores Salida"}>
             <Head title={isFromClients ? "Asignación Operador - Cliente" : "Alta Operador Salida"} />
+
+            {/* Selector de Pestañas / Modos */}
+            <div className="max-w-7xl mx-auto pt-6 px-4 sm:px-6 lg:px-8">
+                <div className="flex bg-indigo-50/80 p-1.5 rounded-2xl max-w-lg mx-auto border border-indigo-200 shadow-sm">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("assignments")}
+                        className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-2 ${
+                            activeTab === "assignments"
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-300"
+                                : "text-indigo-900 hover:text-indigo-700 hover:bg-white/60"
+                        }`}
+                    >
+                        <UserPlus className="w-4 h-4" />
+                        <span>Asignación Operador - Cliente</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("standard")}
+                        className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-2 ${
+                            activeTab === "standard"
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-300"
+                                : "text-indigo-900 hover:text-indigo-700 hover:bg-white/60"
+                        }`}
+                    >
+                        <Truck className="w-4 h-4" />
+                        <span>Ficha Técnica de Unidad</span>
+                    </button>
+                </div>
+            </div>
 
             {isFromClients ? (
                 /* VISTA CLIENTES: Tabla de Operadores con botón ASIGNACIÓN OPERADOR - CLIENTE arriba y Modal */
