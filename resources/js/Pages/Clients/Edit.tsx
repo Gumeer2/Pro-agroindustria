@@ -51,7 +51,7 @@ export default function EditPage({
             <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
                 <div className="mb-6">
                     <Link
-                        href={route("clients.index")}
+                        href={route("clients.directory")}
                         className="text-gray-500 hover:text-gray-900 flex items-center text-sm font-medium transition-colors"
                     >
                         <ArrowLeft className="w-4 h-4 mr-1" />

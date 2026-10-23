@@ -14,6 +14,7 @@ import {
     CheckCircle,
 } from "lucide-react";
 import TransportLineDropdown from "@/Components/TransportLineDropdown";
+import ClientMultiSelect, { ClientItem } from "@/Components/ClientMultiSelect";
 
 interface Operator {
     id: number;
@@ -28,10 +29,16 @@ interface Operator {
     brand_model: string;
     tractor_plate: string;
     trailer_plate: string;
+    client_ids?: number[];
+    clients?: ClientItem[];
 }
 
-export default function Edit({ auth, operator }: { auth: any; operator: Operator }) {
+export default function Edit({ auth, operator, clients = [] }: { auth: any; operator: Operator; clients?: ClientItem[] }) {
     const { flash } = usePage<any>().props;
+    const initialClientIds = operator.client_ids && operator.client_ids.length > 0
+        ? operator.client_ids
+        : (operator.clients?.map(c => c.id) || []);
+
     const { data, setData, put, processing, errors } = useForm({
         name: operator.name || "",
         license: operator.license || "",
@@ -44,6 +51,7 @@ export default function Edit({ auth, operator }: { auth: any; operator: Operator
         brand_model: operator.brand_model || "",
         tractor_plate: operator.tractor_plate || "",
         trailer_plate: operator.trailer_plate || "",
+        clients: initialClientIds as number[],
     });
 
     const submit = (e: React.FormEvent) => {
@@ -55,7 +63,7 @@ export default function Edit({ auth, operator }: { auth: any; operator: Operator
         <DashboardLayout user={auth.user} header="Editar Operador Salida">
             <Head title="Editar Operador Salida" />
 
-            <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8 pb-36">
                 <div className="mb-6">
                     <Link
                         href={route("documentation.exit-operators.index")}
@@ -67,8 +75,8 @@ export default function Edit({ auth, operator }: { auth: any; operator: Operator
                 </div>
 
 
-                <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-                    <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 px-8 py-6 flex items-center justify-between">
+                <div className="bg-white rounded-2xl shadow-xl border border-gray-100">
+                    <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 px-8 py-6 flex items-center justify-between rounded-t-2xl">
                         <div className="flex items-center">
                             <div className="p-2 bg-indigo-700 rounded-lg mr-3 shadow-inner">
                                 <EditIcon className="w-6 h-6 text-white" />
@@ -275,6 +283,14 @@ export default function Edit({ auth, operator }: { auth: any; operator: Operator
                                     </div>
                                     {errors.tractor_plate && <p className="text-red-500 text-xs mt-1">{errors.tractor_plate}</p>}
                                 </div>
+
+                                {/* Clientes */}
+                                <ClientMultiSelect
+                                    clients={clients}
+                                    selectedIds={data.clients}
+                                    onChange={(ids) => setData("clients", ids)}
+                                    error={errors.clients}
+                                />
                             </div>
                         </div>
 

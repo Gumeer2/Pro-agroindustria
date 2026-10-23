@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { QrReader } from 'react-qr-reader';
 import { X, Camera, Scan } from 'lucide-react';
 
@@ -12,9 +12,13 @@ interface QrScannerModalProps {
 
 export default function QrScannerModal({ isOpen, onClose, onScan, title = "Escanear Código QR" }: QrScannerModalProps) {
     const [scanError, setScanError] = useState<string | null>(null);
+    const scannedRef = useRef(false);
 
-    // Using a ref or checking type to handle different QrReader versions/types safely if needed,
-    // but standard usage for react-qr-reader v3 is straightforward.
+    useEffect(() => {
+        if (isOpen) {
+            scannedRef.current = false;
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -42,7 +46,8 @@ export default function QrScannerModal({ isOpen, onClose, onScan, title = "Escan
                 <div className="relative bg-black rounded-lg overflow-hidden aspect-square flex items-center justify-center">
                     <QrReader
                         onResult={(result: any, error) => {
-                            if (!!result) {
+                            if (!!result && !scannedRef.current) {
+                                scannedRef.current = true;
                                 const text = typeof result.getText === 'function' ? result.getText() : result.text;
                                 onScan(text);
                             }

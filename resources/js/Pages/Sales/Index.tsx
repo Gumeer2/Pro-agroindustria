@@ -15,7 +15,7 @@ export default function Index({ auth }: { auth: any }) {
         {
             name: "Directorio de Clientes",
             icon: Users,
-            href: route("clients.index"),
+            href: route("clients.directory", { from: "sales" }),
             description: "Listado de clientes y registro de nuevos contactos.",
             color: "bg-indigo-50 text-indigo-600",
             hover: "hover:border-indigo-500",

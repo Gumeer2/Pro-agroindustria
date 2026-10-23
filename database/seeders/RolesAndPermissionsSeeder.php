@@ -78,6 +78,10 @@ class RolesAndPermissionsSeeder extends Seeder
         $role = Role::firstOrCreate(['name' => 'Bascula']);
         $role->givePermissionTo(['view dashboard', 'view scale']);
 
+        // Clientes
+        $role = Role::firstOrCreate(['name' => 'Clientes']);
+        $role->givePermissionTo(['view dashboard']);
+
 
         // Create a default Super Admin user if not exists
         $adminEmail = 'admin@vecode.com';

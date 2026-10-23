@@ -21,6 +21,11 @@ class ExitOperator extends Model
         'brand_model',
         'tractor_plate',
         'trailer_plate',
+        'presentation',
+        'tm',
+        'sack',
+        'sales_order_id',
+        'client_ids',
         'status',
         'veto_reason',
         'vetoed_at',
@@ -32,9 +37,26 @@ class ExitOperator extends Model
 
     protected $casts = [
         'validity' => 'date',
+        'tm' => 'decimal:2',
+        'client_ids' => 'array',
         'vetoed_at' => 'datetime',
         'unvetoed_at' => 'datetime',
     ];
+
+    public function clients()
+    {
+        return $this->belongsToMany(Client::class, 'client_exit_operator');
+    }
+
+    public function salesOrder()
+    {
+        return $this->belongsTo(SalesOrder::class, 'sales_order_id');
+    }
+
+    public function clientAssignments()
+    {
+        return $this->hasMany(ClientOperatorAssignment::class, 'operator_id');
+    }
 
     public function scopeActive($query)
     {

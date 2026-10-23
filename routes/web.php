@@ -87,6 +87,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/sales', [\App\Http\Controllers\SalesController::class , 'index'])->name('sales.index');
         Route::get('/sales/{sales}', [\App\Http\Controllers\SalesController::class , 'show'])->name('sales.show');
         Route::get('/clients', [\App\Http\Controllers\ClientController::class , 'index'])->name('clients.index');
+        Route::get('/clients/directory', [\App\Http\Controllers\ClientController::class , 'directory'])->name('clients.directory');
         Route::get('/clients/create', [\App\Http\Controllers\ClientController::class , 'create'])->name('clients.create');
         Route::post('/clients', [\App\Http\Controllers\ClientController::class , 'store'])->name('clients.store');
         Route::get('/clients/{client}/edit', [\App\Http\Controllers\ClientController::class , 'edit'])->name('clients.edit');
@@ -307,6 +308,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/apt/operator', [\App\Http\Controllers\AptController::class , 'storeOperator'])->name('apt.operators.store');
         Route::get('/apt/oe-tracker', [\App\Http\Controllers\DocumentationController::class , 'oeTrackerIndex'])->name('apt.oe-tracker');
         Route::get('/apt/shipment-process', [\App\Http\Controllers\DocumentationController::class , 'shipmentProcessIndex'])->name('apt.shipment-process');
+        // APT Machinery Management (Gestión de Maquinarias - Mantenimiento Preventivo y Correctivo)
+        Route::get('/apt/machinery', [\App\Http\Controllers\AptController::class, 'machinery'])->name('apt.machinery');
+        Route::post('/apt/machinery', [\App\Http\Controllers\AptController::class, 'storeMachineryMaintenance'])->name('apt.machinery.store');
+        Route::patch('/apt/machinery/{id}/step', [\App\Http\Controllers\AptController::class, 'updateMachineryStep'])->name('apt.machinery.update-step');
+        Route::delete('/apt/machinery/{id}', [\App\Http\Controllers\AptController::class, 'destroyMachineryMaintenance'])->name('apt.machinery.destroy');
+        Route::get('/apt/machinery/{id}/print', [\App\Http\Controllers\AptController::class, 'printMachineryOrder'])->name('apt.machinery.print');
 
         // APT Personnel Attendance (Control de Asistencias de Personal - GLS-AP-FO-005)
         Route::get('/apt/attendance', [\App\Http\Controllers\AptAttendanceController::class, 'index'])->name('apt.attendance.index');

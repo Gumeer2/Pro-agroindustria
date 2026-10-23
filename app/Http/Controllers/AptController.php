@@ -18,6 +18,7 @@ use App\Helpers\OperationalTimeHelper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use App\Models\MachineryMaintenance;
 
 class AptController extends Controller
 {
@@ -1638,4 +1639,587 @@ class AptController extends Controller
 
         return redirect()->back()->with('success', 'Registro y viaje eliminados correctamente.');
     }
+
+    /**
+     * Gestión de Maquinarias - Proceso de Mantenimiento Preventivo y Correctivo
+     */
+    public function machinery(Request $request)
+    {
+        // Auto-seed initial demo/real records if table is empty
+        if (MachineryMaintenance::count() === 0) {
+            MachineryMaintenance::create([
+                'folio' => 'OT-MAQ-2026-001',
+                'machinery_name' => 'Komatsu WA-320',
+                'economic_number' => 'CF-01',
+                'machinery_code' => '2010001',
+                'type' => 'correctivo',
+                'current_step' => 2,
+                'status' => 'status_rojo',
+                'status_color' => 'ROJO',
+                'hours_worked' => 3450.50,
+                'operator_name' => 'Carlos Mendoza (Operador Maq.)',
+                'failure_description' => 'Fuga de aceite hidráulico en manguera de alta presión del cilindro de levante principal y pérdida de fuerza.',
+                'reported_at' => Carbon::now()->subHours(5),
+                'supervisor_name' => 'Ing. Roberto Sánchez (Supervisor APT)',
+                'logged_at' => Carbon::now()->subHours(4),
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            MachineryMaintenance::create([
+                'folio' => 'OT-MAQ-2026-002',
+                'machinery_name' => 'CAT 938G Serie II',
+                'economic_number' => 'CF-02',
+                'machinery_code' => '2020001',
+                'type' => 'correctivo',
+                'current_step' => 4,
+                'status' => 'ot_generada',
+                'status_color' => 'ROJO',
+                'hours_worked' => 4820.00,
+                'operator_name' => 'Javier Domínguez (Operador Maq.)',
+                'failure_description' => 'Sobrecalentamiento en convertidor de par durante labores de carga en almacén 2.',
+                'reported_at' => Carbon::now()->subDays(1)->subHours(3),
+                'supervisor_name' => 'Ing. Roberto Sánchez (Supervisor APT)',
+                'logged_at' => Carbon::now()->subDays(1)->subHours(2),
+                'mechanic_name' => 'Mec. Pedro Ramírez',
+                'diagnostic_notes' => 'Inspección visual confirma falla en termostato de enfriamiento de transmisión y desgaste en sello P/N 938-TH-4421.',
+                'part_number' => '938-TH-4421 / CAT-SEAL-09',
+                'parts_requested' => 'Kit de sellos de convertidor y termostato de alta temperatura',
+                'diagnostic_at' => Carbon::now()->subHours(18),
+                'work_order_folio' => 'OT-2026-CAT-0938',
+                'root_cause' => 'Desgaste por fricción térmica y fin de vida útil de componente termostático.',
+                'estimated_cost' => 6450.00,
+                'work_permit_number' => 'PT-MEC-2026-044',
+                'work_permit_issued' => true,
+                'ot_generated_at' => Carbon::now()->subHours(10),
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            MachineryMaintenance::create([
+                'folio' => 'OT-MAQ-2026-003',
+                'machinery_name' => 'Komatsu PC210LC',
+                'economic_number' => 'EX-01',
+                'machinery_code' => '2030001',
+                'type' => 'correctivo',
+                'current_step' => 7,
+                'status' => 'en_ejecucion',
+                'status_color' => 'ROJO',
+                'hours_worked' => 2180.00,
+                'operator_name' => 'Manuel Gómez (Operador Maq.)',
+                'failure_description' => 'Fisura en manguera de retorno de banco de válvulas en pluma.',
+                'reported_at' => Carbon::now()->subDays(2),
+                'supervisor_name' => 'Ing. Roberto Sánchez (Supervisor APT)',
+                'logged_at' => Carbon::now()->subDays(2)->addHour(),
+                'mechanic_name' => 'Mec. Pedro Ramírez',
+                'diagnostic_notes' => 'Manguera de 3/4" 4000 PSI fracturada por roce con estructura metálica.',
+                'part_number' => 'KM-PC210-HOS-77',
+                'parts_requested' => 'Manguera hidráulica prensada 3/4" x 1.80m y 2 adaptadores JIC',
+                'diagnostic_at' => Carbon::now()->subDays(2)->addHours(3),
+                'work_order_folio' => 'OT-2026-KOM-0210',
+                'root_cause' => 'Roce mecánico continuo por falta de grapa de sujeción.',
+                'estimated_cost' => 3200.00,
+                'work_permit_number' => 'PT-LOTO-2026-018',
+                'work_permit_issued' => true,
+                'ot_generated_at' => Carbon::now()->subDays(1)->addHours(2),
+                'authorized_by' => 'Jefe de Almacén APT',
+                'purchase_order_number' => 'OC-REF-2026-118',
+                'authorized_at' => Carbon::now()->subDays(1)->addHours(4),
+                'parts_delivered_by' => 'Almacén de Refacciones APT',
+                'parts_delivered_at' => Carbon::now()->subHours(8),
+                'parts_delivery_notes' => 'Piezas entregadas completas al mecánico.',
+                'loto_applied' => true,
+                'loto_tag_number' => 'LOTO-APT-CANDADO-14',
+                'executed_at' => Carbon::now()->subHours(2),
+                'execution_notes' => 'En proceso de instalación de manguera nueva y purgado de circuito hidráulico.',
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            MachineryMaintenance::create([
+                'folio' => 'OT-MAQ-2026-004',
+                'machinery_name' => 'Montacargas Toyota 01',
+                'economic_number' => 'MC-01',
+                'machinery_code' => '3020001',
+                'type' => 'preventivo',
+                'current_step' => 10,
+                'status' => 'finalizado_cerrado',
+                'status_color' => 'VERDE',
+                'hours_worked' => 1950.00,
+                'operator_name' => 'Ricardo Vázquez (Operador Maq.)',
+                'failure_description' => 'Servicio preventivo programado de 2000 Horas (Cambio de aceite, filtros y revisión de frenos).',
+                'reported_at' => Carbon::now()->subDays(5),
+                'supervisor_name' => 'Ing. Roberto Sánchez (Supervisor APT)',
+                'logged_at' => Carbon::now()->subDays(5)->addHour(),
+                'mechanic_name' => 'Mec. Pedro Ramírez',
+                'diagnostic_notes' => 'Revisión completa de 50 puntos de seguridad y desgaste.',
+                'part_number' => 'KIT-PREV-TOY-2K',
+                'parts_requested' => 'Aceite motor 15W40, filtro aceite, filtro combustible, filtro aire primario y secundario.',
+                'diagnostic_at' => Carbon::now()->subDays(4),
+                'work_order_folio' => 'OT-PREV-2026-MC01',
+                'root_cause' => 'Mantenimiento Preventivo Programado por Horas Trabajadas.',
+                'estimated_cost' => 5800.00,
+                'work_permit_number' => 'PT-TALLER-2026-089',
+                'work_permit_issued' => true,
+                'ot_generated_at' => Carbon::now()->subDays(4)->addHour(),
+                'authorized_by' => 'Jefe de Almacén APT',
+                'purchase_order_number' => 'OC-REF-PREV-092',
+                'authorized_at' => Carbon::now()->subDays(4)->addHours(2),
+                'parts_delivered_by' => 'Almacén de Insumos',
+                'parts_delivered_at' => Carbon::now()->subDays(3),
+                'loto_applied' => true,
+                'loto_tag_number' => 'LOTO-TOY-02',
+                'executed_at' => Carbon::now()->subDays(2),
+                'execution_notes' => 'Se realizó cambio de fluidos y reemplazo de kits de filtración.',
+                'activities_performed' => 'Cambio de aceite de motor, sustitución de filtros, lubricación y engrase de mástil y cadenas.',
+                'parts_actually_used' => 'Kit de filtros Toyota, 12L aceite 15W40, 2 cartuchos de grasa EP2.',
+                'report_signed_at' => Carbon::now()->subDays(2)->addHours(4),
+                'operational_test_passed' => true,
+                'delivered_by' => 'Mec. Pedro Ramírez',
+                'received_by' => 'Ing. Roberto Sánchez',
+                'tested_at' => Carbon::now()->subDays(1),
+                'closed_by' => 'Ing. Roberto Sánchez (Supervisor APT)',
+                'closed_at' => Carbon::now()->subDays(1)->addHours(2),
+                'closure_notes' => 'Prueba operativa superada con éxito. Unidad liberada para operación normal en envasado y patio.',
+                'created_by_user_id' => auth()->id(),
+            ]);
+        }
+
+        // Fleet catalogue
+        $fleet = [
+            [
+                'name' => 'Komatsu WA-320',
+                'type' => 'Cargador Frontal',
+                'code' => '2010001',
+                'economic' => 'CF-01',
+                'location' => 'Patio de Maquinaria / Muelle',
+                'hours' => 3450.5,
+                'next_service_hours' => 3500.0,
+                'status' => 'ROJO',
+                'status_label' => 'En Mantenimiento (Status ROJO)',
+                'badge_color' => 'bg-red-100 text-red-700 border-red-300',
+                'icon' => 'fa-truck-monster',
+                'image' => 'komatsu'
+            ],
+            [
+                'name' => 'CAT 938G Serie II',
+                'type' => 'Cargador Frontal',
+                'code' => '2020001',
+                'economic' => 'CF-02',
+                'location' => 'Patio de Maquinaria / Almacén 2',
+                'hours' => 4820.0,
+                'next_service_hours' => 5000.0,
+                'status' => 'ROJO',
+                'status_label' => 'O.T. Generada (Status ROJO)',
+                'badge_color' => 'bg-red-100 text-red-700 border-red-300',
+                'icon' => 'fa-truck-monster',
+                'image' => 'cat'
+            ],
+            [
+                'name' => 'Komatsu PC210LC',
+                'type' => 'Excavadora de Orugas',
+                'code' => '2030001',
+                'economic' => 'EX-01',
+                'location' => 'Área de Celdas y Muros',
+                'hours' => 2180.0,
+                'next_service_hours' => 2250.0,
+                'status' => 'ROJO',
+                'status_label' => 'En Ejecución + LOTO (Status ROJO)',
+                'badge_color' => 'bg-amber-100 text-amber-800 border-amber-300',
+                'icon' => 'fa-dolly',
+                'image' => 'excavator'
+            ],
+            [
+                'name' => 'Montacargas Toyota 01',
+                'type' => 'Montacargas 3.5T',
+                'code' => '3020001',
+                'economic' => 'MC-01',
+                'location' => 'Almacén 1 y Envasado',
+                'hours' => 1950.0,
+                'next_service_hours' => 2200.0,
+                'status' => 'VERDE',
+                'status_label' => 'Operativo al 100%',
+                'badge_color' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
+                'icon' => 'fa-forklift',
+                'image' => 'forklift'
+            ],
+        ];
+
+        // 10 Steps of Corrective Maintenance (Image 2 & 3)
+        $correctiveSteps = [
+            1 => [
+                'number' => 1,
+                'title' => 'Reporte de falla por operador',
+                'description' => 'DESCRIPCION DE LA FALLA',
+                'responsible' => 'OPERADOR DE MAQ.',
+                'role_code' => 'operador',
+                'badge' => 'Paso 1: Falla',
+                'detail' => 'Detección inicial de la avería o comportamiento anómalo del equipo y reporte formal por parte del operador.',
+                'icon' => 'fa-triangle-exclamation'
+            ],
+            2 => [
+                'number' => 2,
+                'title' => 'Registro en bitácora Status ROJO',
+                'description' => 'SE REALIZA REPORTE DE REGISTRO',
+                'responsible' => 'SUPERVISOR APT',
+                'role_code' => 'supervisor',
+                'badge' => 'Paso 2: Status ROJO',
+                'detail' => 'Registro oficial en bitácora física y digital. Se coloca el equipo en Status ROJO (paro de seguridad inmovilizado).',
+                'icon' => 'fa-book-bookmark'
+            ],
+            3 => [
+                'number' => 3,
+                'title' => 'Diagnóstico técnico y P/N',
+                'description' => 'REVISIÓN VISUAL',
+                'responsible' => 'MECANICO',
+                'role_code' => 'mecanico',
+                'badge' => 'Paso 3: Diagnóstico + P/N',
+                'detail' => 'Inspección técnica visual y desmontaje preliminar para determinar números de parte (P/N) y lista de refacciones requeridas.',
+                'icon' => 'fa-stethoscope'
+            ],
+            4 => [
+                'number' => 4,
+                'title' => 'Generar OT y justificación',
+                'description' => 'CAUSA Y RAIZ DE FALLA + COSTO',
+                'responsible' => 'SUP. APT. + MECANICO',
+                'role_code' => 'sup_mecanico',
+                'badge' => 'Paso 4: O.T. + Justificación',
+                'detail' => 'Elaboración formal de la Orden de Trabajo (O.T.), análisis de causa-raíz del fallo, justificación operativa y cotización/costo.',
+                'icon' => 'fa-file-invoice-dollar'
+            ],
+            5 => [
+                'number' => 5,
+                'title' => 'Autorización y compra refacción',
+                'description' => 'SE GENERA O.T. Y PERMISO',
+                'responsible' => 'JEFE APT',
+                'role_code' => 'jefe_apt',
+                'badge' => 'Paso 5: Autorización',
+                'detail' => 'Validación y visto bueno del Jefe de Almacén APT para la compra o surtido de refacciones y emisión de permisos de trabajo.',
+                'icon' => 'fa-signature'
+            ],
+            6 => [
+                'number' => 6,
+                'title' => 'Entrega refacciones al mecánico',
+                'description' => 'EJECUTA EL MANTTO.',
+                'responsible' => 'MECANICO',
+                'role_code' => 'mecanico',
+                'badge' => 'Paso 6: Entrega Refacción',
+                'detail' => 'Almacén de refacciones e insumos entrega formalmente los repuestos y materiales al mecánico asignado.',
+                'icon' => 'fa-box-open'
+            ],
+            7 => [
+                'number' => 7,
+                'title' => 'Ejecución de mantenimiento',
+                'description' => 'MANTTO. CORRECTIVO + LOTO',
+                'responsible' => 'MECANICO',
+                'role_code' => 'mecanico',
+                'badge' => 'Paso 7: Ejecución + LOTO',
+                'detail' => 'Intervención mecánica con aplicación obligatoria de bloqueo y etiquetado de seguridad LOTO (Lockout / Tagout).',
+                'icon' => 'fa-lock'
+            ],
+            8 => [
+                'number' => 8,
+                'title' => 'Reporte trabajo ejecutado',
+                'description' => 'DIAG.+ACTIV+REFACCIONES UTILIZADAS',
+                'responsible' => 'SUP. APT. + MECANICO',
+                'role_code' => 'sup_mecanico',
+                'badge' => 'Paso 8: Reporte Técnico',
+                'detail' => 'Documentación detallada de actividades realizadas, refacciones utilizadas, pruebas efectuadas y tiempos de mano de obra.',
+                'icon' => 'fa-clipboard-check'
+            ],
+            9 => [
+                'number' => 9,
+                'title' => 'Firma entrega/recibido',
+                'description' => 'PRUEBA OPERATIVA ENTREG. Y RECIBIDO',
+                'responsible' => 'SUP. APT. + MECANICO',
+                'role_code' => 'sup_mecanico',
+                'badge' => 'Paso 9: Prueba Operativa',
+                'detail' => 'Prueba dinámica y de esfuerzo en patio, concluyendo con firmas mancomunadas de entrega y recepción del trabajo.',
+                'icon' => 'fa-handshake'
+            ],
+            10 => [
+                'number' => 10,
+                'title' => 'Cierre proceso finalizado',
+                'description' => 'SE ARCHIVA EL REPORTE FINALIZADO',
+                'responsible' => 'SUPERVISOR APT',
+                'role_code' => 'supervisor',
+                'badge' => 'Paso 10: Cierre Proceso',
+                'detail' => 'Cierre formal en el sistema, levantamiento del Status ROJO a OPERATIVO (VERDE) y archivo del expediente técnico.',
+                'icon' => 'fa-circle-check'
+            ],
+        ];
+
+        // 8 Steps of Preventive Maintenance (Image 1)
+        $preventiveSteps = [
+            1 => [
+                'number' => 1,
+                'title' => 'Alerta mantenimiento preventivo por horas trabajadas',
+                'badge' => 'Horómetro / Alerta',
+                'detail' => 'Monitoreo de horas de horómetro y emisión de alerta al aproximarse a intervalos de 250, 500, 1000 o 2000 horas.',
+                'icon' => 'fa-clock'
+            ],
+            2 => [
+                'number' => 2,
+                'title' => 'Checar lista de refacciones',
+                'badge' => 'Revisión Inventario',
+                'detail' => 'Revisión de existencia de kits preventivos: aceites, lubricantes, filtros de aire, combustible e hidráulicos.',
+                'icon' => 'fa-list-check'
+            ],
+            3 => [
+                'number' => 3,
+                'title' => 'Entrega de refacciones al mecanico',
+                'badge' => 'Surtido',
+                'detail' => 'Suministro de componentes y consumibles al personal de taller para el servicio programado.',
+                'icon' => 'fa-boxes-packing'
+            ],
+            4 => [
+                'number' => 4,
+                'title' => 'Generar orden de trabajo y permiso de trabajo',
+                'badge' => 'O.T. Preventiva',
+                'detail' => 'Apertura de la Orden de Trabajo preventiva y expedición del permiso de trabajo seguro correspondiente.',
+                'icon' => 'fa-file-shield'
+            ],
+            5 => [
+                'number' => 5,
+                'title' => 'Ejecución de mantenimiento',
+                'badge' => 'Servicio Técnico',
+                'detail' => 'Realización del servicio programado: cambios de filtros, engrase general, calibraciones y ajustes mecánicos.',
+                'icon' => 'fa-screwdriver-wrench'
+            ],
+            6 => [
+                'number' => 6,
+                'title' => 'Reporte de trabajo ejecutado',
+                'badge' => 'Reporte y Horas',
+                'detail' => 'Registro de la intervención en la bitácora con registro de horómetro actual y próximo servicio.',
+                'icon' => 'fa-file-lines'
+            ],
+            7 => [
+                'number' => 7,
+                'title' => 'Firma de trabajo entregado y trabajo recibido',
+                'badge' => 'Validación',
+                'detail' => 'Verificación conjunta y firma de entrega-recepción del equipo mantenido.',
+                'icon' => 'fa-file-signature'
+            ],
+            8 => [
+                'number' => 8,
+                'title' => 'Cierre proceso finalizado',
+                'badge' => 'Listo para Operar',
+                'detail' => 'Cierre del mantenimiento preventivo y retorno del equipo al rol operativo en planta.',
+                'icon' => 'fa-circle-check'
+            ],
+        ];
+
+        // Fetch maintenance records
+        $query = MachineryMaintenance::orderBy('created_at', 'desc');
+
+        if ($request->filled('type') && in_array($request->type, ['correctivo', 'preventivo'])) {
+            $query->where('type', $request->type);
+        }
+
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('folio', 'like', "%{$s}%")
+                    ->orWhere('machinery_name', 'like', "%{$s}%")
+                    ->orWhere('failure_description', 'like', "%{$s}%")
+                    ->orWhere('part_number', 'like', "%{$s}%")
+                    ->orWhere('operator_name', 'like', "%{$s}%");
+            });
+        }
+
+        $records = $query->get();
+
+        // Metrics
+        $totalMachinery = count($fleet);
+        $redStatusCount = MachineryMaintenance::where('status_color', 'ROJO')->where('current_step', '<', 10)->count();
+        $openOrdersCount = MachineryMaintenance::where('current_step', '<', 10)->count();
+        $completedCount = MachineryMaintenance::where('current_step', 10)->count();
+
+        return view('apt.machinery.index', [
+            'fleet' => $fleet,
+            'records' => $records,
+            'correctiveSteps' => $correctiveSteps,
+            'preventiveSteps' => $preventiveSteps,
+            'metrics' => [
+                'total_machinery' => $totalMachinery,
+                'red_status_count' => $redStatusCount,
+                'open_orders_count' => $openOrdersCount,
+                'completed_count' => $completedCount,
+            ],
+            'filters' => [
+                'type' => $request->input('type', 'all'),
+                'search' => $request->input('search', ''),
+                'tab' => $request->input('tab', 'records'),
+            ],
+            'from' => $request->input('from', 'production'),
+        ]);
+    }
+
+    /**
+     * Store a new Machinery Maintenance / Failure report
+     */
+    public function storeMachineryMaintenance(Request $request)
+    {
+        $validated = $request->validate([
+            'machinery_name' => 'required|string|max:255',
+            'type' => 'required|in:correctivo,preventivo',
+            'operator_name' => 'required|string|max:255',
+            'failure_description' => 'required|string',
+            'hours_worked' => 'nullable|numeric|min:0',
+            'economic_number' => 'nullable|string|max:50',
+            'machinery_code' => 'nullable|string|max:50',
+        ]);
+
+        $year = date('Y');
+        $count = MachineryMaintenance::whereYear('created_at', $year)->count() + 1;
+        $folio = sprintf('OT-MAQ-%s-%03d', $year, $count);
+
+        $maintenance = MachineryMaintenance::create([
+            'folio' => $folio,
+            'machinery_name' => $validated['machinery_name'],
+            'economic_number' => $validated['economic_number'] ?? null,
+            'machinery_code' => $validated['machinery_code'] ?? null,
+            'type' => $validated['type'],
+            'current_step' => 1,
+            'status' => 'status_rojo',
+            'status_color' => $validated['type'] === 'correctivo' ? 'ROJO' : 'AMARILLO',
+            'hours_worked' => $validated['hours_worked'] ?? null,
+            'operator_name' => $validated['operator_name'],
+            'failure_description' => $validated['failure_description'],
+            'reported_at' => Carbon::now(),
+            'created_by_user_id' => auth()->id(),
+        ]);
+
+        return redirect()->route('apt.machinery', ['from' => $request->input('from', 'production'), 'tab' => 'records'])
+            ->with('success', "Reporte {$folio} registrado exitosamente en Bitácora con Status {$maintenance->status_color}.");
+    }
+
+    /**
+     * Advance / Update steps on a Machinery Maintenance order
+     */
+    public function updateMachineryStep(Request $request, $id)
+    {
+        $maintenance = MachineryMaintenance::findOrFail($id);
+
+        $step = (int) $request->input('step', $maintenance->current_step);
+
+        $data = [];
+        $data['current_step'] = min(10, max(1, $step));
+
+        // Step 2: Registro en Bitácora
+        if ($request->filled('supervisor_name')) {
+            $data['supervisor_name'] = $request->input('supervisor_name');
+            $data['logged_at'] = Carbon::now();
+            $data['status'] = 'status_rojo';
+        }
+
+        // Step 3: Diagnóstico técnico y P/N
+        if ($request->filled('mechanic_name')) {
+            $data['mechanic_name'] = $request->input('mechanic_name');
+        }
+        if ($request->filled('diagnostic_notes')) {
+            $data['diagnostic_notes'] = $request->input('diagnostic_notes');
+            $data['diagnostic_at'] = Carbon::now();
+        }
+        if ($request->filled('part_number')) {
+            $data['part_number'] = $request->input('part_number');
+        }
+        if ($request->filled('parts_requested')) {
+            $data['parts_requested'] = $request->input('parts_requested');
+        }
+
+        // Step 4: O.T. + Permiso de Trabajo
+        if ($request->filled('work_order_folio')) {
+            $data['work_order_folio'] = $request->input('work_order_folio');
+        }
+        if ($request->filled('root_cause')) {
+            $data['root_cause'] = $request->input('root_cause');
+        }
+        if ($request->filled('estimated_cost')) {
+            $data['estimated_cost'] = $request->input('estimated_cost');
+        }
+        if ($request->filled('work_permit_number')) {
+            $data['work_permit_number'] = $request->input('work_permit_number');
+            $data['work_permit_issued'] = true;
+            $data['ot_generated_at'] = Carbon::now();
+            $data['status'] = 'ot_generada';
+        }
+
+        // Step 5: Autorización y Compra
+        if ($request->filled('authorized_by')) {
+            $data['authorized_by'] = $request->input('authorized_by');
+            $data['purchase_order_number'] = $request->input('purchase_order_number', 'OC-REF-' . date('Ymd'));
+            $data['authorized_at'] = Carbon::now();
+            $data['status'] = 'autorizado';
+        }
+
+        // Step 6: Entrega Refacciones
+        if ($request->filled('parts_delivered_by')) {
+            $data['parts_delivered_by'] = $request->input('parts_delivered_by');
+            $data['parts_delivered_at'] = Carbon::now();
+            $data['parts_delivery_notes'] = $request->input('parts_delivery_notes');
+            $data['status'] = 'refacciones_entregadas';
+        }
+
+        // Step 7: Ejecución + LOTO
+        if ($request->has('loto_applied')) {
+            $data['loto_applied'] = $request->boolean('loto_applied');
+            $data['loto_tag_number'] = $request->input('loto_tag_number');
+            $data['executed_at'] = Carbon::now();
+            $data['execution_notes'] = $request->input('execution_notes');
+            $data['status'] = 'en_ejecucion';
+        }
+
+        // Step 8: Reporte de Trabajo
+        if ($request->filled('activities_performed')) {
+            $data['activities_performed'] = $request->input('activities_performed');
+            $data['parts_actually_used'] = $request->input('parts_actually_used');
+            $data['report_signed_at'] = Carbon::now();
+            $data['status'] = 'reporte_ejecutado';
+        }
+
+        // Step 9: Firma Entrega y Recepción
+        if ($request->has('operational_test_passed')) {
+            $data['operational_test_passed'] = $request->boolean('operational_test_passed');
+            $data['delivered_by'] = $request->input('delivered_by');
+            $data['received_by'] = $request->input('received_by');
+            $data['tested_at'] = Carbon::now();
+            $data['status'] = 'en_firma';
+        }
+
+        // Step 10: Cierre
+        if ($step >= 10 || $request->filled('closed_by')) {
+            $data['current_step'] = 10;
+            $data['closed_by'] = $request->input('closed_by', auth()->user()?->name ?? 'Supervisor APT');
+            $data['closed_at'] = Carbon::now();
+            $data['closure_notes'] = $request->input('closure_notes', 'Reporte finalizado y archivado.');
+            $data['status'] = 'finalizado_cerrado';
+            $data['status_color'] = 'VERDE';
+        }
+
+        $maintenance->update($data);
+
+        return redirect()->route('apt.machinery', ['from' => $request->input('from', 'production'), 'tab' => 'records'])
+            ->with('success', "Orden {$maintenance->folio} actualizada al Paso {$data['current_step']} exitosamente.");
+    }
+
+    /**
+     * Delete a Machinery Maintenance record
+     */
+    public function destroyMachineryMaintenance(Request $request, $id)
+    {
+        $maintenance = MachineryMaintenance::findOrFail($id);
+        $folio = $maintenance->folio;
+        $maintenance->delete();
+
+        return redirect()->route('apt.machinery', ['from' => $request->input('from', 'production'), 'tab' => 'records'])
+            ->with('success', "Orden {$folio} eliminada correctamente.");
+    }
+
+    /**
+     * Printable view for a Machinery Maintenance Order
+     */
+    public function printMachineryOrder($id)
+    {
+        $maintenance = MachineryMaintenance::findOrFail($id);
+        return view('apt.machinery.print', ['maintenance' => $maintenance]);
+    }
 }
+

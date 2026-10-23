@@ -7,7 +7,14 @@ use Illuminate\Http\Request;
 
 class ClientController extends Controller
 {
-    public function index(Request $request)
+    public function index()
+    {
+        return \Inertia\Inertia::render('Clients/Index', [
+            'module' => 'clients',
+        ]);
+    }
+
+    public function directory(Request $request)
     {
         $query = Client::query();
 
@@ -22,15 +29,18 @@ class ClientController extends Controller
 
         $clients = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
 
-        return \Inertia\Inertia::render('Clients/Index', [
+        return \Inertia\Inertia::render('Clients/Directory', [
             'clients' => $clients,
             'filters' => $request->only(['search']),
+            'module' => 'clients',
         ]);
     }
 
     public function create()
     {
-        return \Inertia\Inertia::render('Clients/Create');
+        return \Inertia\Inertia::render('Clients/Create', [
+            'module' => 'clients',
+        ]);
     }
 
     public function store(Request $request)
@@ -44,13 +54,14 @@ class ClientController extends Controller
 
         Client::create($validated);
 
-        return redirect()->route('clients.index')->with('success', 'Cliente agregado correctamente.');
+        return redirect()->route('clients.directory')->with('success', 'Cliente agregado correctamente.');
     }
 
     public function edit(Client $client)
     {
         return \Inertia\Inertia::render('Clients/Edit', [
-            'client' => $client
+            'client' => $client,
+            'module' => 'clients',
         ]);
     }
 
@@ -65,6 +76,6 @@ class ClientController extends Controller
 
         $client->update($validated);
 
-        return redirect()->route('clients.index')->with('success', 'Cliente actualizado correctamente.');
+        return redirect()->route('clients.directory')->with('success', 'Cliente actualizado correctamente.');
     }
 }

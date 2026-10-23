@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship } from 'lucide-react';
+import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -24,14 +24,16 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
         { name: 'Báscula', href: route('scale.index'), icon: Scale, permission: 'view scale', module: 'scale', color: 'text-teal-400' },
         { name: 'Muelle', href: route('dock.index'), icon: Ship, permission: 'view dock', module: 'dock', color: 'text-cyan-400' },
         { name: 'APT', href: route('apt.index'), icon: Box, permission: 'view apt', module: 'apt', color: 'text-purple-400' },
+        { name: 'Clientes', href: route('clients.index'), icon: Building2, permission: ['view commercialization', 'view documentation'], role: 'Admin', module: 'clients', color: 'text-rose-400' },
         { name: 'Administración', href: route('admin.users.index'), icon: Users, role: 'Admin', module: 'admin', color: 'text-green-400' },
     ];
 
     const currentModule = (props.context_module || props.module) as string;
 
-    const visibleLinks = allLinks.filter(link => {
+    const visibleLinks = allLinks.filter((link: any) => {
         if (link.show) return true;
         if (link.role && roles.includes(link.role)) return true;
+        if (Array.isArray(link.permission) && link.permission.some((p: string) => permissions.includes(p))) return true;
         if (link.permission && permissions.includes(link.permission)) return true;
         return false;
     });
@@ -93,9 +95,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
 
                                     <link.icon className={cn(
                                         "mr-3 h-6 w-6 min-w-[24px] transition-colors duration-300",
-                                        isActive ? link.color : "text-slate-500 group-hover/link:text-zinc-200",
-                                        // On hover of parent sidebar, use the specific color
-                                        !isActive && `group-hover:${link.color}`
+                                        isActive ? "text-white" : "text-slate-500 group-hover/link:text-zinc-200"
                                     )} />
 
                                     <span className={cn(

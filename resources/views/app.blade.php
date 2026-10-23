@@ -109,7 +109,7 @@
                     ['Gestión de la producción', 'Control y seguimiento de la producción.', '/apt/production/hub', 'fa-industry', 'bg-green-50 text-green-600', 'hover:border-green-500'],
                     ['Gestión de proceso de embarques', 'Seguimiento de órdenes y procesos de embarque.', '/apt/shipment-process?from=production', 'fa-truck', 'bg-blue-50 text-blue-600', 'hover:border-blue-500'],
                     ['Gestión de inventarios', 'Control de existencias, producción diaria e inventario inicial de Urea Agrícola.', '/apt/inventory?from=production', 'fa-boxes-stacked', 'bg-purple-50 text-purple-600', 'hover:border-purple-500'],
-                    ['Gestión de maquinarias', 'Registro y mantenimiento de maquinaria operativa.', '/apt/status?from=production', 'fa-wrench', 'bg-orange-50 text-orange-600', 'hover:border-orange-500'],
+                    ['Gestión de maquinarias', 'Registro y mantenimiento de maquinaria operativa.', '/apt/machinery?from=production', 'fa-wrench', 'bg-orange-50 text-orange-600', 'hover:border-orange-500'],
                     ['Gestión de equipos envasado', 'Control de equipos y unidades de envasado.', '/apt/status-unidades?from=production', 'fa-box', 'bg-yellow-50 text-yellow-600', 'hover:border-yellow-500'],
                     ['Gestión de equipos de seguridad', 'Administración y control de equipos de seguridad.', '/apt/scanner?from=production', 'fa-shield-halved', 'bg-slate-100 text-slate-600', 'hover:border-slate-500'],
                     ['Gestión prestadores de servicios', 'Control de asistencias de personal y contratistas (GLS-AP-FO-005).', '/apt/attendance', 'fa-users', 'bg-indigo-50 text-indigo-600', 'hover:border-indigo-500'],
@@ -154,7 +154,7 @@
                 if (!applicationPaths.test(applicationPath)) return;
 
                 const productionPage = `${basePath}/apt/production`;
-                const productionSubmodule = new RegExp(`^${basePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/apt/(status|status-unidades|scanner|lots|inventory|oe-tracker|shipment-process|management|production/hub|attendance)(/|$)`);
+                const productionSubmodule = new RegExp(`^${basePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/apt/(status|status-unidades|scanner|lots|inventory|oe-tracker|shipment-process|management|production/hub|attendance|machinery)(/|$)`);
                 const cameFromProduction = new URLSearchParams(window.location.search).get('from') === 'production';
                 const aptMenuPath = path === 'apt' || path === `${basePath.slice(1)}/apt`;
                 if (cameFromProduction && productionSubmodule.test(window.location.pathname) && aptMenuPath) {

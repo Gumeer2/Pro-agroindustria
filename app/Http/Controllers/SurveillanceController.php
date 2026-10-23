@@ -9,6 +9,7 @@ use App\Models\ShipmentOrder;
 use App\Models\Client;
 use App\Models\Product;
 use App\Models\OperatorVetoLog;
+use App\Models\ClientOperatorAssignment;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Carbon\Carbon;
@@ -472,6 +473,19 @@ class SurveillanceController extends Controller
             return response()->json(['error' => "ESTE OPERADOR SE ENCUENTRA VETADO."], 403);
         }
 
+        // Validación: si el operador de salida no se vinculó a ninguna orden de venta, no permitir el acceso
+        if ($type === 'App\Models\ExitOperator' || $subject instanceof ExitOperator) {
+            $hasAssignment = ClientOperatorAssignment::where('operator_id', $subject->id)
+                ->whereNotNull('sales_order_id')
+                ->exists() || !empty($subject->sales_order_id);
+
+            if (!$hasAssignment) {
+                return response()->json([
+                    'error' => 'El operador no cuenta con asignación.'
+                ], 422);
+            }
+        }
+
         // Check if currently inside (In Plant)
         $activeLog = AccessLog::where('subject_id', $subject->id)
             ->where('subject_type', $type)
@@ -556,6 +570,16 @@ class SurveillanceController extends Controller
         }
 
         if ($request->authorized) {
+            if (($log->subject_type === 'App\Models\ExitOperator' || $log->subject instanceof ExitOperator) && $log->subject) {
+                $hasAssignment = ClientOperatorAssignment::where('operator_id', $log->subject->id)
+                    ->whereNotNull('sales_order_id')
+                    ->exists() || !empty($log->subject->sales_order_id);
+
+                if (!$hasAssignment) {
+                    return back()->with('error', 'El operador no cuenta con asignación.');
+                }
+            }
+
             $log->update([
                 'status'           => 'in_plant',
                 'entry_at'         => Carbon::now(),

@@ -110,12 +110,13 @@ export default function Access({
         } catch (error: any) {
             console.error("Scan Error Details:", error);
             const errorMessage = error.response?.data?.error || "Error de conexión o código inválido";
+            const isNoAssignment = errorMessage.toLowerCase().includes("no cuenta con asignación");
 
             Swal.fire({
                 icon: "error",
-                title: "Error de Escaneo",
-                html: `<p class="text-lg">${errorMessage}</p><p class="text-xs text-gray-400 mt-2">Intento: ${code}</p>`,
-                timer: 4000,
+                title: isNoAssignment ? "Acceso Denegado" : "Error de Escaneo",
+                html: `<p class="text-lg font-bold ${isNoAssignment ? "text-red-600" : ""}">${errorMessage}</p><p class="text-xs text-gray-400 mt-2">Intento: ${code}</p>`,
+                timer: 4500,
                 showConfirmButton: true,
             });
 

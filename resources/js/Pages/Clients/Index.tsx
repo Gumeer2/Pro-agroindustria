@@ -1,292 +1,87 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
-import { Head, Link, router } from "@inertiajs/react";
-import {
-    Users,
-    Search,
-    Plus,
-    Edit,
-    ArrowLeft,
-    ArrowLeftCircle,
-} from "lucide-react";
-import { useState } from "react";
-// @ts-ignore
-import { pickBy } from "lodash";
+import { Head, Link, usePage } from "@inertiajs/react";
+import { Building2, UserPlus, CheckCircle, X } from "lucide-react";
+import { useState, useEffect } from "react";
 
-interface Client {
-    id: number;
-    business_name: string;
-    rfc: string;
-    contact_info: string;
-    address?: string;
-}
+export default function Index({ auth }: { auth: any }) {
+    const { flash } = usePage<any>().props;
+    const [showAlert, setShowAlert] = useState(!!flash?.success);
 
-interface PageProps {
-    clients: {
-        data: Client[];
-        links: any[];
-        current_page: number;
-        last_page: number;
-        from: number;
-        to: number;
-        total: number;
-    };
-    filters: {
-        search?: string;
-    };
-    auth: any;
-}
+    useEffect(() => {
+        if (flash?.success) {
+            setShowAlert(true);
+            const timer = setTimeout(() => setShowAlert(false), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [flash?.success]);
 
-export default function Index({ auth, clients, filters }: PageProps) {
-    const [search, setSearch] = useState(filters.search || "");
-
-    const applyFilters = (newParams: Partial<PageProps["filters"] & { page?: string | number }>) => {
-        const params = pickBy({
-            search,
-            ...newParams,
-        });
-        router.get(route("clients.index"), params as any, {
-            preserveState: true,
-            preserveScroll: true,
-        });
-    };
-
-    const handleSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-        applyFilters({ page: 1 });
-    };
-
-    const handlePageChange = (pageNum: string | number) => {
-        applyFilters({ page: pageNum });
-    };
+    const menuItems = [
+        {
+            name: "Directorio de Clientes",
+            icon: Building2,
+            href: route("clients.directory"),
+            description: "Listado de clientes, consulta de información fiscal, direcciones y contactos.",
+            color: "bg-rose-50 text-rose-600",
+            hover: "hover:border-rose-500",
+        },
+        {
+            name: "Asignacion Operador - Cliente",
+            icon: UserPlus,
+            href: route("documentation.exit-operators.create", { from: "clients" }),
+            description: "Registro y alta de operadores con asignación a clientes autorizados.",
+            color: "bg-indigo-50 text-indigo-600",
+            hover: "hover:border-indigo-500",
+        },
+    ];
 
     return (
-        <DashboardLayout user={auth.user} header="Lista de Clientes">
+        <DashboardLayout user={auth.user} header="Clientes">
             <Head title="Clientes" />
 
-            <div className="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                {/* Header Section */}
-                <div className="md:flex md:items-center md:justify-between mb-6">
-                    <div className="flex-1 min-w-0">
-                        <div className="mb-4">
-                            <Link
-                                href={route("sales.index")}
-                                className="text-gray-500 hover:text-gray-900 flex items-center text-sm font-medium transition-colors"
+            <div className="py-12 relative">
+                {/* Dynamic Alert */}
+                {showAlert && flash?.success && (
+                    <div className="fixed top-24 right-8 z-50 animate-fade-in-right">
+                        <div className="bg-white border-l-4 border-green-500 rounded-lg shadow-2xl p-4 flex items-center max-w-md">
+                            <div className="bg-green-100 p-2 rounded-full mr-4">
+                                <CheckCircle className="w-6 h-6 text-green-600" />
+                            </div>
+                            <div className="flex-1 mr-4">
+                                <h4 className="text-green-900 font-bold text-sm">Operación Exitosa</h4>
+                                <p className="text-green-700 text-xs font-medium">{flash.success}</p>
+                            </div>
+                            <button
+                                onClick={() => setShowAlert(false)}
+                                className="text-gray-400 hover:text-gray-600 transition-colors"
                             >
-                                <ArrowLeft className="w-4 h-4 mr-1" />
-                                Volver a Comercialización
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                        {menuItems.map((item, index) => (
+                            <Link
+                                key={index}
+                                href={item.href}
+                                className={`group bg-white rounded-2xl shadow-md border-2 border-transparent p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${item.hover}`}
+                            >
+                                <div
+                                    className={`w-20 h-20 rounded-2xl flex items-center justify-center mb-6 transition-transform transform group-hover:scale-110 shadow-sm ${item.color}`}
+                                >
+                                    <item.icon className="w-10 h-10" />
+                                </div>
+                                <h3 className="text-xl font-bold text-gray-800 break-words w-full">
+                                    {item.name}
+                                </h3>
+                                <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+                                    {item.description}
+                                </p>
                             </Link>
-                        </div>
-                        <h2 className="text-2xl font-bold leading-7 text-indigo-900 sm:text-3xl sm:truncate flex items-center">
-                            <Users className="mr-3 h-8 w-8 text-indigo-600" />
-                            Directorio de Clientes
-                        </h2>
+                        ))}
                     </div>
-                    <div className="mt-4 flex md:mt-0 md:ml-4">
-                        <Link
-                            href={route("clients.create")}
-                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-md text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all transform hover:-translate-y-0.5"
-                        >
-                            <Plus className="w-5 h-5 mr-2" />
-                            Nuevo Cliente
-                        </Link>
-                    </div>
-                </div>
-
-                {/* Filters & Actions */}
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <form
-                        onSubmit={handleSearch}
-                        className="relative w-full sm:w-96"
-                    >
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search className="h-5 w-5 text-gray-400" />
-                        </div>
-                        <input
-                            type="text"
-                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-shadow"
-                            placeholder="Buscar por nombre, RFC..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
-                    </form>
-                </div>
-
-                {/* Table */}
-                <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gradient-to-r from-indigo-800 to-indigo-900">
-                                <tr>
-                                    <th
-                                        scope="col"
-                                        className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider"
-                                    >
-                                        Nombre / Razón Social
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider"
-                                    >
-                                        RFC
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider"
-                                    >
-                                        Contacto
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider"
-                                    >
-                                        Dirección
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="px-6 py-4 text-right text-xs font-bold text-white uppercase tracking-wider"
-                                    >
-                                        Acciones
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {clients.data.length > 0 ? (
-                                    clients.data.map((client) => (
-                                        <tr
-                                            key={client.id}
-                                            className="hover:bg-indigo-50 transition-colors duration-150"
-                                        >
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center">
-                                                    <div className="flex-shrink-0 h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">
-                                                        {client.business_name.charAt(
-                                                            0,
-                                                        )}
-                                                    </div>
-                                                    <div className="ml-4">
-                                                        <div className="text-sm font-medium text-gray-900">
-                                                            {
-                                                                client.business_name
-                                                            }
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
-                                                {client.rfc}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                {client.contact_info || (
-                                                    <span className="text-gray-400 italic">
-                                                        No registrado
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td
-                                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 max-w-xs truncate"
-                                                title={client.address}
-                                            >
-                                                {client.address || "-"}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                {/* Edit functionality would need a separate edit page, currently minimal action */}
-                                                <Link
-                                                    href={route(
-                                                        "clients.edit",
-                                                        client.id,
-                                                    )}
-                                                    className="inline-flex items-center text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded-md hover:bg-indigo-100 transition-colors"
-                                                >
-                                                    <Edit className="w-4 h-4 mr-1.5" />
-                                                    Editar
-                                                </Link>
-                                            </td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td
-                                            colSpan={5}
-                                            className="px-6 py-12 text-center text-gray-500"
-                                        >
-                                            <Users className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-                                            <p className="text-lg font-medium">
-                                                No se encontraron clientes
-                                            </p>
-                                            <p className="text-sm">
-                                                Intenta ajustar los filtros de
-                                                búsqueda.
-                                            </p>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Pagination */}
-                    {clients.links.length > 3 && (
-                        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 md:flex md:items-center md:justify-between">
-                            <div className="text-sm text-gray-500 mb-4 md:mb-0">
-                                Mostrando{" "}
-                                <span className="font-medium">
-                                    {clients.from}
-                                </span>{" "}
-                                a{" "}
-                                <span className="font-medium">
-                                    {clients.to}
-                                </span>{" "}
-                                de{" "}
-                                <span className="font-medium">
-                                    {clients.total}
-                                </span>{" "}
-                                resultados
-                            </div>
-                            <div className="flex justify-center space-x-1">
-                                {clients.links.map((link, key) => {
-                                    let label = link.label;
-                                    if (label.includes('&laquo;') || label.toLowerCase().includes('anterior') || label.toLowerCase().includes('previous')) {
-                                        label = 'Anterior';
-                                    } else if (label.includes('&raquo;') || label.toLowerCase().includes('siguiente') || label.toLowerCase().includes('next')) {
-                                        label = 'Siguiente';
-                                    }
-
-                                    let pageNum: string | null = null;
-                                    if (link.url) {
-                                        try {
-                                            const parsed = new URL(link.url, window.location.origin);
-                                            pageNum = parsed.searchParams.get("page") || "1";
-                                        } catch (e) {
-                                            pageNum = null;
-                                        }
-                                    }
-
-                                    return pageNum ? (
-                                        <button
-                                            key={key}
-                                            type="button"
-                                            onClick={() => handlePageChange(pageNum!)}
-                                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors cursor-pointer ${link.active
-                                                ? "bg-indigo-600 text-white shadow-sm font-bold"
-                                                : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                                            }`}
-                                            dangerouslySetInnerHTML={{
-                                                __html: label,
-                                            }}
-                                        />
-                                    ) : (
-                                        <span
-                                            key={key}
-                                            className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
-                                            dangerouslySetInnerHTML={{
-                                                __html: label,
-                                            }}
-                                        />
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
         </DashboardLayout>

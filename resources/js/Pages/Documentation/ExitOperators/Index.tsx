@@ -13,6 +13,7 @@ import {
     CheckCircle,
     X,
     Trash2,
+    Building2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 // @ts-ignore
@@ -32,6 +33,8 @@ interface Operator {
     validity: string;
     brand_model: string;
     status: string;
+    client_ids?: number[];
+    clients?: Array<{ id: number; business_name: string; rfc?: string }>;
 }
 
 interface PageProps {
@@ -236,6 +239,19 @@ export default function Index({
                                                         <div className="text-xs text-gray-500">
                                                             Lic: {operator.license}
                                                         </div>
+                                                        {operator.clients && operator.clients.length > 0 && (
+                                                            <div className="mt-1 flex flex-wrap gap-1">
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                                                    title={operator.clients.map(c => c.business_name).join(', ')}
+                                                                >
+                                                                    <Building2 className="w-2.5 h-2.5" />
+                                                                    {operator.clients.length === 1
+                                                                        ? operator.clients[0].business_name
+                                                                        : `${operator.clients.length} clientes`}
+                                                                </span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </td>

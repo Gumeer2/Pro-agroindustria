@@ -17,7 +17,7 @@ import {
     Search,
     Scan,
 } from "lucide-react";
-import { FormEventHandler, useState, Fragment, useEffect } from "react";
+import { FormEventHandler, useState, Fragment, useEffect, useMemo, useRef } from "react";
 import { Combobox, Transition } from "@headlessui/react";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -41,7 +41,7 @@ interface Vessel {
     name: string;
 }
 interface SalesOrder {
-    id: number;
+    id: number | string;
     folio: string;
     client_id: number;
     client?: Client;
@@ -66,6 +66,33 @@ interface Operator {
     is_authorized_in_plant?: boolean;
     surveillance_status?: string;
     surveillance_notes?: string;
+    sales_order_id?: string;
+    presentation?: string;
+    programmed_tons?: string | number;
+    sack?: string;
+    sales_order?: {
+        id: string;
+        folio: string;
+        balance: number | string;
+        client_id: number;
+        client_name?: string;
+        rfc?: string;
+        address?: string;
+        product_name?: string;
+        vessel_name?: string;
+    } | null;
+    assignments?: Array<{
+        id: number;
+        sales_order_id: string;
+        presentation: string;
+        tm: number | string;
+        sack?: string;
+        folio?: string;
+        balance?: number | string;
+        client_id?: number;
+        client_name?: string;
+        product_name?: string;
+    }>;
 }
 
 interface CatalogOption {
@@ -145,19 +172,41 @@ export default function Create({
 
     const [queryClient, setQueryClient] = useState("");
     const [qrInput, setQrInput] = useState(""); // Replaces queryOperator
-    // const [foundOperators, setFoundOperators] = useState<Operator[]>([]); // Removed as we don't list search results anymore
+    const [operatorAssignments, setOperatorAssignments] = useState<any[]>([]);
     const [showQrScanner, setShowQrScanner] = useState(false);
     const [isProcessingQr, setIsProcessingQr] = useState(false);
     const [cartaPorteWarning, setCartaPorteWarning] = useState<string | null>(null);
 
+    const isScanningRef = useRef(false);
+    const lastScannedRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
+
     // QR Scan Handler (Used by both Camera and Physical Scanner)
     const handleQrScan = async (text: string | null) => {
-        if (!text || isProcessingQr) return;
+        if (!text) return;
+        const cleanRaw = text.trim();
+        if (!cleanRaw) return;
+
+        const now = Date.now();
+        // Evitar que se dispare dos veces por doble Enter de pistola escáner, repetición de cámara o modal abierto
+        if (
+            isScanningRef.current ||
+            isProcessingQr ||
+            Swal.isVisible() ||
+            (cleanRaw === lastScannedRef.current.text && now - lastScannedRef.current.time < 2000) ||
+            (now - lastScannedRef.current.time < 800)
+        ) {
+            return;
+        }
+
+        isScanningRef.current = true;
+        lastScannedRef.current = { text: cleanRaw, time: now };
         setIsProcessingQr(true);
+        setQrInput("");
+        setShowQrScanner(false);
 
         // Parse: support both "OP_EXIT 3" and "OP_EXIT 3|JUAN|..."
         // Also support "OP?EXIT" which can happen with bad keyboard layouts on scanners (US vs ES)
-        let cleanText = text.trim();
+        let cleanText = cleanRaw;
 
         // Remove "OP_EXIT" prefix (or "OP?EXIT" / "OP'EXIT") and handle pipes
         if (cleanText.toUpperCase().startsWith("OP")) {
@@ -197,8 +246,6 @@ export default function Create({
                     color: "#172554",
                     backdrop: "rgba(15, 23, 42, 0.45)",
                 });
-                setShowQrScanner(false);
-                setQrInput("");
                 return;
             }
 
@@ -214,8 +261,6 @@ export default function Create({
                     color: "#172554",
                     backdrop: "rgba(15, 23, 42, 0.45)",
                 });
-                setShowQrScanner(false);
-                setQrInput("");
                 return;
             }
 
@@ -235,14 +280,45 @@ export default function Create({
                     color: "#172554",
                     backdrop: "rgba(15, 23, 42, 0.45)",
                 });
-                setShowQrScanner(false);
-                setQrInput("");
                 return;
             }
 
             handleOperatorSelect(selectedOperator);
-            setShowQrScanner(false);
-            setQrInput("");
+
+            // Aviso conciso, con letras más grandes y que no se cierra hasta hacer clic en "Entendido"
+            if (selectedOperator.assignments && selectedOperator.assignments.length > 1) {
+                if (!Swal.isVisible()) {
+                    const ovBadges = selectedOperator.assignments
+                        .map(
+                            (a) =>
+                                `<div style="background-color:#eef2ff; color:#312e81; font-weight:700; padding:8px 14px; border-radius:8px; border:1.5px solid #c7d2fe; font-size:15px; font-family:monospace; margin:5px 0; display:flex; align-items:center; justify-content:space-between;"><span>📦 ${a.folio || "OV"}</span> <span style="color:#047857; font-weight:800;">${Number(a.tm || 0).toFixed(2)} TM</span> <span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:4px; font-size:12px;">${a.presentation || "GRANEL"}</span></div>`
+                        )
+                        .join("");
+
+                    Swal.fire({
+                        icon: "info",
+                        title: '<span style="font-size:24px; font-weight:800; color:#1e1b4b;">Múltiples Órdenes Asignadas</span>',
+                        html: `
+                            <div style="text-align:left; color:#1f2937;">
+                                <p style="font-size:16px; line-height:1.5; margin-bottom:12px;">
+                                    El operador <strong>${selectedOperator.operator_name}</strong> tiene <strong>${selectedOperator.assignments.length} órdenes de venta</strong> asignadas:
+                                </p>
+                                <div style="background:#f8fafc; padding:10px; border-radius:10px; border:1px solid #e2e8f0; margin-bottom:14px;">
+                                    ${ovBadges}
+                                </div>
+                                <div style="font-size:14px; color:#3730a3; background:#eef2ff; padding:12px 14px; border-radius:8px; border:1px solid #c7d2fe; line-height:1.45;">
+                                    ℹ️ <strong>Se autollenó con la orden más reciente.</strong> Puedes cambiarla en el menú desplegable de <strong>Vincular a Orden de Venta</strong> si requieres documentar otra.
+                                </div>
+                            </div>
+                        `,
+                        confirmButtonText: "Entendido",
+                        confirmButtonColor: "#4f46e5",
+                        backdrop: "rgba(15, 23, 42, 0.45)",
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                    });
+                }
+            }
         } catch (error) {
             console.error(error);
             Swal.fire({
@@ -253,6 +329,9 @@ export default function Create({
             });
         } finally {
             setIsProcessingQr(false);
+            setTimeout(() => {
+                isScanningRef.current = false;
+            }, 600);
         }
     };
 
@@ -260,7 +339,10 @@ export default function Create({
     const handleQrInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            handleQrScan(qrInput);
+            e.stopPropagation();
+            if (qrInput && qrInput.trim()) {
+                handleQrScan(qrInput);
+            }
         }
     };
 
@@ -331,6 +413,76 @@ export default function Create({
 
     const handleOperatorSelect = (operator: Operator | null) => {
         if (!operator) return;
+
+        if (operator.assignments && operator.assignments.length > 0) {
+            setOperatorAssignments(operator.assignments);
+        } else if (operator.sales_order_id) {
+            setOperatorAssignments([
+                {
+                    sales_order_id: operator.sales_order_id,
+                    presentation: operator.presentation,
+                    tm: operator.programmed_tons,
+                    sack: operator.sack,
+                    folio: operator.sales_order?.folio,
+                }
+            ]);
+        } else {
+            setOperatorAssignments([]);
+        }
+
+        const autoFields: any = {};
+
+        // Auto-llenar campos si el operador tiene Orden de Venta asignada
+        if (operator.sales_order_id) {
+            const soId = operator.sales_order_id.toString();
+            const matchedSo = sales_orders.find((s) => s.id.toString() === soId);
+
+            autoFields.sales_order_id = soId;
+
+            // Cliente
+            const clientName = matchedSo?.client?.business_name || operator.sales_order?.client_name || "";
+            const clientId = matchedSo?.client_id?.toString() || operator.sales_order?.client_id?.toString() || "";
+            const rfc = matchedSo?.client?.rfc || operator.sales_order?.rfc || "";
+            const address = matchedSo?.client?.address || operator.sales_order?.address || "";
+            if (clientId) autoFields.client_id = clientId;
+            if (clientName) autoFields.client_name = clientName;
+            if (rfc) autoFields.rfc = rfc;
+            if (address) autoFields.address = address;
+
+            // Producto
+            const productName = matchedSo?.product?.name || operator.sales_order?.product_name || "";
+            if (productName) autoFields.product = productName;
+
+            // Saldo OV (TM)
+            const balanceVal = matchedSo?.balance !== undefined 
+                ? String(matchedSo.balance) 
+                : (operator.sales_order?.balance !== undefined ? String(operator.sales_order.balance) : "0");
+            autoFields.balance = balanceVal;
+
+            // Presentación
+            if (operator.presentation) {
+                const presUpper = operator.presentation.toUpperCase();
+                autoFields.presentation = presUpper;
+                if (presUpper === "ENVASADO" && operator.sack) {
+                    const sackDigits = operator.sack.replace(/[^0-9]/g, "");
+                    autoFields.sack_type = sackDigits || "25";
+                } else if (presUpper === "GRANEL") {
+                    autoFields.sack_type = "";
+                }
+            }
+
+            // Ton. Programadas
+            if (operator.programmed_tons !== undefined && operator.programmed_tons !== null && operator.programmed_tons !== "") {
+                autoFields.programmed_tons = String(operator.programmed_tons);
+            }
+
+            // Observaciones con buque si aplica
+            const vesselName = matchedSo?.vessel?.name || operator.sales_order?.vessel_name;
+            if (vesselName) {
+                autoFields.observations = `PRODUCTO PROPIEDAD DE ${clientName}, PROVENIENTE DEL BUQUE "${vesselName}".`;
+            }
+        }
+
         setData((data) => ({
             ...data,
             operator_id: operator.id.toString(),
@@ -342,6 +494,7 @@ export default function Create({
             economic_number: operator.economic_number,
             unit_number: operator.brand_model, // Map Brand/Model to Unit Number
             license_number: operator.license, // Map License
+            ...autoFields,
         }));
         setQrInput(""); // Clear the search/scan field once selected
     };
@@ -357,6 +510,10 @@ export default function Create({
                 ? `PRODUCTO PROPIEDAD DE ${so.client?.business_name || ""}, PROVENIENTE DEL BUQUE "${so.vessel.name}".`
                 : "";
 
+            const matchAssignment = operatorAssignments.find(
+                (a) => a.sales_order_id?.toString() === soId.toString()
+            );
+
             setData((data) => ({
                 ...data,
                 sales_order_id: soId,
@@ -367,7 +524,9 @@ export default function Create({
                 product: so.product?.name || "",
                 balance: so.balance ? so.balance.toString() : "0",
                 observations: updatedObservations,
-                programmed_tons: "", // Manual as requested
+                presentation: matchAssignment?.presentation ? matchAssignment.presentation.toUpperCase() : data.presentation,
+                sack_type: matchAssignment?.sack ? matchAssignment.sack.replace(/[^0-9]/g, "") : data.sack_type,
+                programmed_tons: matchAssignment?.tm ? String(matchAssignment.tm) : (matchAssignment ? "" : data.programmed_tons),
             }));
         } else {
             setData((data) => ({
@@ -384,6 +543,32 @@ export default function Create({
             }));
         }
     };
+
+    // Solo mostrar las Órdenes de Venta que tiene asignadas el operador escaneado
+    const filteredSalesOrders = useMemo(() => {
+        if (!data.operator_id) {
+            return sales_orders;
+        }
+
+        const list = sales_orders.filter((so) =>
+            operatorAssignments.some((a) => a.sales_order_id?.toString() === so.id.toString()) ||
+            (data.sales_order_id && so.id.toString() === data.sales_order_id.toString())
+        );
+
+        operatorAssignments.forEach((a) => {
+            if (a.sales_order_id && !list.some((so) => so.id.toString() === a.sales_order_id.toString())) {
+                list.push({
+                    id: a.sales_order_id,
+                    folio: a.folio || `OV-${a.sales_order_id}`,
+                    client_id: a.client_id || 0,
+                    product_id: 0,
+                    balance: a.balance || 0,
+                });
+            }
+        });
+
+        return list;
+    }, [data.operator_id, data.sales_order_id, sales_orders, operatorAssignments]);
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
@@ -471,23 +656,34 @@ export default function Create({
                             </div>
 
                             <div className="md:col-span-2">
-                                <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Vincular a Orden de Venta (OV) <span className="text-red-500">*</span>
-                                </label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-sm font-bold text-gray-700">
+                                        Vincular a Orden de Venta (OV) <span className="text-red-500">*</span>
+                                    </label>
+                                    {operatorAssignments.length > 1 && (
+                                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                            <span>📦</span> {operatorAssignments.length} órdenes asignadas
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="relative">
-                                    <select
-                                        required
-                                        value={data.sales_order_id}
-                                        onChange={handleSalesOrderSelect}
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white font-bold"
-                                    >
-                                        <option value="">-- Seleccionar OV Obligatorio --</option>
-                                        {sales_orders.map((so) => (
-                                            <option key={so.id} value={so.id}>
-                                                {so.folio}
-                                            </option>
-                                        ))}
-                                    </select>
+                                                    <select
+                                                        required
+                                                        value={data.sales_order_id}
+                                                        onChange={handleSalesOrderSelect}
+                                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white font-bold"
+                                                    >
+                                                        <option value="">
+                                                            {data.operator_id && filteredSalesOrders.length === 0
+                                                                ? "-- Operador sin órdenes asignadas --"
+                                                                : "-- Seleccionar OV Obligatorio --"}
+                                                        </option>
+                                                        {filteredSalesOrders.map((so) => (
+                                                            <option key={so.id} value={so.id}>
+                                                                {so.folio}
+                                                            </option>
+                                                        ))}
+                                                    </select>
                                     <ShoppingCart className="w-5 h-5 text-indigo-400 absolute left-3 top-2.5" />
                                 </div>
                                 {errors.sales_order_id && <span className="text-xs text-red-500 mt-1 block">{errors.sales_order_id}</span>}
@@ -616,6 +812,7 @@ export default function Create({
                                                             unit_number: "",
                                                             license_number: "",
                                                         }));
+                                                        setOperatorAssignments([]);
                                                     }
                                                 }
                                             }}
@@ -651,6 +848,7 @@ export default function Create({
                                                         unit_number: "",
                                                         license_number: "",
                                                     }));
+                                                    setOperatorAssignments([]);
                                                     setQrInput("");
                                                     setTimeout(() => document.querySelector<HTMLInputElement>('input[placeholder="Escanee código QR aquí..."]')?.focus(), 100);
                                                 }}
@@ -855,14 +1053,23 @@ export default function Create({
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
                                     Presentación
                                 </label>
-                                <select
-                                    value={data.presentation}
-                                    onChange={(e) => setData("presentation", e.target.value)}
-                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase"
-                                >
-                                    <option value="GRANEL">GRANEL</option>
-                                    <option value="ENVASADO">ENVASADO</option>
-                                </select>
+                                {data.sales_order_id ? (
+                                    <input
+                                        type="text"
+                                        value={data.presentation}
+                                        readOnly
+                                        className="w-full rounded-lg border-gray-300 shadow-sm py-2.5 px-3 uppercase bg-gray-100 font-bold text-gray-700 cursor-not-allowed"
+                                    />
+                                ) : (
+                                    <select
+                                        value={data.presentation}
+                                        onChange={(e) => setData("presentation", e.target.value)}
+                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase"
+                                    >
+                                        <option value="GRANEL">GRANEL</option>
+                                        <option value="ENVASADO">ENVASADO</option>
+                                    </select>
+                                )}
                             </div>
 
                             {data.presentation === "ENVASADO" && (
@@ -885,7 +1092,7 @@ export default function Create({
                                         </select>
                                     </div>
 
-                                    {data.client_name?.toUpperCase().includes("AGROINDUSTRIAS DEL BALSAS") && (
+                                    {data.client_name?.toUpperCase().includes("AGROINDUSTRIAS DEL BALSAS") && data.consigned_to?.toUpperCase().includes("SADER") && (
                                         <div>
                                             <label className="block text-sm font-bold text-gray-700 mb-1">
                                                 QR Fertinal (Opcional)
@@ -901,7 +1108,7 @@ export default function Create({
                                                 <Scan className="w-5 h-5 text-green-500 absolute left-3 top-2.5" />
                                             </div>
                                             <p className="text-[10px] text-gray-400 mt-1 italic">
-                                                * Campo específico para Fertinal (Envasado)
+                                                * Campo específico para Fertinal (Envasado) consignado a SADER
                                             </p>
                                         </div>
                                     )}

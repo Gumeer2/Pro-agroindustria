@@ -17,6 +17,7 @@ use App\Models\LoadingAssistant;
 use App\Models\ShipmentProcessHistory;
 use App\Models\User;
 use App\Models\WeightTicket;
+use App\Models\ClientOperatorAssignment;
 use Illuminate\Http\Request;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -327,6 +328,23 @@ class DocumentationController extends Controller
                     }
                 }
 
+                // Obtener asignaciones de Orden de Venta para este operador
+                $assignments = ClientOperatorAssignment::where('operator_id', $op->id)
+                    ->with(['salesOrder.client', 'salesOrder.product', 'salesOrder.vessel'])
+                    ->orderBy('updated_at', 'desc')
+                    ->get();
+
+                $latestAssignment = $assignments->first();
+                $salesOrderId = $latestAssignment?->sales_order_id ?? $op->sales_order_id;
+                $salesOrder = $latestAssignment?->salesOrder;
+                if (!$salesOrder && $salesOrderId) {
+                    $salesOrder = SalesOrder::with(['client', 'product', 'vessel'])->find($salesOrderId);
+                }
+
+                $presentation = $latestAssignment?->presentation ?? $op->presentation ?? 'GRANEL';
+                $tm = $latestAssignment?->tm ?? $op->tm ?? '';
+                $sack = $latestAssignment?->sack ?? $op->sack ?? '';
+
                 return [
                     'id' => $op->id,
                     'operator_name' => $op->name,
@@ -341,6 +359,35 @@ class DocumentationController extends Controller
                     'surveillance_status' => $surveillanceStatus,
                     'surveillance_notes' => $lastLog ? $lastLog->notes : null,
                     'access_denied' => $surveillanceStatus === 'rejected',
+                    'sales_order_id' => $salesOrderId,
+                    'presentation' => $presentation,
+                    'programmed_tons' => $tm !== '' ? (string) $tm : '',
+                    'sack' => $sack,
+                    'sales_order' => $salesOrder ? [
+                        'id' => $salesOrder->id,
+                        'folio' => $salesOrder->folio,
+                        'balance' => $salesOrder->balance,
+                        'client_id' => $salesOrder->client_id,
+                        'client_name' => $salesOrder->client?->business_name,
+                        'rfc' => $salesOrder->client?->rfc,
+                        'address' => $salesOrder->client?->address,
+                        'product_name' => $salesOrder->product?->name,
+                        'vessel_name' => $salesOrder->vessel?->name,
+                    ] : null,
+                    'assignments' => $assignments->map(function ($a) {
+                        return [
+                            'id' => $a->id,
+                            'sales_order_id' => $a->sales_order_id,
+                            'presentation' => $a->presentation,
+                            'tm' => $a->tm,
+                            'sack' => $a->sack,
+                            'folio' => $a->salesOrder?->folio,
+                            'balance' => $a->salesOrder?->balance,
+                            'client_id' => $a->salesOrder?->client_id,
+                            'client_name' => $a->salesOrder?->client?->business_name,
+                            'product_name' => $a->salesOrder?->product?->name,
+                        ];
+                    })->values()->all(),
                 ];
             });
 
