@@ -162,6 +162,11 @@ class ExitOperatorController extends Controller
                 return back()->withErrors(['operator_id' => 'Este operador se encuentra vetado y no puede ser seleccionado.']);
             }
 
+            $hasClients = $operator->clients->isNotEmpty() || (!empty($operator->client_ids) && count($operator->client_ids) > 0);
+            if (!$hasClients) {
+                return back()->withErrors(['operator_id' => 'El operador seleccionado no tiene ningún cliente asignado y no puede ser procesado.']);
+            }
+
             $salesOrder = SalesOrder::findOrFail($validated['sales_order_id']);
 
             if ($isClientUser) {

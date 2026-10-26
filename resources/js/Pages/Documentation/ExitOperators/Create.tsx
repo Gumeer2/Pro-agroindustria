@@ -51,6 +51,7 @@ export interface OperatorItem {
     sack?: string;
     status?: string;
     clients?: Array<{ id: number; business_name: string }>;
+    client_ids?: number[];
 }
 
 export interface SalesOrderItem {
@@ -219,12 +220,73 @@ export default function Create({
         }
 
         if (!found) {
-            setScanError(`No se encontró ningún operador con el código escaneado: "${raw}". Verifique el código QR.`);
+            const errorMsg = `No se encontró ningún operador con el código escaneado: "${raw}". Verifique el código QR.`;
+            setScanError(errorMsg);
+            setShowCameraModal(false);
+            Swal.fire({
+                icon: "error",
+                title: "Operador no encontrado",
+                text: errorMsg,
+                confirmButtonText: "Entendido",
+                confirmButtonColor: "#4f46e5",
+                background: "#ffffff",
+                color: "#1e1b4b",
+                backdrop: "rgba(15, 23, 42, 0.45)",
+            }).then(() => {
+                setQrInput("");
+                setTimeout(() => {
+                    qrInputRef.current?.focus();
+                }, 100);
+            });
             return;
         }
 
         if (found.status === "vetoed") {
-            setScanError(`⛔ El operador "${found.name}" se encuentra VETADO y no puede ser seleccionado.`);
+            const errorMsg = `El operador "${found.name}" se encuentra VETADO y no puede ser seleccionado.`;
+            setScanError(`⛔ ${errorMsg}`);
+            setShowCameraModal(false);
+            Swal.fire({
+                icon: "error",
+                title: "Operador Vetado",
+                text: errorMsg,
+                confirmButtonText: "Entendido",
+                confirmButtonColor: "#ef4444",
+                background: "#ffffff",
+                color: "#1e1b4b",
+                backdrop: "rgba(15, 23, 42, 0.45)",
+            }).then(() => {
+                setQrInput("");
+                setTimeout(() => {
+                    qrInputRef.current?.focus();
+                }, 100);
+            });
+            return;
+        }
+
+        // Validar que el operador tenga algún cliente asignado para permitir su escaneo
+        const hasAnyClient =
+            (found.clients && found.clients.length > 0) ||
+            (Array.isArray(found.client_ids) && found.client_ids.length > 0);
+
+        if (!hasAnyClient) {
+            const errorMsg = `El operador "${found.name}" no tiene ningún cliente asignado y no puede ser escaneado. Debe tener al menos un cliente asignado.`;
+            setScanError(`⛔ ${errorMsg}`);
+            setShowCameraModal(false);
+            Swal.fire({
+                icon: "warning",
+                title: "Sin Cliente Asignado",
+                text: errorMsg,
+                confirmButtonText: "Entendido",
+                confirmButtonColor: "#4f46e5",
+                background: "#ffffff",
+                color: "#1e1b4b",
+                backdrop: "rgba(15, 23, 42, 0.45)",
+            }).then(() => {
+                setQrInput("");
+                setTimeout(() => {
+                    qrInputRef.current?.focus();
+                }, 100);
+            });
             return;
         }
 
@@ -232,14 +294,30 @@ export default function Create({
         if (isFromClients && isClientOnlyUser) {
             if (clients && clients.length === 1) {
                 const currentClient = clients[0];
-                const isAssigned = found.clients?.some((c) => c.id === currentClient.id);
+                const isAssigned =
+                    found.clients?.some((c) => c.id === currentClient.id) ||
+                    (Array.isArray(found.client_ids) && found.client_ids.includes(currentClient.id));
                 if (!isAssigned) {
-                    setScanError(`⛔ El operador "${found.name}" no está asignado a ${currentClient.business_name}. Solo se pueden validar operadores asignados a su cliente.`);
+                    const errorMsg = `El operador "${found.name}" no está asignado a su empresa (${currentClient.business_name}). Solo se pueden validar operadores asignados a su cliente.`;
+                    setScanError(`⛔ ${errorMsg}`);
+                    setShowCameraModal(false);
+                    Swal.fire({
+                        icon: "warning",
+                        title: "Operador no Asignado",
+                        text: errorMsg,
+                        confirmButtonText: "Entendido",
+                        confirmButtonColor: "#4f46e5",
+                        background: "#ffffff",
+                        color: "#1e1b4b",
+                        backdrop: "rgba(15, 23, 42, 0.45)",
+                    }).then(() => {
+                        setQrInput("");
+                        setTimeout(() => {
+                            qrInputRef.current?.focus();
+                        }, 100);
+                    });
                     return;
                 }
-            } else if (!found.clients || found.clients.length === 0) {
-                setScanError(`⛔ El operador "${found.name}" no tiene ningún cliente asignado.`);
-                return;
             }
         }
 
@@ -329,6 +407,13 @@ export default function Create({
         const op = operators.find((o) => o.id === Number(clientForm.data.operator_id));
         if (op?.status === "vetoed") {
             clientForm.setError("operator_id", "Este operador se encuentra vetado y no puede ser seleccionado.");
+            return;
+        }
+        const hasAnyClient =
+            (op?.clients && op.clients.length > 0) ||
+            (Array.isArray(op?.client_ids) && op.client_ids.length > 0);
+        if (!hasAnyClient) {
+            clientForm.setError("operator_id", "El operador no tiene ningún cliente asignado y no puede ser asignado.");
             return;
         }
         if (!clientForm.data.sales_order_id) {
