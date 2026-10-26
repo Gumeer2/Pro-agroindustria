@@ -144,6 +144,10 @@ class DashboardController extends Controller
 
     public function index(Request $request)
     {
+        if ($request->user() && $request->user()->hasRole('Clientes') && !$request->user()->hasRole('Admin')) {
+            return redirect()->route('clients.index');
+        }
+
         $vesselId = $request->input('vessel_id');
         $dateStart = $request->input('start_date');
         $dateEnd = $request->input('end_date');

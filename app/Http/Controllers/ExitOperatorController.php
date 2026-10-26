@@ -13,6 +13,11 @@ class ExitOperatorController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
+        if ($user && $user->hasRole('Clientes') && !$user->hasRole('Admin')) {
+            return redirect()->route('clients.index');
+        }
+
         $query = ExitOperator::query();
 
         if ($request->has('search')) {
@@ -39,13 +44,31 @@ class ExitOperatorController extends Controller
 
     public function create(Request $request)
     {
-        $clients = Client::orderBy('business_name')->get(['id', 'business_name', 'rfc']);
+        $user = $request->user();
+        $isClientUser = $user && $user->hasRole('Clientes') && !$user->hasRole('Admin');
         $from = $request->query('from');
+
+        if ($isClientUser && $from !== 'clients') {
+            return redirect()->route('documentation.exit-operators.create', ['from' => 'clients']);
+        }
+
+        $clientMatch = null;
+        if ($isClientUser) {
+            $clientMatch = Client::where('business_name', $user->name)
+                ->orWhere('rfc', $user->username)
+                ->orWhere('contact_info', 'like', "%{$user->email}%")
+                ->first();
+        }
+
+        $clients = $clientMatch ? collect([$clientMatch]) : Client::orderBy('business_name')->get(['id', 'business_name', 'rfc']);
         $operators = ExitOperator::with('clients')->orderBy('name')->get();
-        $salesOrders = SalesOrder::with(['client', 'product'])
-            ->whereIn('status', ['created', 'open'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+
+        $salesOrdersQuery = SalesOrder::with(['client', 'product'])
+            ->whereIn('status', ['created', 'open']);
+        if ($clientMatch) {
+            $salesOrdersQuery->where('client_id', $clientMatch->id);
+        }
+        $salesOrders = $salesOrdersQuery->orderBy('created_at', 'desc')->get();
 
         // Acumulado programado a operadores por OV (solo lectura, para la tabla de saldo)
         $programmed = ClientOperatorAssignment::selectRaw('sales_order_id, SUM(tm) as total_tm')
@@ -56,13 +79,17 @@ class ExitOperatorController extends Controller
         });
 
         // Asignaciones de operadores a Órdenes de Venta (un registro por asignación)
-        $clientAssignments = ClientOperatorAssignment::with([
+        $assignmentsQuery = ClientOperatorAssignment::with([
             'operator.clients',
             'salesOrder.product',
             'salesOrder.client'
-        ])
-        ->orderBy('updated_at', 'desc')
-        ->get();
+        ]);
+        if ($clientMatch) {
+            $assignmentsQuery->whereHas('salesOrder', function ($q) use ($clientMatch) {
+                $q->where('client_id', $clientMatch->id);
+            });
+        }
+        $clientAssignments = $assignmentsQuery->orderBy('updated_at', 'desc')->get();
 
         $now = now()->timezone('America/Mexico_City');
         $currentOperationalDate = $now->hour < 5 ? $now->subDay()->toDateString() : $now->toDateString();
@@ -99,12 +126,20 @@ class ExitOperatorController extends Controller
             'client_operators' => $clientAssignments,
             'current_operational_date' => $currentOperationalDate,
             'from' => $from,
+            'module' => ($isClientUser || $from === 'clients') ? 'clients' : 'documentation',
+            'context_module' => ($isClientUser || $from === 'clients') ? 'clients' : 'documentation',
         ]);
     }
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        $isClientUser = $user && $user->hasRole('Clientes') && !$user->hasRole('Admin');
         $from = $request->input('from');
+
+        if ($isClientUser && $from !== 'clients') {
+            abort(403, 'No tiene autorización para realizar esta acción.');
+        }
 
         if ($from === 'clients') {
             $validated = $request->validate([
@@ -121,13 +156,35 @@ class ExitOperatorController extends Controller
                 'tm.min' => 'El tonelaje debe ser mayor a 0.',
             ]);
 
-            $operator = ExitOperator::findOrFail($validated['operator_id']);
+            $operator = ExitOperator::with('clients')->findOrFail($validated['operator_id']);
 
             if ($operator->status === 'vetoed') {
                 return back()->withErrors(['operator_id' => 'Este operador se encuentra vetado y no puede ser seleccionado.']);
             }
 
             $salesOrder = SalesOrder::findOrFail($validated['sales_order_id']);
+
+            if ($isClientUser) {
+                $clientMatch = Client::where('business_name', $user->name)
+                    ->orWhere('rfc', $user->username)
+                    ->orWhere('contact_info', 'like', "%{$user->email}%")
+                    ->first();
+                if ($clientMatch) {
+                    if ($salesOrder->client_id !== $clientMatch->id) {
+                        return back()->withErrors(['sales_order_id' => 'No tiene autorización para asignar esta Orden de Venta.']);
+                    }
+                    $isAssignedToClient = $operator->clients->contains('id', $clientMatch->id) ||
+                        (is_array($operator->client_ids) && in_array($clientMatch->id, $operator->client_ids));
+                    if (!$isAssignedToClient) {
+                        return back()->withErrors(['operator_id' => 'El operador seleccionado no está asignado a su empresa (' . $clientMatch->business_name . '). Solo se pueden validar operadores asignados a su cliente.']);
+                    }
+                }
+            } else {
+                // Para roles administrativos (Admin, Documentador), si el operador no estaba vinculado a este cliente, se asocia automáticamente sin bloquear
+                if (!$operator->clients->contains('id', $salesOrder->client_id)) {
+                    $operator->clients()->syncWithoutDetaching([$salesOrder->client_id]);
+                }
+            }
             $availableBalance = (float) $salesOrder->balance;
 
             $currentAssignment = !empty($validated['assignment_id'])
@@ -228,6 +285,11 @@ class ExitOperatorController extends Controller
 
     public function edit($id)
     {
+        $user = request()->user();
+        if ($user && $user->hasRole('Clientes') && !$user->hasRole('Admin')) {
+            return redirect()->route('clients.index');
+        }
+
         $operator = ExitOperator::with('clients')->findOrFail($id);
 
         if ($operator->status === 'vetoed') {
@@ -250,6 +312,11 @@ class ExitOperatorController extends Controller
 
     public function update(Request $request, $id)
     {
+        $user = $request->user();
+        if ($user && $user->hasRole('Clientes') && !$user->hasRole('Admin')) {
+            return redirect()->route('clients.index');
+        }
+
         $operator = ExitOperator::findOrFail($id);
 
         if ($operator->status === 'vetoed') {
@@ -311,6 +378,11 @@ class ExitOperatorController extends Controller
 
     public function toggleStatus($id)
     {
+        $user = request()->user();
+        if ($user && $user->hasRole('Clientes') && !$user->hasRole('Admin')) {
+            return redirect()->route('clients.index');
+        }
+
         $operator = ExitOperator::findOrFail($id);
         $operator->status = $operator->status === 'active' ? 'vetoed' : 'active';
         $operator->save();
@@ -321,6 +393,11 @@ class ExitOperatorController extends Controller
 
     public function qr($id)
     {
+        $user = request()->user();
+        if ($user && $user->hasRole('Clientes') && !$user->hasRole('Admin')) {
+            return redirect()->route('clients.index');
+        }
+
         $operator = ExitOperator::findOrFail($id);
 
         if ($operator->status === 'vetoed') {
@@ -333,8 +410,34 @@ class ExitOperatorController extends Controller
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
+        $from = $request->query('from', $request->input('from'));
+
+        if ($from === 'clients') {
+            $assignment = ClientOperatorAssignment::with(['operator', 'salesOrder'])->findOrFail($id);
+            $user = $request->user();
+            $isClientUser = $user && $user->hasRole('Clientes') && !$user->hasRole('Admin');
+
+            if ($isClientUser) {
+                $clientMatch = Client::where('business_name', $user->name)
+                    ->orWhere('rfc', $user->username)
+                    ->orWhere('contact_info', 'like', "%{$user->email}%")
+                    ->first();
+
+                if ($clientMatch && $assignment->salesOrder && $assignment->salesOrder->client_id !== $clientMatch->id) {
+                    return back()->withErrors(['error' => 'No tiene autorización para eliminar esta asignación.']);
+                }
+            }
+
+            $opName = $assignment->operator?->name ?? 'Operador';
+            $ovFolio = $assignment->salesOrder?->folio ?? '';
+            $assignment->delete();
+
+            return redirect()->route('documentation.exit-operators.create', ['from' => 'clients'])
+                ->with('success', "Asignación del operador {$opName}" . ($ovFolio ? " (OV: {$ovFolio})" : "") . " eliminada correctamente.");
+        }
+
         $operator = ExitOperator::findOrFail($id);
         $operator->delete();
 

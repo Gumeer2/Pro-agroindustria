@@ -12,11 +12,13 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
     const tenant = props.tenant;
 
     const user = props.auth?.user;
-    const permissions = user?.permissions || [];
-    const roles = user?.roles || [];
+    const permissions: string[] = user?.permissions || [];
+    const roles: string[] = user?.roles || [];
+    const isClientRole = roles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'clientes') &&
+        !roles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'admin');
 
     const allLinks = [
-        { name: 'Inicio', href: route('dashboard'), icon: LayoutDashboard, show: true, module: 'dashboard', color: 'text-indigo-400' },
+        { name: 'Inicio', href: route('dashboard'), icon: LayoutDashboard, show: !isClientRole, module: 'dashboard', color: 'text-indigo-400' },
         { name: 'Comercialización', href: route('sales.index'), icon: ClipboardList, permission: 'view commercialization', module: 'sales', color: 'text-blue-400' },
         { name: 'Tráfico', href: route('traffic.index'), icon: Truck, permission: 'view traffic', role: 'Admin', module: 'traffic', color: 'text-orange-400' },
         { name: 'Vigilancia', icon: Search, href: route('surveillance.index'), permission: 'view surveillance', module: 'surveillance', color: 'text-red-400' },
@@ -24,19 +26,24 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
         { name: 'Báscula', href: route('scale.index'), icon: Scale, permission: 'view scale', module: 'scale', color: 'text-teal-400' },
         { name: 'Muelle', href: route('dock.index'), icon: Ship, permission: 'view dock', module: 'dock', color: 'text-cyan-400' },
         { name: 'APT', href: route('apt.index'), icon: Box, permission: 'view apt', module: 'apt', color: 'text-purple-400' },
-        { name: 'Clientes', href: route('clients.index'), icon: Building2, permission: ['view commercialization', 'view documentation'], role: 'Admin', module: 'clients', color: 'text-rose-400' },
+        { name: 'Clientes', href: route('clients.index'), icon: Building2, permission: ['view commercialization', 'view documentation'], role: ['Admin', 'Clientes'], module: 'clients', color: 'text-rose-400' },
         { name: 'Administración', href: route('admin.users.index'), icon: Users, role: 'Admin', module: 'admin', color: 'text-green-400' },
     ];
 
     const currentModule = (props.context_module || props.module) as string;
 
-    const visibleLinks = allLinks.filter((link: any) => {
+    let visibleLinks = allLinks.filter((link: any) => {
         if (link.show) return true;
+        if (Array.isArray(link.role) && link.role.some((r: string) => roles.includes(r))) return true;
         if (link.role && roles.includes(link.role)) return true;
         if (Array.isArray(link.permission) && link.permission.some((p: string) => permissions.includes(p))) return true;
         if (link.permission && permissions.includes(link.permission)) return true;
         return false;
     });
+
+    if (isClientRole) {
+        visibleLinks = visibleLinks.filter((link: any) => link.module === 'clients');
+    }
 
     return (
         <div className={cn(
@@ -48,7 +55,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
             {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent py-6 space-y-8">
                 <div className="px-4 flex flex-col items-center">
-                    <Link href={`/dashboard`} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
+                    <Link href={isClientRole ? route('clients.index') : '/dashboard'} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
                         <img
                             src={props.tenant?.logo || `/images/logovecode.png`}
                             alt={props.tenant?.name || "Logo"}
@@ -78,7 +85,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
                                 ? currentModule === link.module
                                 : (url.startsWith(link.href) || (link.href === '/dashboard' && url === '/dashboard'));
                             return (
-                                <a
+                                <Link
                                     key={link.href}
                                     href={link.href}
                                     className={cn(
@@ -105,7 +112,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
                                     )}>
                                         {link.name}
                                     </span>
-                                </a>
+                                </Link>
                             );
                         })}
                     </div>

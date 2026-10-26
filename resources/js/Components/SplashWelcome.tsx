@@ -97,7 +97,7 @@ export const SplashWelcome = () => {
                     {/* Slogan */}
                     <div className={`mt-6 transition-all duration-1000 delay-1000 ${phase >= 3 ? 'opacity-100' : 'opacity-0'}`}>
                         <p className="text-blue-200/50 text-xs font-bold uppercase tracking-[0.3em]">
-                            Sistema Integral de Operaciones Portuarias
+                            Sistema Integral de Ventas y Control de Despacho Pro-Agroindustria
                         </p>
                     </div>
                 </div>

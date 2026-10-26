@@ -1,6 +1,6 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link, usePage } from "@inertiajs/react";
-import { Building2, UserPlus, CheckCircle, X } from "lucide-react";
+import { UserPlus, CheckCircle, X } from "lucide-react";
 import { useState, useEffect } from "react";
 
 export default function Index({ auth }: { auth: any }) {
@@ -16,14 +16,6 @@ export default function Index({ auth }: { auth: any }) {
     }, [flash?.success]);
 
     const menuItems = [
-        {
-            name: "Directorio de Clientes",
-            icon: Building2,
-            href: route("clients.directory"),
-            description: "Listado de clientes, consulta de información fiscal, direcciones y contactos.",
-            color: "bg-rose-50 text-rose-600",
-            hover: "hover:border-rose-500",
-        },
         {
             name: "Asignacion Operador - Cliente",
             icon: UserPlus,
@@ -61,7 +53,7 @@ export default function Index({ auth }: { auth: any }) {
                 )}
 
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                    <div className="max-w-xl mx-auto">
                         {menuItems.map((item, index) => (
                             <Link
                                 key={index}

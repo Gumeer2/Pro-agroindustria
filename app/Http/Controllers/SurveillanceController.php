@@ -227,12 +227,13 @@ class SurveillanceController extends Controller
             'shipmentOrders.loadingOrders.weight_ticket',
             'shipmentOrders.origin'
         ])
-            ->where('status', 'in_plant')
+            ->whereIn('status', ['in_plant', 'pending'])
             ->whereNull('exit_at')
-            ->orderBy('entry_at', 'desc')
+            ->orderByRaw("CASE WHEN status = 'in_plant' THEN 1 ELSE 2 END")
+            ->orderByRaw("COALESCE(entry_at, created_at) desc")
             ->get();
 
-        $inPlant = $logs->map(function ($log) {
+        $mappedLogs = $logs->map(function ($log) {
             $uncompletedFolios = [];
             $hasSader = false;
             $activeOrders = $log->shipmentOrders->whereNotIn('status', ['closed']);
@@ -272,31 +273,128 @@ class SurveillanceController extends Controller
                     'product'        => $order->items->first()?->product?->name ?? $order->product ?? 'N/A',
                     'quantity'       => $order->items->sum('quantity') ?: ($order->programmed_tons ?? 0),
                     'origin'         => $order->origin?->name ?? $order->origin ?? 'N/A',
+                    'unit_type'      => $order->unit_type ?? 'N/A',
                 ];
             });
 
+            $isPending = ($log->status === 'pending');
+            $unitType = $log->subject?->unit_type ?: ($orders->first()['unit_type'] ?? 'N/A');
+
+            $log->current_status = $isPending ? 'pending' : 'in_plant';
+            $log->status_label = $isPending ? 'Por Ingresar' : 'Dentro de Planta';
+            $log->unit_type = $unitType;
             $log->shipment_orders_data = $orders->values()->all();
             $log->shipment_orders = $orders->values()->all();
             $log->setRelation('shipmentOrders', $orders);
-            $log->can_exit = empty($uncompletedFolios);
+            $log->can_exit = !$isPending && empty($uncompletedFolios);
             $log->uncompleted_folios = $uncompletedFolios;
             $log->has_sader_orders = $hasSader;
 
             return $log;
         });
 
-        // Ensure 1 unique entry per operator in plant
-        $uniqueInPlant = $inPlant->unique(function ($log) {
+        // Ensure 1 unique entry per operator log
+        $uniqueLogs = $mappedLogs->unique(function ($log) {
             $name = strtoupper(trim($log->subject?->operator_name ?? $log->subject?->name ?? ''));
             $plate = strtoupper(trim($log->subject?->tractor_plate ?? ''));
             return !empty($name) ? ($name . '|' . $plate) : ('LOG_' . $log->id);
         })->values();
 
-        $pendingCount = AccessLog::whereIn('status', ['pending', 'rejected'])->count();
+        // Also identify active documented orders whose operators have not entered yet ("Por Ingresar")
+        $knownOpNames = $uniqueLogs->map(function ($log) {
+            return strtoupper(trim($log->subject?->operator_name ?? $log->subject?->name ?? ''));
+        })->filter()->all();
+        $knownPlates = $uniqueLogs->map(function ($log) {
+            return strtoupper(trim($log->subject?->tractor_plate ?? ''));
+        })->filter()->all();
+
+        $unenteredOrders = ShipmentOrder::with(['client', 'items.product', 'origin'])
+            ->whereNotIn('status', ['cancelled', 'closed', 'completed'])
+            ->whereDoesntHave('accessLogs', function ($q) {
+                $q->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at');
+            })
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->filter(function ($order) use ($knownOpNames, $knownPlates) {
+                $op = strtoupper(trim($order->operator_name ?? ''));
+                $plate = strtoupper(trim($order->tractor_plate ?? ''));
+                if (!empty($op) && in_array($op, $knownOpNames)) return false;
+                if (!empty($plate) && in_array($plate, $knownPlates)) return false;
+                return true;
+            });
+
+        $pendingFromOrders = $unenteredOrders->groupBy(function ($order) {
+            $name = strtoupper(trim($order->operator_name ?? ''));
+            $plate = strtoupper(trim($order->tractor_plate ?? ''));
+            return !empty($name) ? ($name . '|' . $plate) : ('ORDER_' . $order->id);
+        })->map(function ($groupedOrders) {
+            $firstOrder = $groupedOrders->first();
+            $ordersMapped = $groupedOrders->map(function ($order) {
+                $consignedTo = strtoupper(trim($order->consigned_to ?? ''));
+                $clientName  = strtoupper(trim($order->client?->business_name ?? $order->client?->name ?? $order->client_name ?? ''));
+                $destination = strtoupper(trim($order->destination ?? ''));
+                $isSader     = (strpos($consignedTo, 'SADER') !== false) ||
+                               (strpos($clientName, 'SADER') !== false) ||
+                               (strpos($destination, 'SADER') !== false);
+
+                return [
+                    'id'             => $order->id,
+                    'folio'          => $order->folio ?? $order->id,
+                    'status'         => $order->status,
+                    'destare_status' => $order->destare_status ?? 'pending',
+                    'is_completed'   => false,
+                    'is_cancelled'   => false,
+                    'has_destare'    => false,
+                    'is_sader'       => $isSader,
+                    'consigned_to'   => $order->consigned_to ?? 'N/A',
+                    'client'         => $order->client?->business_name ?? $order->client?->name ?? $order->client_name ?? 'N/A',
+                    'client_name'    => $order->client_name ?? $order->client?->business_name ?? $order->client?->name ?? 'N/A',
+                    'destination'    => $order->destination ?? 'N/A',
+                    'product'        => $order->items->first()?->product?->name ?? $order->product ?? 'N/A',
+                    'quantity'       => $order->items->sum('quantity') ?: ($order->programmed_tons ?? 0),
+                    'origin'         => $order->origin?->name ?? 'N/A',
+                    'unit_type'      => $order->unit_type ?? 'N/A',
+                ];
+            })->values()->all();
+
+            $unitType = $firstOrder->unit_type ?: 'N/A';
+
+            return (object)[
+                'id'                   => 'order-' . $firstOrder->id,
+                'is_virtual'           => true,
+                'status'               => 'pending',
+                'current_status'       => 'pending',
+                'status_label'         => 'Por Ingresar',
+                'unit_type'            => $unitType,
+                'entry_at'             => null,
+                'created_at'           => $firstOrder->created_at ? $firstOrder->created_at->toISOString() : null,
+                'subject'              => (object)[
+                    'operator_name'   => $firstOrder->operator_name ?: 'N/A',
+                    'name'            => $firstOrder->operator_name ?: 'N/A',
+                    'license'         => $firstOrder->driver_license ?: 'N/A',
+                    'tractor_plate'   => $firstOrder->tractor_plate ?: 'S/P',
+                    'trailer_plate'   => $firstOrder->trailer_plate ?: '',
+                    'economic_number' => $firstOrder->economic_number ?: 'S/N',
+                    'transport_line'  => $firstOrder->transporter_line ?: ($firstOrder->client?->business_name ?: ''),
+                    'unit_type'       => $unitType,
+                ],
+                'shipment_orders_data' => $ordersMapped,
+                'shipment_orders'      => $ordersMapped,
+                'can_exit'             => false,
+                'uncompleted_folios'   => [],
+                'has_sader_orders'     => collect($ordersMapped)->contains('is_sader', true),
+            ];
+        })->values();
+
+        $allUnits = $uniqueLogs->concat($pendingFromOrders)->values();
+
+        $inPlantCount = $allUnits->where('current_status', 'in_plant')->count();
+        $pendingCount = $allUnits->where('current_status', 'pending')->count();
 
         return Inertia::render('Surveillance/Exits', [
-            'in_plant'      => $uniqueInPlant,
-            'pending_count' => $pendingCount,
+            'in_plant'       => $allUnits,
+            'in_plant_count' => $inPlantCount,
+            'pending_count'  => $pendingCount,
         ]);
     }
 

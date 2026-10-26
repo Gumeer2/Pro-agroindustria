@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\TenantMiddleware::class,
             \App\Http\Middleware\CheckUserBlocked::class,
+            \App\Http\Middleware\CheckClientRoleAccess::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);

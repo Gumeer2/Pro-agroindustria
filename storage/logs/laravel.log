@@ -55672,3 +55672,65 @@ Stack trace:
 #10 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/bf97e659-e9dc-43ec-b313-7fef5a157f05/scratch/check_records.php(23): Illuminate/Database/Eloquent/Builder->get()
 #11 {main}
 "} 
+[2026-10-26 08:22:30] local.ERROR: Maximum execution time of 120 seconds exceeded {"exception":"[object] (Symfony\\Component\\ErrorHandler\\Error\\FatalError(code: 0): Maximum execution time of 120 seconds exceeded at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:66)
+[stacktrace]
+#0 {main}
+"} 
+[2026-10-26 08:22:30] local.ERROR: Maximum execution time of 120 seconds exceeded {"exception":"[object] (Symfony\\Component\\ErrorHandler\\Error\\FatalError(code: 0): Maximum execution time of 120 seconds exceeded at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:66)
+[stacktrace]
+#0 {main}
+"} 
+[2026-10-26 08:22:30] local.ERROR: Maximum execution time of 120 seconds exceeded {"exception":"[object] (Symfony\\Component\\ErrorHandler\\Error\\FatalError(code: 0): Maximum execution time of 120 seconds exceeded at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:66)
+[stacktrace]
+#0 {main}
+"} 
+[2026-10-26 09:08:43] local.ERROR: Call to undefined relationship [exit_operator] on model [App\Models\ShipmentOrder]. {"exception":"[object] (Illuminate\\Database\\Eloquent\\RelationNotFoundException(code: 0): Call to undefined relationship [exit_operator] on model [App\\Models\\ShipmentOrder]. at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/RelationNotFoundException.php:35)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(878): Illuminate/Database/Eloquent/RelationNotFoundException::make(Object(App/Models/ShipmentOrder), 'exit_operator')
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Relations/Relation.php(120): Illuminate/Database/Eloquent/Builder->Illuminate/Database/Eloquent/{closure}()
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(874): Illuminate/Database/Eloquent/Relations/Relation::noConstraints(Object(Closure))
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(848): Illuminate/Database/Eloquent/Builder->getRelation('exit_operator')
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(828): Illuminate/Database/Eloquent/Builder->eagerLoadRelation(Array, 'exit_operator', Object(Closure))
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(794): Illuminate/Database/Eloquent/Builder->eagerLoadRelations(Array)
+#6 C:/xampp/htdocs/Proagroindustria2/scratch_check_statuses.php(19): Illuminate/Database/Eloquent/Builder->get()
+#7 {main}
+"} 
+[2026-10-26 09:13:01] local.ERROR: Call to undefined relationship [exit_operator] on model [App\Models\ShipmentOrder]. {"exception":"[object] (Illuminate\\Database\\Eloquent\\RelationNotFoundException(code: 0): Call to undefined relationship [exit_operator] on model [App\\Models\\ShipmentOrder]. at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/RelationNotFoundException.php:35)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(878): Illuminate/Database/Eloquent/RelationNotFoundException::make(Object(App/Models/ShipmentOrder), 'exit_operator')
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Relations/Relation.php(120): Illuminate/Database/Eloquent/Builder->Illuminate/Database/Eloquent/{closure}()
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(874): Illuminate/Database/Eloquent/Relations/Relation::noConstraints(Object(Closure))
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(848): Illuminate/Database/Eloquent/Builder->getRelation('exit_operator')
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(828): Illuminate/Database/Eloquent/Builder->eagerLoadRelation(Array, 'exit_operator', Object(Closure))
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(794): Illuminate/Database/Eloquent/Builder->eagerLoadRelations(Array)
+#6 C:/xampp/htdocs/Proagroindustria2/scratch_test_resolution.php(44): Illuminate/Database/Eloquent/Builder->get()
+#7 {main}
+"} 
+[2026-10-26 10:10:34] local.ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'balance' in 'field list' (Connection: mysql, SQL: select `id`, `folio`, `balance` from `sales_orders` where `client_id` = 11) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'balance' in 'field list' (Connection: mysql, SQL: select `id`, `folio`, `balance` from `sales_orders` where `client_id` = 11) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#8 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/bf97e659-e9dc-43ec-b313-7fef5a157f05/scratch/test_client_match.php(21): Illuminate/Database/Eloquent/Builder->get(Array)
+#9 {main}
+
+[previous exception] [object] (PDOException(code: 42S22): SQLSTATE[42S22]: Column not found: 1054 Unknown column 'balance' in 'field list' at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:407)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): PDO->prepare('select `id`, `f...')
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select `id`, `f...', Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#9 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#10 C:/Users/juan.villegas/.gemini/antigravity-ide/brain/bf97e659-e9dc-43ec-b313-7fef5a157f05/scratch/test_client_match.php(21): Illuminate/Database/Eloquent/Builder->get(Array)
+#11 {main}
+"} 

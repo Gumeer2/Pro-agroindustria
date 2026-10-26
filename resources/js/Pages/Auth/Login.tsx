@@ -89,7 +89,7 @@ export default function Login({
                             Bienvenido a <span className="text-blue-600">VECODE</span>
                         </h2>
                         <p className="text-slate-500 font-medium text-sm">
-                            {tenant?.name || 'Sistema Integral de Operaciones Portuarias'}
+                            {tenant?.name || 'Sistema Integral de Ventas y Control de Despacho Pro-Agroindustria'}
                         </p>
                     </div>
 
@@ -190,7 +190,7 @@ export default function Login({
                         <p>{tenant?.copyright_text || `© ${new Date().getFullYear()} VECODE. Todos los derechos reservados.`}</p>
                         <div className="mt-2 flex justify-center gap-2 opacity-60">
                             <Anchor className="w-3 h-3" />
-                            <span>Sistema Integral de Operaciones Portuarias</span>
+                            <span>Sistema Integral de Ventas y Control de Despacho Pro-Agroindustria</span>
                         </div>
                     </div>
                 </div>

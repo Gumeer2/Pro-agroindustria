@@ -25,17 +25,35 @@ import Modal from "@/Components/Modal";
 import axios from "axios";
 import Swal from "sweetalert2";
 
+const UNIT_TYPE_CATEGORIES = [
+    { value: "all", label: "Todos los tipos de unidad" },
+    { value: "PIPA", label: "Pipas" },
+    { value: "VOLTEO", label: "Volteos" },
+    { value: "TOLVA", label: "Tolvas" },
+    { value: "PLATAFORMA", label: "Plataformas" },
+    { value: "JAULA", label: "Jaulas" },
+    { value: "GONDOLA", label: "Góndolas" },
+    { value: "CAJA_SECA", label: "Cajas Secas" },
+    { value: "TORTON", label: "Tortons" },
+    { value: "CAMIONETA", label: "Camionetas" },
+    { value: "OTROS", label: "Otros" },
+];
+
 export default function Exits({
     auth,
     in_plant = [],
     pending_count = 0,
+    in_plant_count = 0,
 }: {
     auth: any;
     in_plant: any[];
     pending_count?: number;
+    in_plant_count?: number;
 }) {
     const [inPlantLogs, setInPlantLogs] = useState<any[]>(in_plant);
     const [searchTerm, setSearchTerm] = useState("");
+    const [statusFilter, setStatusFilter] = useState<"all" | "in_plant" | "pending">("all");
+    const [unitTypeFilter, setUnitTypeFilter] = useState<string>("all");
 
     useEffect(() => {
         setInPlantLogs(in_plant);
@@ -332,8 +350,39 @@ export default function Exits({
         }
     };
 
-    // Filter units in plant
+    // Filter units by status, unit type, and search term
     const filteredLogs = inPlantLogs.filter((log) => {
+        // 1. Status Filter (only "in_plant" and "pending")
+        const logStatus = log.current_status || log.status;
+        if (statusFilter !== "all" && logStatus !== statusFilter) {
+            return false;
+        }
+
+        // 2. Unit Type Filter
+        if (unitTypeFilter !== "all") {
+            const rawUnit = (
+                log.unit_type ||
+                log.subject?.unit_type ||
+                (log.shipment_orders_data && log.shipment_orders_data[0]?.unit_type) ||
+                ""
+            ).toUpperCase();
+
+            if (unitTypeFilter === "PIPA" && !rawUnit.includes("PIPA")) return false;
+            if (unitTypeFilter === "VOLTEO" && !rawUnit.includes("VOLTEO")) return false;
+            if (unitTypeFilter === "TOLVA" && !rawUnit.includes("TOLVA")) return false;
+            if (unitTypeFilter === "PLATAFORMA" && !rawUnit.includes("PLATAFORMA")) return false;
+            if (unitTypeFilter === "JAULA" && !rawUnit.includes("JAULA")) return false;
+            if (unitTypeFilter === "GONDOLA" && !rawUnit.includes("GONDOLA") && !rawUnit.includes("GÓNDOLA")) return false;
+            if (unitTypeFilter === "CAJA_SECA" && !rawUnit.includes("CAJA SECA")) return false;
+            if (unitTypeFilter === "TORTON" && !rawUnit.includes("TORTON")) return false;
+            if (unitTypeFilter === "CAMIONETA" && !rawUnit.includes("CAMIONETA")) return false;
+            if (unitTypeFilter === "OTROS") {
+                const known = ["PIPA", "VOLTEO", "TOLVA", "PLATAFORMA", "JAULA", "GONDOLA", "GÓNDOLA", "CAJA SECA", "TORTON", "CAMIONETA"];
+                if (known.some((k) => rawUnit.includes(k))) return false;
+            }
+        }
+
+        // 3. Search query
         const query = searchTerm.toLowerCase().trim();
         if (!query) return true;
 
@@ -341,17 +390,27 @@ export default function Exits({
         const plate = (log.subject?.tractor_plate || "").toLowerCase();
         const trailerPlate = (log.subject?.trailer_plate || "").toLowerCase();
         const econ = (log.subject?.economic_number || "").toLowerCase();
+        const unitType = (log.unit_type || log.subject?.unit_type || "").toLowerCase();
         const orders = (log.shipment_orders_data || log.shipment_orders || [])
             .map((o: any) => (o.folio || o.id || "").toLowerCase())
             .join(" ");
 
-        return opName.includes(query) || plate.includes(query) || trailerPlate.includes(query) || econ.includes(query) || orders.includes(query);
+        return (
+            opName.includes(query) ||
+            plate.includes(query) ||
+            trailerPlate.includes(query) ||
+            econ.includes(query) ||
+            unitType.includes(query) ||
+            orders.includes(query)
+        );
     });
 
-    const totalInPlantCount = inPlantLogs.length;
+    const inPlantCount = inPlantLogs.filter((l) => (l.current_status || l.status) === "in_plant").length;
+    const pendingCount = inPlantLogs.filter((l) => (l.current_status || l.status) === "pending").length;
 
     // 1 row per operator log (never duplicates operators)
     const displayRows = filteredLogs.map((log) => {
+        const isPendingLog = (log.current_status || log.status) === "pending";
         const orders = (log.shipment_orders_data || log.shipment_orders || []).filter(
             (o: any) => o && o.status !== "closed"
         );
@@ -359,25 +418,26 @@ export default function Exits({
             (o: any) => !o.is_completed && !o.has_destare && o.destare_status !== "completed" && !o.is_cancelled && o.status !== "cancelled"
         );
         const hasUncompleted = uncompletedOrders.length > 0;
-        const canExit = !hasUncompleted;
+        const canExit = !isPendingLog && !hasUncompleted;
 
         return {
             rowKey: `log-${log.id}`,
             log,
             orders,
+            isPendingLog,
             canExit,
             uncompletedOrders,
         };
     });
 
-    // Toggle select all in-plant rows
-    const allRowKeys = displayRows.map((r) => r.rowKey);
-    const isAllSelected = allRowKeys.length > 0 && allRowKeys.every((k) => selectedRowKeys.includes(k));
+    // Toggle select all in-plant rows (excluding pending units which cannot exit yet)
+    const selectableRowKeys = displayRows.filter((r) => !r.isPendingLog).map((r) => r.rowKey);
+    const isAllSelected = selectableRowKeys.length > 0 && selectableRowKeys.every((k) => selectedRowKeys.includes(k));
     const toggleSelectAll = () => {
         if (isAllSelected) {
             setSelectedRowKeys([]);
         } else {
-            setSelectedRowKeys(allRowKeys);
+            setSelectedRowKeys(selectableRowKeys);
         }
     };
 
@@ -421,38 +481,131 @@ export default function Exits({
                             </p>
                         </div>
 
-                        {/* Quick Stats Badges */}
+                        {/* Quick Stats Badges (Interactive Status Filter) */}
                         <div className="flex items-center gap-3">
-                            <div className="bg-indigo-50 border border-indigo-100 px-4 py-2.5 rounded-2xl flex items-center gap-3">
-                                <div className="p-2 bg-indigo-600 text-white rounded-xl">
+                            <button
+                                type="button"
+                                onClick={() => setStatusFilter((curr) => (curr === "in_plant" ? "all" : "in_plant"))}
+                                className={`transition-all border px-4 py-2.5 rounded-2xl flex items-center gap-3 text-left ${
+                                    statusFilter === "in_plant"
+                                        ? "bg-emerald-600 border-emerald-700 text-white shadow-md shadow-emerald-200"
+                                        : "bg-emerald-50 border-emerald-100 hover:bg-emerald-100/70"
+                                }`}
+                                title="Filtrar operadores dentro de planta"
+                            >
+                                <div className={`p-2 rounded-xl ${statusFilter === "in_plant" ? "bg-white text-emerald-600" : "bg-emerald-600 text-white"}`}>
                                     <Truck className="w-4 h-4" />
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">
+                                    <p className={`text-[10px] font-black uppercase tracking-wider ${statusFilter === "in_plant" ? "text-emerald-100" : "text-emerald-700"}`}>
                                         En Planta
                                     </p>
-                                    <p className="text-lg font-black text-indigo-900 leading-none">
-                                        {totalInPlantCount}
+                                    <p className={`text-lg font-black leading-none ${statusFilter === "in_plant" ? "text-white" : "text-emerald-950"}`}>
+                                        {inPlantCount}
                                     </p>
                                 </div>
-                            </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setStatusFilter((curr) => (curr === "pending" ? "all" : "pending"))}
+                                className={`transition-all border px-4 py-2.5 rounded-2xl flex items-center gap-3 text-left ${
+                                    statusFilter === "pending"
+                                        ? "bg-amber-500 border-amber-600 text-white shadow-md shadow-amber-200"
+                                        : "bg-amber-50 border-amber-100 hover:bg-amber-100/70"
+                                }`}
+                                title="Filtrar operadores por ingresar"
+                            >
+                                <div className={`p-2 rounded-xl ${statusFilter === "pending" ? "bg-white text-amber-600" : "bg-amber-500 text-white"}`}>
+                                    <Clock className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <p className={`text-[10px] font-black uppercase tracking-wider ${statusFilter === "pending" ? "text-amber-100" : "text-amber-700"}`}>
+                                        Por Ingresar
+                                    </p>
+                                    <p className={`text-lg font-black leading-none ${statusFilter === "pending" ? "text-white" : "text-amber-950"}`}>
+                                        {pendingCount}
+                                    </p>
+                                </div>
+                            </button>
                         </div>
                     </div>
 
                     {/* Filter and Search Bar */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-                        <div className="relative w-full md:w-96">
-                            <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                            <input
-                                type="text"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                placeholder="Buscar por operador, placas, económico, folio..."
-                                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 placeholder-gray-400 focus:bg-white focus:border-indigo-500 focus:ring-0 transition-all"
-                            />
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
+                        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 flex-wrap">
+                            {/* Search Bar */}
+                            <div className="relative w-full md:w-72">
+                                <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Buscar operador, placas, folio..."
+                                    className="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 placeholder-gray-400 focus:bg-white focus:border-indigo-500 focus:ring-0 transition-all"
+                                />
+                            </div>
+
+                            {/* Status Filter Tabs (Por Ingresar / Dentro de Planta) */}
+                            <div className="flex items-center bg-gray-100 p-1 rounded-xl">
+                                <button
+                                    type="button"
+                                    onClick={() => setStatusFilter("all")}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                                        statusFilter === "all"
+                                            ? "bg-white text-indigo-900 shadow-xs"
+                                            : "text-gray-500 hover:text-gray-900"
+                                    }`}
+                                >
+                                    Todos ({inPlantLogs.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setStatusFilter("in_plant")}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                                        statusFilter === "in_plant"
+                                            ? "bg-emerald-600 text-white shadow-xs"
+                                            : "text-emerald-700 hover:text-emerald-900"
+                                    }`}
+                                >
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                    Dentro de Planta ({inPlantCount})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setStatusFilter("pending")}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                                        statusFilter === "pending"
+                                            ? "bg-amber-500 text-white shadow-xs"
+                                            : "text-amber-700 hover:text-amber-900"
+                                    }`}
+                                >
+                                    <Clock className="w-3 h-3" />
+                                    Por Ingresar ({pendingCount})
+                                </button>
+                            </div>
+
+                            {/* Unit Type Filter Dropdown */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-gray-500 uppercase whitespace-nowrap">
+                                    Tipo:
+                                </span>
+                                <select
+                                    value={unitTypeFilter}
+                                    onChange={(e) => setUnitTypeFilter(e.target.value)}
+                                    className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-gray-800 focus:bg-white focus:border-indigo-500 focus:ring-0 cursor-pointer"
+                                >
+                                    {UNIT_TYPE_CATEGORIES.map((cat) => (
+                                        <option key={cat.value} value={cat.value}>
+                                            {cat.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
 
-                        <div className="flex items-center gap-3 w-full md:w-auto justify-end flex-wrap">
+                        {/* Actions & Reports */}
+                        <div className="flex items-center gap-3 w-full xl:w-auto justify-end flex-wrap">
                             {selectedRowKeys.length > 0 && (
                                 <button
                                     onClick={() => {
@@ -461,25 +614,29 @@ export default function Exits({
                                             .map((r) => ({ log: r.log, order: null }));
                                         openExitModal(selected);
                                     }}
-                                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-black text-xs uppercase tracking-wider bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-200 animate-pulse transition-all whitespace-nowrap"
+                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-200 animate-pulse transition-all whitespace-nowrap"
                                 >
                                     <LogOut className="w-4 h-4" />
                                     <span>Dar Salida a Seleccionados ({selectedRowKeys.length})</span>
                                 </button>
                             )}
 
-                            {searchTerm && (
+                            {(searchTerm || statusFilter !== "all" || unitTypeFilter !== "all") && (
                                 <button
-                                    onClick={() => setSearchTerm("")}
+                                    onClick={() => {
+                                        setSearchTerm("");
+                                        setStatusFilter("all");
+                                        setUnitTypeFilter("all");
+                                    }}
                                     className="text-xs font-bold text-gray-500 hover:text-gray-800 uppercase px-3 py-2 bg-gray-100 rounded-xl transition-colors"
                                 >
-                                    Limpiar filtro
+                                    Limpiar filtros
                                 </button>
                             )}
 
                             <Link
                                 href={route("surveillance.exits.report")}
-                                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-black text-xs uppercase tracking-wider bg-red-700 hover:bg-red-800 text-white shadow-md shadow-red-100 transition-all whitespace-nowrap"
+                                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider bg-red-700 hover:bg-red-800 text-white shadow-md shadow-red-100 transition-all whitespace-nowrap"
                             >
                                 <Printer className="w-4 h-4" />
                                 <span>Reporte de Salidas</span>
@@ -498,11 +655,11 @@ export default function Exits({
                                             checked={isAllSelected}
                                             onChange={toggleSelectAll}
                                             className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 bg-white cursor-pointer"
-                                            title="Seleccionar todos"
+                                            title="Seleccionar todos (dentro de planta)"
                                         />
                                     </th>
                                     <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
-                                        Entrada
+                                        Entrada / Registro
                                     </th>
                                     <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100">
                                         Orden de Embarque
@@ -514,6 +671,9 @@ export default function Exits({
                                         Unidad
                                     </th>
                                     <th className="px-4 py-3.5 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
+                                        Estatus
+                                    </th>
+                                    <th className="px-4 py-3.5 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                         Acciones
                                     </th>
                                 </tr>
@@ -521,52 +681,73 @@ export default function Exits({
                             <tbody className="bg-white divide-y divide-gray-100">
                                 {displayRows.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="px-6 py-16 text-center text-gray-500 bg-gray-50/50">
+                                        <td colSpan={7} className="px-6 py-16 text-center text-gray-500 bg-gray-50/50">
                                             <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                                             <p className="font-bold text-lg text-gray-700">
-                                                No hay operadores en planta {searchTerm ? "que coincidan con la búsqueda." : "actualmente."}
+                                                No hay unidades {searchTerm || statusFilter !== "all" || unitTypeFilter !== "all" ? "que coincidan con los filtros aplicados." : "actualmente."}
                                             </p>
                                             <p className="text-xs text-gray-400 mt-1">
-                                                Los operadores autorizados en Control de Accesos aparecerán aquí para registrar su salida.
+                                                Los operadores por ingresar o dentro de planta aparecerán aquí para control y registro de salida.
                                             </p>
                                         </td>
                                     </tr>
                                 ) : (
-                                    displayRows.map(({ rowKey, log, orders, canExit, uncompletedOrders }) => {
+                                    displayRows.map(({ rowKey, log, orders, isPendingLog, canExit, uncompletedOrders }) => {
                                         const isChecked = selectedRowKeys.includes(rowKey);
 
                                         return (
                                             <tr
                                                 key={rowKey}
                                                 className={`transition-colors duration-200 text-gray-700 ${
-                                                    isChecked ? "bg-indigo-50/70" : "hover:bg-indigo-50/30"
+                                                    isChecked ? "bg-indigo-50/70" : isPendingLog ? "bg-amber-50/20 hover:bg-amber-50/40" : "hover:bg-indigo-50/30"
                                                 }`}
                                             >
                                                 {/* Column 0: Checkbox */}
                                                 <td className="px-3 py-3.5 text-center whitespace-nowrap w-12">
                                                     <input
                                                         type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={() => toggleSelectRow(rowKey)}
-                                                        className="w-4.5 h-4.5 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 cursor-pointer"
+                                                        disabled={isPendingLog}
+                                                        checked={isChecked && !isPendingLog}
+                                                        onChange={() => !isPendingLog && toggleSelectRow(rowKey)}
+                                                        className={`w-4.5 h-4.5 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 ${
+                                                            isPendingLog ? "opacity-30 cursor-not-allowed bg-gray-100" : "cursor-pointer"
+                                                        }`}
+                                                        title={isPendingLog ? "Solo unidades dentro de planta pueden marcar salida" : "Seleccionar"}
                                                     />
                                                 </td>
 
-                                                {/* Column 1: Entry Time */}
+                                                {/* Column 1: Entry / Registration Time */}
                                                 <td className="px-4 py-3.5 whitespace-nowrap text-sm font-medium">
-                                                    <div className="flex items-center text-gray-900 font-bold">
-                                                        <Clock className="w-4 h-4 mr-1.5 text-indigo-500" />
-                                                        {new Date(log.entry_at).toLocaleTimeString([], {
-                                                             hour: "2-digit",
-                                                             minute: "2-digit",
-                                                         })}
-                                                    </div>
-                                                    <span className="text-xs text-gray-400 font-bold ml-5">
-                                                        {new Date(log.entry_at).toLocaleDateString()}
-                                                    </span>
+                                                    {log.entry_at ? (
+                                                        <>
+                                                            <div className="flex items-center text-gray-900 font-bold">
+                                                                <Clock className="w-4 h-4 mr-1.5 text-indigo-500" />
+                                                                {new Date(log.entry_at).toLocaleTimeString([], {
+                                                                    hour: "2-digit",
+                                                                    minute: "2-digit",
+                                                                })}
+                                                            </div>
+                                                            <span className="text-xs text-gray-400 font-bold ml-5">
+                                                                {new Date(log.entry_at).toLocaleDateString()}
+                                                            </span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div className="flex items-center text-amber-700 font-bold">
+                                                                <Clock className="w-4 h-4 mr-1.5 text-amber-500" />
+                                                                {log.created_at ? new Date(log.created_at).toLocaleTimeString([], {
+                                                                    hour: "2-digit",
+                                                                    minute: "2-digit",
+                                                                }) : "--:--"}
+                                                            </div>
+                                                            <span className="text-xs text-amber-600/80 font-bold ml-5">
+                                                                {log.created_at ? new Date(log.created_at).toLocaleDateString() : "Por ingresar"}
+                                                            </span>
+                                                        </>
+                                                    )}
                                                 </td>
 
-                                                {/* Column 2: Linked Shipment Orders (All orders for this operator stacked) */}
+                                                {/* Column 2: Linked Shipment Orders */}
                                                 <td className="px-4 py-3.5">
                                                     {orders.length > 0 ? (
                                                         <div className="flex flex-col gap-2 max-w-lg">
@@ -624,7 +805,7 @@ export default function Exits({
                                                                                     ? "Completada / Destarada"
                                                                                     : "Pendiente Báscula"}
                                                                             </span>
-                                                                            {orders.length > 1 && isCompleted && (
+                                                                            {orders.length > 1 && isCompleted && !isPendingLog && (
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={(e) => {
@@ -662,7 +843,7 @@ export default function Exits({
                                                     </div>
                                                 </td>
 
-                                                {/* Column 4: Vehicle Unit */}
+                                                {/* Column 4: Vehicle Unit & Unit Type */}
                                                 <td className="px-4 py-3.5 whitespace-nowrap">
                                                     <div className="flex flex-wrap items-center gap-1.5">
                                                         <span className="text-xs font-black text-gray-900 font-mono bg-gray-100 px-2 py-0.5 rounded-md inline-block border border-gray-200" title="Placa Tracto">
@@ -674,15 +855,44 @@ export default function Exits({
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="text-xs text-gray-500 mt-1">
-                                                        Econ: <span className="font-bold text-gray-800">{log.subject?.economic_number || "S/N"}</span>
+                                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                                        <span className="text-xs text-gray-500">
+                                                            Econ: <span className="font-bold text-gray-800">{log.subject?.economic_number || "S/N"}</span>
+                                                        </span>
+                                                        <span className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                                            <Truck className="w-3 h-3 text-indigo-500" />
+                                                            {log.unit_type || log.subject?.unit_type || "N/A"}
+                                                        </span>
                                                     </div>
                                                 </td>
 
-                                                {/* Column 5: Actions */}
+                                                {/* Column 5: Status (Por Ingresar / Dentro de Planta) */}
+                                                <td className="px-4 py-3.5 whitespace-nowrap text-center">
+                                                    {isPendingLog ? (
+                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs">
+                                                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                                            Por Ingresar
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                            Dentro de Planta
+                                                        </span>
+                                                    )}
+                                                </td>
+
+                                                {/* Column 6: Actions */}
                                                 <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium">
                                                     <div className="inline-flex items-center justify-center gap-2">
-                                                        {!canExit ? (
+                                                        {isPendingLog ? (
+                                                            <span
+                                                                className="text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl font-black text-xs uppercase inline-flex items-center gap-1.5 shadow-2xs"
+                                                                title="Operador pendiente de ingresar a planta"
+                                                            >
+                                                                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                                                Por Ingresar
+                                                            </span>
+                                                        ) : !canExit ? (
                                                             <button
                                                                 onClick={() => {
                                                                     const uncompletedFoliosStr = uncompletedOrders

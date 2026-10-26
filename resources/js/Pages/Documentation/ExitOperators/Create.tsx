@@ -1,5 +1,5 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
-import { Head, useForm, Link, usePage } from "@inertiajs/react";
+import { Head, useForm, Link, usePage, router } from "@inertiajs/react";
 import {
     UserPlus,
     ArrowLeft,
@@ -27,9 +27,11 @@ import {
     Search,
     X,
     Edit3,
+    Trash2,
     Clock,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import Swal from "sweetalert2";
 import QrScannerModal from "@/Components/QrScannerModal";
 import TransportLineDropdown from "@/Components/TransportLineDropdown";
 import ClientMultiSelect, { ClientItem } from "@/Components/ClientMultiSelect";
@@ -124,10 +126,9 @@ export default function Create({
 }) {
     const { flash } = usePage<any>().props;
     const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const [activeTab, setActiveTab] = useState<"assignments" | "standard">(
-        urlParams?.get("tab") === "standard" ? "standard" : "assignments"
-    );
-    const isFromClients = activeTab === "assignments";
+    const userRoles: any[] = auth?.user?.roles || [];
+    const isClientOnlyUser = userRoles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'clientes') && !userRoles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'admin');
+    const isFromClients = isClientOnlyUser || from === "clients" || urlParams?.get("from") === "clients";
 
     // Helper para determinar la fecha operativa con corte a las 5:00 AM (05:00 a 04:59 del día siguiente)
     const getClientOperationalDate = (dateString?: string) => {
@@ -165,10 +166,14 @@ export default function Create({
 
     const selectedOp = operators.find((op) => op.id === Number(clientForm.data.operator_id));
 
-    // Solo mostrar las Órdenes de Venta que corresponden a los clientes autorizados de este operador
-    const operatorOVs = selectedOp?.clients && selectedOp.clients.length > 0
-        ? sales_orders.filter((so) => selectedOp.clients!.some((c) => c.id === so.client_id))
-        : [];
+    // Para el rol Clientes se muestran únicamente las OVs de su cliente; para otros roles (Admin, etc.) se permite asignar cualquier OV
+    const operatorOVs = isClientOnlyUser
+        ? (selectedOp?.clients && selectedOp.clients.length > 0
+            ? sales_orders.filter((so) => selectedOp.clients!.some((c) => c.id === so.client_id))
+            : [])
+        : (selectedOp?.clients && selectedOp.clients.length > 0
+            ? sales_orders.filter((so) => selectedOp.clients!.some((c) => c.id === so.client_id))
+            : sales_orders);
 
     const selectedOv = operatorOVs.find((so) => so.id === clientForm.data.sales_order_id);
     const ovBalance = selectedOv ? Number(selectedOv.balance || 0) : null;
@@ -221,6 +226,21 @@ export default function Create({
         if (found.status === "vetoed") {
             setScanError(`⛔ El operador "${found.name}" se encuentra VETADO y no puede ser seleccionado.`);
             return;
+        }
+
+        // Validar que el operador esté asignado al cliente únicamente para usuarios del rol Clientes
+        if (isFromClients && isClientOnlyUser) {
+            if (clients && clients.length === 1) {
+                const currentClient = clients[0];
+                const isAssigned = found.clients?.some((c) => c.id === currentClient.id);
+                if (!isAssigned) {
+                    setScanError(`⛔ El operador "${found.name}" no está asignado a ${currentClient.business_name}. Solo se pueden validar operadores asignados a su cliente.`);
+                    return;
+                }
+            } else if (!found.clients || found.clients.length === 0) {
+                setScanError(`⛔ El operador "${found.name}" no tiene ningún cliente asignado.`);
+                return;
+            }
         }
 
         // Operador válido: seleccionar y reiniciar campos dependientes
@@ -359,6 +379,28 @@ export default function Create({
         setIsModalOpen(true);
     };
 
+    const handleDeleteOperator = (op: ClientOperatorRecord) => {
+        const ovInfo = op.sales_order?.folio ? ` de la OV ${op.sales_order.folio}` : "";
+        Swal.fire({
+            title: '¿Eliminar operador?',
+            text: `¿Está seguro de que desea eliminar la asignación del operador "${op.name}"${ovInfo}?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#e11d48',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'Cancelar',
+            reverseButtons: true,
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.delete(route("documentation.exit-operators.destroy", op.id), {
+                    data: { from: "clients" },
+                    preserveScroll: true,
+                });
+            }
+        });
+    };
+
     const filteredClientOperators = client_operators.filter((op) => {
         // 1. Filtro por Fecha Operativa con corte a las 5:00 AM
         if (selectedDate) {
@@ -425,39 +467,9 @@ export default function Create({
         <DashboardLayout user={auth.user} header={isFromClients ? "Asignación Operador - Cliente" : "Registro Operadores Salida"}>
             <Head title={isFromClients ? "Asignación Operador - Cliente" : "Alta Operador Salida"} />
 
-            {/* Selector de Pestañas / Modos */}
-            <div className="max-w-7xl mx-auto pt-6 px-4 sm:px-6 lg:px-8">
-                <div className="flex bg-indigo-50/80 p-1.5 rounded-2xl max-w-lg mx-auto border border-indigo-200 shadow-sm">
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("assignments")}
-                        className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-2 ${
-                            activeTab === "assignments"
-                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-300"
-                                : "text-indigo-900 hover:text-indigo-700 hover:bg-white/60"
-                        }`}
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        <span>Asignación Operador - Cliente</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("standard")}
-                        className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-2 ${
-                            activeTab === "standard"
-                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-300"
-                                : "text-indigo-900 hover:text-indigo-700 hover:bg-white/60"
-                        }`}
-                    >
-                        <Truck className="w-4 h-4" />
-                        <span>Ficha Técnica de Unidad</span>
-                    </button>
-                </div>
-            </div>
-
             {isFromClients ? (
                 /* VISTA CLIENTES: Tabla de Operadores con botón ASIGNACIÓN OPERADOR - CLIENTE arriba y Modal */
-                <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 pb-36 space-y-6">
+                <div className="w-full max-w-[1700px] mx-auto py-6 px-3 sm:px-5 lg:px-6 pb-28 space-y-5">
                     {/* Barra de navegación superior */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <Link
@@ -646,19 +658,19 @@ export default function Create({
                     {/* TABLA PRINCIPAL con las columnas solicitadas */}
                     <div className="bg-white rounded-2xl shadow-xl border border-gray-200/80 overflow-hidden">
                         <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200 text-xs">
-                                <thead className="bg-slate-50 text-slate-700 uppercase font-black tracking-wider">
+                            <table className="w-full divide-y divide-gray-200 text-xs table-auto">
+                                <thead className="bg-slate-50 text-slate-700 uppercase font-black tracking-wider text-[11px]">
                                     <tr>
-                                        <th className="px-4 py-3.5 text-left">Orden de Venta</th>
-                                        <th className="px-4 py-3.5 text-left">Operador</th>
-                                        <th className="px-4 py-3.5 text-left">Línea Transportista</th>
-                                        <th className="px-3 py-3.5 text-left">Tracto</th>
-                                        <th className="px-3 py-3.5 text-left">Remolque</th>
-                                        <th className="px-4 py-3.5 text-left">Producto</th>
-                                        <th className="px-3 py-3.5 text-center">Presentación</th>
-                                        <th className="px-3 py-3.5 text-center">Envase</th>
-                                        <th className="px-4 py-3.5 text-right">TM</th>
-                                        <th className="px-3 py-3.5 text-center">Acciones</th>
+                                        <th className="px-3 py-3 text-left whitespace-nowrap">Orden de Venta</th>
+                                        <th className="px-3 py-3 text-left">Operador</th>
+                                        <th className="px-2.5 py-3 text-left">Línea Transportista</th>
+                                        <th className="px-2 py-3 text-center whitespace-nowrap">Tracto</th>
+                                        <th className="px-2 py-3 text-center whitespace-nowrap">Remolque</th>
+                                        <th className="px-2.5 py-3 text-left">Producto</th>
+                                        <th className="px-2 py-3 text-center whitespace-nowrap">Presentación</th>
+                                        <th className="px-2 py-3 text-center whitespace-nowrap">Envase</th>
+                                        <th className="px-3 py-3 text-right whitespace-nowrap">TM</th>
+                                        <th className="px-2.5 py-3 text-center whitespace-nowrap">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -672,20 +684,20 @@ export default function Create({
                                             return (
                                                 <tr key={op.id} className="hover:bg-indigo-50/40 transition-colors">
                                                     {/* 1. Orden de Venta */}
-                                                    <td className="px-4 py-3.5 whitespace-nowrap">
+                                                    <td className="px-3 py-2.5 whitespace-nowrap">
                                                         {op.sales_order?.folio ? (
-                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black bg-indigo-50 text-indigo-900 border border-indigo-200/80 font-mono">
-                                                                <ShoppingCart className="w-3.5 h-3.5 text-indigo-600" />
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200/80 font-mono">
+                                                                <ShoppingCart className="w-3 h-3 text-indigo-600 flex-shrink-0" />
                                                                 {op.sales_order.folio}
                                                             </span>
                                                         ) : (
-                                                            <span className="text-gray-400 italic">Sin OV</span>
+                                                            <span className="text-gray-400 italic text-[11px]">Sin OV</span>
                                                         )}
                                                     </td>
 
                                                     {/* 2. Operador */}
-                                                    <td className="px-4 py-3.5">
-                                                        <div className="font-bold text-gray-900 uppercase">
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="font-bold text-gray-900 uppercase text-xs leading-tight">
                                                             {op.name}
                                                         </div>
                                                         {op.clients && op.clients.length > 0 && (
@@ -693,7 +705,7 @@ export default function Create({
                                                                 {op.clients.map((c) => (
                                                                     <span
                                                                         key={c.id}
-                                                                        className="text-[10px] text-gray-500 font-medium truncate max-w-[150px]"
+                                                                        className="text-[10px] text-gray-500 font-medium truncate max-w-[160px] block"
                                                                         title={c.business_name}
                                                                     >
                                                                         {c.business_name}
@@ -702,7 +714,7 @@ export default function Create({
                                                             </div>
                                                         )}
                                                         {/* Fecha/Hora y Jornada operativa con corte a las 5:00 AM */}
-                                                        <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
+                                                        <div className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1 whitespace-nowrap">
                                                             <Clock className="w-3 h-3 text-indigo-500 flex-shrink-0" />
                                                             <span>
                                                                 {op.formatted_updated_at || "Fecha N/A"} • Jornada:{" "}
@@ -712,37 +724,37 @@ export default function Create({
                                                     </td>
 
                                                     {/* 3. Línea Transportista */}
-                                                    <td className="px-4 py-3.5">
-                                                        <span className="font-semibold text-gray-700 uppercase block max-w-[180px] truncate" title={op.transport_line}>
+                                                    <td className="px-2.5 py-2.5">
+                                                        <span className="font-semibold text-gray-700 uppercase block max-w-[150px] truncate text-[11px]" title={op.transport_line || op.real_transport_line || "N/A"}>
                                                             {op.transport_line || op.real_transport_line || "N/A"}
                                                         </span>
                                                     </td>
 
                                                     {/* 4. Tracto */}
-                                                    <td className="px-3 py-3.5 whitespace-nowrap">
-                                                        <span className="font-mono font-bold text-indigo-950 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
+                                                        <span className="font-mono font-bold text-indigo-950 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-[11px]">
                                                             {op.tractor_plate || "-"}
                                                         </span>
                                                     </td>
 
                                                     {/* 5. Remolque */}
-                                                    <td className="px-3 py-3.5 whitespace-nowrap">
-                                                        <span className="font-mono font-medium text-gray-700 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
+                                                        <span className="font-mono font-medium text-gray-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 text-[11px]">
                                                             {op.trailer_plate || "S/R"}
                                                         </span>
                                                     </td>
 
                                                     {/* 6. Producto */}
-                                                    <td className="px-4 py-3.5">
-                                                        <span className="font-bold text-indigo-950 uppercase block max-w-[200px] truncate" title={op.sales_order?.product?.name || "N/A"}>
+                                                    <td className="px-2.5 py-2.5">
+                                                        <span className="font-bold text-indigo-950 uppercase block max-w-[160px] truncate text-[11px]" title={op.sales_order?.product?.name || "N/A"}>
                                                             {op.sales_order?.product?.name || "N/A"}
                                                         </span>
                                                     </td>
 
                                                     {/* 7. Presentación */}
-                                                    <td className="px-3 py-3.5 whitespace-nowrap text-center">
+                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
                                                         <span
-                                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase ${
+                                                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
                                                                 isGranel
                                                                     ? "bg-amber-100 text-amber-800 border border-amber-200"
                                                                     : "bg-blue-100 text-blue-800 border border-blue-200"
@@ -753,30 +765,41 @@ export default function Create({
                                                     </td>
 
                                                     {/* 8. Envase */}
-                                                    <td className="px-3 py-3.5 whitespace-nowrap text-center">
-                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-slate-100 text-slate-800">
+                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-800">
                                                             {envaseText}
                                                         </span>
                                                     </td>
 
                                                     {/* 9. TM */}
-                                                    <td className="px-4 py-3.5 whitespace-nowrap text-right">
-                                                        <span className="font-black text-sm text-emerald-700 font-mono">
+                                                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                                                        <span className="font-black text-xs text-emerald-700 font-mono">
                                                             {tmNum.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM
                                                         </span>
                                                     </td>
 
                                                     {/* 10. Acciones */}
-                                                    <td className="px-3 py-3.5 whitespace-nowrap text-center">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleEditOperator(op)}
-                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 transition-colors shadow-sm"
-                                                            title="Editar o reprogramar operador"
-                                                        >
-                                                            <Edit3 className="w-3.5 h-3.5" />
-                                                            <span>Editar</span>
-                                                        </button>
+                                                    <td className="px-2.5 py-2.5 whitespace-nowrap text-center">
+                                                        <div className="flex items-center justify-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleEditOperator(op)}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 transition-colors shadow-xs"
+                                                                title="Editar o reprogramar operador"
+                                                            >
+                                                                <Edit3 className="w-3.5 h-3.5" />
+                                                                <span>Editar</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteOperator(op)}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 transition-colors shadow-xs"
+                                                                title="Eliminar asignación del operador"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                <span>Eliminar</span>
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
