@@ -332,7 +332,7 @@ export default function Index({ auth, units, all_units, filters, stats }: PagePr
                         <div>
                             <div className="flex items-center gap-2 mb-0.5">
                                 <Link
-                                    href="/traffic"
+                                    href={route("traffic.index")}
                                     className="text-xs text-blue-200 hover:text-white flex items-center gap-1 font-semibold transition-colors"
                                 >
                                     <ArrowLeft className="w-3.5 h-3.5" />

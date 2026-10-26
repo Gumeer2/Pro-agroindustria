@@ -55,7 +55,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
             {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent py-6 space-y-8">
                 <div className="px-4 flex flex-col items-center">
-                    <Link href={isClientRole ? route('clients.index') : '/dashboard'} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
+                    <Link href={isClientRole ? route('clients.index') : route('dashboard')} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
                         <img
                             src={props.tenant?.logo || `/images/logovecode.png`}
                             alt={props.tenant?.name || "Logo"}
@@ -83,7 +83,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
                             // Accurate highlighting: prioritize context_module, then check URL sub-paths
                             const isActive = currentModule
                                 ? currentModule === link.module
-                                : (url.startsWith(link.href) || (link.href === '/dashboard' && url === '/dashboard'));
+                                : (url.startsWith(link.href) || (link.href === route('dashboard') && (url === route('dashboard') || url.endsWith('/dashboard'))));
                             return (
                                 <Link
                                     key={link.href}

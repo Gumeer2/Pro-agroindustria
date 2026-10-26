@@ -34,7 +34,16 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        $basePath = rtrim((string) (parse_url((string) config('app.url'), PHP_URL_PATH) ?: ''), '/');
+        $configuredPath = rtrim((string) (parse_url((string) config('app.url'), PHP_URL_PATH) ?: ''), '/');
+        $configuredHost = parse_url(config('app.url'), PHP_URL_HOST);
+        $requestHost = $request->getHost();
+
+        // If visited on a custom domain, never force localhost subdirectory paths
+        if ($requestHost !== 'localhost' && $requestHost !== '127.0.0.1' && $configuredHost === 'localhost') {
+            $basePath = '';
+        } else {
+            $basePath = $configuredPath;
+        }
 
         return [
             ...parent::share($request),

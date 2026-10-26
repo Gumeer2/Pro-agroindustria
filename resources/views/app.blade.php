@@ -29,7 +29,13 @@
 
     <script>
         (() => {
-            const basePath = @json(rtrim((string) (parse_url((string) config('app.url'), PHP_URL_PATH) ?: ''), '/'));
+            @php
+                $configuredPath = rtrim((string) (parse_url((string) config('app.url'), PHP_URL_PATH) ?: ''), '/');
+                $configuredHost = parse_url(config('app.url'), PHP_URL_HOST);
+                $requestHost = request()->getHost();
+                $bladeBasePath = ($requestHost !== 'localhost' && $requestHost !== '127.0.0.1' && $configuredHost === 'localhost') ? '' : $configuredPath;
+            @endphp
+            const basePath = @json($bladeBasePath);
             const applicationPaths = /^(dashboard|sales|traffic|surveillance|documentation|scale|dock|apt|admin|clients|profile|login)(\/|$)/;
 
             const normalizeLinks = () => {
@@ -61,11 +67,13 @@
                 normalizeTimeout = setTimeout(normalizeLinks, 100);
             };
 
-            normalizeLinks();
-            new MutationObserver(debouncedNormalizeLinks).observe(document.documentElement, {
-                childList: true,
-                subtree: true,
-            });
+            if (basePath) {
+                normalizeLinks();
+                new MutationObserver(debouncedNormalizeLinks).observe(document.documentElement, {
+                    childList: true,
+                    subtree: true,
+                });
+            }
 
             window.currentUserRoles = @json(auth()->check() ? auth()->user()->getRoleNames() : []);
 
@@ -171,9 +179,11 @@
                     return;
                 }
 
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                window.location.assign(`${basePath}/${applicationPath}${link.search}${link.hash}`);
+                if (basePath && !link.pathname.startsWith(basePath)) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    window.location.assign(`${basePath}/${applicationPath}${link.search}${link.hash}`);
+                }
             }, true);
 
             if ('serviceWorker' in navigator) {
