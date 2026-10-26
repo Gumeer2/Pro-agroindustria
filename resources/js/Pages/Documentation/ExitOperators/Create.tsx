@@ -61,6 +61,7 @@ export interface SalesOrderItem {
     total_quantity: number | string;
     loaded_quantity: number | string;
     programmed_quantity?: number | string;
+    available_balance?: number | string;
     balance: number | string;
     status: string;
     client?: {
@@ -103,6 +104,8 @@ export interface ClientOperatorRecord {
         };
     };
     clients?: Array<{ id: number; business_name: string }>;
+    programmed_quantity?: number | string;
+    available_balance?: number | string;
     updated_at?: string;
     operational_date?: string;
     formatted_updated_at?: string;
@@ -176,8 +179,18 @@ export default function Create({
             ? sales_orders.filter((so) => selectedOp.clients!.some((c) => c.id === so.client_id))
             : sales_orders);
 
+    const currentEditingAssignment = clientForm.data.assignment_id
+        ? client_operators?.find((co) => String(co.id) === String(clientForm.data.assignment_id))
+        : null;
+    const existingTm = currentEditingAssignment && String(currentEditingAssignment.sales_order_id) === String(clientForm.data.sales_order_id)
+        ? Number(currentEditingAssignment.tm || 0)
+        : 0;
+
     const selectedOv = operatorOVs.find((so) => so.id === clientForm.data.sales_order_id);
-    const ovBalance = selectedOv ? Number(selectedOv.balance || 0) : null;
+    // Saldo disponible en este módulo: saldo de la OV menos lo ya programado por otros operadores
+    const ovBalance = selectedOv
+        ? Math.max(0, Number(selectedOv.balance || 0) - (Number(selectedOv.programmed_quantity || 0) - existingTm))
+        : null;
     const isTmExceeded = ovBalance !== null && Boolean(clientForm.data.tm) && parseFloat(clientForm.data.tm) > ovBalance;
 
     // Foco automático en el lector al abrir el modal si no hay operador
@@ -755,6 +768,8 @@ export default function Create({
                                         <th className="px-2 py-3 text-center whitespace-nowrap">Presentación</th>
                                         <th className="px-2 py-3 text-center whitespace-nowrap">Envase</th>
                                         <th className="px-3 py-3 text-right whitespace-nowrap">TM</th>
+                                        <th className="px-3 py-3 text-right whitespace-nowrap">Saldo Disponible</th>
+                                        <th className="px-3 py-3 text-right whitespace-nowrap">Saldo Actualizado</th>
                                         <th className="px-2.5 py-3 text-center whitespace-nowrap">Acciones</th>
                                     </tr>
                                 </thead>
@@ -766,12 +781,22 @@ export default function Create({
                                             const envaseText = isGranel ? "A GRANEL" : (op.sack || "25 KG");
                                             const tmNum = Number(op.tm || 0);
 
+                                            const soMatch = sales_orders.find(
+                                                (s) => String(s.id) === String(op.sales_order_id || op.sales_order?.id)
+                                            );
+                                            const availTm = op.available_balance !== undefined
+                                                ? Number(op.available_balance)
+                                                : (soMatch?.available_balance !== undefined
+                                                    ? Number(soMatch.available_balance)
+                                                    : (op.sales_order?.balance !== undefined ? Number(op.sales_order.balance) : null));
+                                            const updatedTm = availTm !== null ? Math.max(0, availTm - tmNum) : null;
+
                                             return (
                                                 <tr key={op.id} className="hover:bg-indigo-50/40 transition-colors">
                                                     {/* 1. Orden de Venta */}
                                                     <td className="px-3 py-2.5 whitespace-nowrap">
                                                         {op.sales_order?.folio ? (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200/80 font-mono">
+                                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200/80 font-mono">
                                                                 <ShoppingCart className="w-3 h-3 text-indigo-600 flex-shrink-0" />
                                                                 {op.sales_order.folio}
                                                             </span>
@@ -858,12 +883,30 @@ export default function Create({
 
                                                     {/* 9. TM */}
                                                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
-                                                        <span className="font-black text-xs text-emerald-700 font-mono">
+                                                        <span className="font-black text-xs text-indigo-900 font-mono">
                                                             {tmNum.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM
                                                         </span>
                                                     </td>
 
-                                                    {/* 10. Acciones */}
+                                                    {/* 10. Saldo Disponible */}
+                                                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                                                        <span className="font-bold text-xs text-emerald-700 font-mono">
+                                                            {availTm !== null
+                                                                ? `${availTm.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM`
+                                                                : "-"}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* 11. Saldo Actualizado */}
+                                                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                                                        <span className="font-bold text-xs text-emerald-700 font-mono">
+                                                            {updatedTm !== null
+                                                                ? `${updatedTm.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM`
+                                                                : "-"}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* 12. Acciones */}
                                                     <td className="px-2.5 py-2.5 whitespace-nowrap text-center">
                                                         <div className="flex items-center justify-center gap-1.5">
                                                             <button
@@ -891,7 +934,7 @@ export default function Create({
                                         })
                                     ) : (
                                         <tr>
-                                            <td colSpan={10} className="px-6 py-12 text-center text-gray-400">
+                                            <td colSpan={12} className="px-6 py-12 text-center text-gray-400">
                                                 <div className="flex flex-col items-center justify-center gap-3">
                                                     <Truck className="w-12 h-12 text-gray-300" />
                                                     <p className="text-sm font-semibold text-gray-600">
@@ -1319,26 +1362,39 @@ export default function Create({
                                                 <table className="min-w-full text-xs">
                                                     <thead className="bg-gray-50 text-gray-500 uppercase">
                                                         <tr>
-                                                            <th className="px-3 py-2 text-left">OV</th>
-                                                            <th className="px-3 py-2 text-left">Producto</th>
-                                                            <th className="px-3 py-2 text-right">Total TM</th>
-                                                            <th className="px-3 py-2 text-right">Cargado TM</th>
-                                                            <th className="px-3 py-2 text-right">Programado TM</th>
-                                                            <th className="px-3 py-2 text-right">Saldo TM</th>
+                                                            <th className="px-3 py-2 text-left">Programado TM</th>
+                                                            <th className="px-3 py-2 text-right">Saldo Disponible</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
-                                                        {operatorOVs.map((so) => {
+                                                        {(clientForm.data.sales_order_id
+                                                            ? operatorOVs.filter((so) => so.id === clientForm.data.sales_order_id)
+                                                            : operatorOVs
+                                                        ).map((so) => {
                                                             const fmt = (v: number | string | undefined) =>
                                                                 Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                                                            const isSelected = so.id === clientForm.data.sales_order_id;
+                                                            const baseBalance = Number(so.balance || 0);
+                                                            const baseProgrammed = Number(so.programmed_quantity || 0);
+                                                            const inputTm = isSelected ? (parseFloat(clientForm.data.tm) || 0) : 0;
+
+                                                            // El saldo programado se actualiza en tiempo real con el tonelaje que se va ingresando
+                                                            const liveProgrammed = isSelected
+                                                                ? Math.max(0, baseProgrammed - existingTm + inputTm)
+                                                                : baseProgrammed;
+
+                                                            // El saldo disponible se va descontando en tiempo real según el saldo programado
+                                                            const liveAvailable = isSelected
+                                                                ? Math.max(0, baseBalance - liveProgrammed)
+                                                                : (so.available_balance !== undefined ? Number(so.available_balance) : Math.max(0, baseBalance - baseProgrammed));
+
                                                             return (
-                                                                <tr key={so.id} className={so.id === clientForm.data.sales_order_id ? "bg-indigo-50 font-bold" : ""}>
-                                                                    <td className="px-3 py-2 font-semibold text-indigo-900">{so.folio}</td>
-                                                                    <td className="px-3 py-2 uppercase">{so.product?.name || "-"}</td>
-                                                                    <td className="px-3 py-2 text-right">{fmt(so.total_quantity)}</td>
-                                                                    <td className="px-3 py-2 text-right">{fmt(so.loaded_quantity)}</td>
-                                                                    <td className="px-3 py-2 text-right">{fmt(so.programmed_quantity)}</td>
-                                                                    <td className="px-3 py-2 text-right text-emerald-700 font-bold">{fmt(so.balance)}</td>
+                                                                <tr key={so.id} className={isSelected ? "bg-indigo-50 font-bold" : ""}>
+                                                                    <td className="px-3 py-2 text-left font-bold text-gray-900">{fmt(liveProgrammed)}</td>
+                                                                    <td className={`px-3 py-2 text-right font-bold ${isSelected && isTmExceeded ? "text-red-600" : "text-emerald-700"}`}>
+                                                                        {fmt(liveAvailable)}
+                                                                    </td>
                                                                 </tr>
                                                             );
                                                         })}

@@ -37,6 +37,7 @@ class CheckClientRoleAccess
 
             // Explicitly allowed exact or prefix paths
             $isAllowedPath = $path === 'clients' ||
+                $path === 'documentation/exit-operators' ||
                 $path === 'documentation/exit-operators/create' ||
                 str_starts_with($path, 'documentation/exit-operators/') ||
                 $path === 'logout';
@@ -44,7 +45,12 @@ class CheckClientRoleAccess
             $isAllowedRoute = in_array($routeName, $allowedRouteNames, true) || $isAllowedPath;
 
             // Block access to the standard documentation exit operators list (index) and edit views
-            if ($routeName === 'documentation.exit-operators.index' || $path === 'documentation/exit-operators') {
+            if (
+                $routeName === 'documentation.exit-operators.index' ||
+                $routeName === 'documentation.exit-operators.edit' ||
+                ($path === 'documentation/exit-operators' && $request->isMethod('GET')) ||
+                str_ends_with($path, '/edit')
+            ) {
                 return redirect()->route('clients.index');
             }
 

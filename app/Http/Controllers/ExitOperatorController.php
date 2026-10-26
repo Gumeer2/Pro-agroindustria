@@ -75,7 +75,9 @@ class ExitOperatorController extends Controller
             ->groupBy('sales_order_id')
             ->pluck('total_tm', 'sales_order_id');
         $salesOrders->each(function ($so) use ($programmed) {
-            $so->setAttribute('programmed_quantity', (float) ($programmed[$so->id] ?? 0));
+            $prog = (float) ($programmed[$so->id] ?? 0);
+            $so->setAttribute('programmed_quantity', $prog);
+            $so->setAttribute('available_balance', max(0, (float) $so->balance - $prog));
         });
 
         // Asignaciones de operadores a Órdenes de Venta (un registro por asignación)
@@ -116,6 +118,12 @@ class ExitOperatorController extends Controller
                 $assignment->setAttribute('economic_number', $assignment->operator->economic_number);
                 $assignment->setAttribute('unit_type', $assignment->operator->unit_type);
                 $assignment->setAttribute('clients', $assignment->operator->clients);
+            }
+
+            if ($assignment->salesOrder) {
+                $prog = (float) ($programmed[$assignment->sales_order_id] ?? 0);
+                $assignment->setAttribute('programmed_quantity', $prog);
+                $assignment->setAttribute('available_balance', max(0, (float) $assignment->salesOrder->balance - $prog));
             }
         });
 
@@ -190,25 +198,27 @@ class ExitOperatorController extends Controller
                     $operator->clients()->syncWithoutDetaching([$salesOrder->client_id]);
                 }
             }
-            $availableBalance = (float) $salesOrder->balance;
+            // Saldo disponible en este módulo: saldo de la OV menos lo ya programado por otros operadores
+            $alreadyProgrammedOther = ClientOperatorAssignment::where('sales_order_id', $salesOrder->id)
+                ->when(!empty($validated['assignment_id']), function ($q) use ($validated) {
+                    $q->where('id', '!=', $validated['assignment_id']);
+                })
+                ->sum('tm');
 
-            $currentAssignment = !empty($validated['assignment_id'])
-                ? ClientOperatorAssignment::find($validated['assignment_id'])
-                : null;
-
-            $effectiveBalance = $availableBalance;
-            if ($currentAssignment && $currentAssignment->sales_order_id === $salesOrder->id) {
-                $effectiveBalance += (float) $currentAssignment->tm;
-            }
+            $effectiveBalance = max(0, (float) $salesOrder->balance - (float) $alreadyProgrammedOther);
 
             if ((float) $validated['tm'] > $effectiveBalance) {
                 return back()->withErrors([
-                    'tm' => "El tonelaje programado ({$validated['tm']} TM) excede el saldo restante de la OV ({$effectiveBalance} TM). Solo puede programar lo que queda."
+                    'tm' => "El tonelaje programado ({$validated['tm']} TM) excede el saldo disponible restante de la OV ({$effectiveBalance} TM). Solo puede programar lo que queda disponible."
                 ]);
             }
 
             $isGranel = mb_strtoupper(trim($validated['presentation']), 'UTF-8') === 'GRANEL';
             $sackVal = (!$isGranel && !empty($validated['sack'])) ? mb_strtoupper(trim($validated['sack']), 'UTF-8') : null;
+
+            $currentAssignment = !empty($validated['assignment_id'])
+                ? ClientOperatorAssignment::find($validated['assignment_id'])
+                : null;
 
             if ($currentAssignment) {
                 $currentAssignment->update([
