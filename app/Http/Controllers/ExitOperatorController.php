@@ -96,7 +96,7 @@ class ExitOperatorController extends Controller
         $now = now()->timezone('America/Mexico_City');
         $currentOperationalDate = $now->hour < 5 ? $now->subDay()->toDateString() : $now->toDateString();
 
-        $clientAssignments->each(function ($assignment) {
+        $clientAssignments->each(function ($assignment) use ($programmed) {
             $updated = $assignment->updated_at ? $assignment->updated_at->copy()->timezone('America/Mexico_City') : null;
             if ($updated) {
                 // Corte a las 5:00 AM: si la hora es < 5, pertenece a la jornada del día anterior
@@ -123,7 +123,8 @@ class ExitOperatorController extends Controller
             if ($assignment->salesOrder) {
                 $prog = (float) ($programmed[$assignment->sales_order_id] ?? 0);
                 $assignment->setAttribute('programmed_quantity', $prog);
-                $assignment->setAttribute('available_balance', max(0, (float) $assignment->salesOrder->balance - $prog));
+                $assignment->setAttribute('available_balance', (float) $assignment->salesOrder->balance);
+                $assignment->setAttribute('updated_balance', max(0, (float) $assignment->salesOrder->balance - $prog));
             }
         });
 

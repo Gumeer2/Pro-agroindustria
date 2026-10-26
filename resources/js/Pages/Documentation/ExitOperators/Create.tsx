@@ -30,7 +30,7 @@ import {
     Trash2,
     Clock,
 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Swal from "sweetalert2";
 import QrScannerModal from "@/Components/QrScannerModal";
 import TransportLineDropdown from "@/Components/TransportLineDropdown";
@@ -106,6 +106,7 @@ export interface ClientOperatorRecord {
     clients?: Array<{ id: number; business_name: string }>;
     programmed_quantity?: number | string;
     available_balance?: number | string;
+    updated_balance?: number | string;
     updated_at?: string;
     operational_date?: string;
     formatted_updated_at?: string;
@@ -179,6 +180,18 @@ export default function Create({
             ? sales_orders.filter((so) => selectedOp.clients!.some((c) => c.id === so.client_id))
             : sales_orders);
 
+    // Mapa con la suma total de TM programados para cada Orden de Venta en este módulo
+    const totalProgrammedByOv = useMemo(() => {
+        const map: Record<string, number> = {};
+        (client_operators || []).forEach((item) => {
+            const soId = String(item.sales_order_id || item.sales_order?.id || "");
+            if (soId) {
+                map[soId] = (map[soId] || 0) + Number(item.tm || 0);
+            }
+        });
+        return map;
+    }, [client_operators]);
+
     const currentEditingAssignment = clientForm.data.assignment_id
         ? client_operators?.find((co) => String(co.id) === String(clientForm.data.assignment_id))
         : null;
@@ -187,9 +200,14 @@ export default function Create({
         : 0;
 
     const selectedOv = operatorOVs.find((so) => so.id === clientForm.data.sales_order_id);
+    const currentOvId = String(clientForm.data.sales_order_id || "");
+    const alreadyProgForSelectedOv = totalProgrammedByOv[currentOvId] !== undefined
+        ? totalProgrammedByOv[currentOvId]
+        : Number(selectedOv?.programmed_quantity || 0);
+    const otherOperatorsProgrammed = Math.max(0, alreadyProgForSelectedOv - existingTm);
     // Saldo disponible en este módulo: saldo de la OV menos lo ya programado por otros operadores
     const ovBalance = selectedOv
-        ? Math.max(0, Number(selectedOv.balance || 0) - (Number(selectedOv.programmed_quantity || 0) - existingTm))
+        ? Math.max(0, Number(selectedOv.balance || 0) - otherOperatorsProgrammed)
         : null;
     const isTmExceeded = ovBalance !== null && Boolean(clientForm.data.tm) && parseFloat(clientForm.data.tm) > ovBalance;
 
@@ -768,7 +786,6 @@ export default function Create({
                                         <th className="px-2 py-3 text-center whitespace-nowrap">Presentación</th>
                                         <th className="px-2 py-3 text-center whitespace-nowrap">Envase</th>
                                         <th className="px-3 py-3 text-right whitespace-nowrap">TM</th>
-                                        <th className="px-3 py-3 text-right whitespace-nowrap">Saldo Disponible</th>
                                         <th className="px-3 py-3 text-right whitespace-nowrap">Saldo Actualizado</th>
                                         <th className="px-2.5 py-3 text-center whitespace-nowrap">Acciones</th>
                                     </tr>
@@ -781,15 +798,27 @@ export default function Create({
                                             const envaseText = isGranel ? "A GRANEL" : (op.sack || "25 KG");
                                             const tmNum = Number(op.tm || 0);
 
+                                            const soId = String(op.sales_order_id || op.sales_order?.id || "");
                                             const soMatch = sales_orders.find(
-                                                (s) => String(s.id) === String(op.sales_order_id || op.sales_order?.id)
+                                                (s) => String(s.id) === soId
                                             );
-                                            const availTm = op.available_balance !== undefined
+
+                                            // Saldo Disponible original de la Orden de Venta (ej. 14,936.75 TM)
+                                            const saldoDisponible = op.available_balance !== undefined
                                                 ? Number(op.available_balance)
-                                                : (soMatch?.available_balance !== undefined
-                                                    ? Number(soMatch.available_balance)
-                                                    : (op.sales_order?.balance !== undefined ? Number(op.sales_order.balance) : null));
-                                            const updatedTm = availTm !== null ? Math.max(0, availTm - tmNum) : null;
+                                                : (op.sales_order?.balance !== undefined
+                                                    ? Number(op.sales_order.balance)
+                                                    : (soMatch?.balance !== undefined ? Number(soMatch.balance) : null));
+
+                                            // Suma de todas las programaciones para esta misma Orden de Venta
+                                            const totalProgForOv = totalProgrammedByOv[soId] !== undefined
+                                                ? totalProgrammedByOv[soId]
+                                                : Number(op.programmed_quantity || 0);
+
+                                            // Saldo Actualizado: Saldo Disponible menos la suma acumulada de todos los operadores de esta misma OV
+                                            const saldoActualizado = saldoDisponible !== null
+                                                ? Math.max(0, saldoDisponible - totalProgForOv)
+                                                : (op.updated_balance !== undefined ? Number(op.updated_balance) : null);
 
                                             return (
                                                 <tr key={op.id} className="hover:bg-indigo-50/40 transition-colors">
@@ -888,20 +917,11 @@ export default function Create({
                                                         </span>
                                                     </td>
 
-                                                    {/* 10. Saldo Disponible */}
+                                                    {/* 10. Saldo Actualizado */}
                                                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
                                                         <span className="font-bold text-xs text-emerald-700 font-mono">
-                                                            {availTm !== null
-                                                                ? `${availTm.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM`
-                                                                : "-"}
-                                                        </span>
-                                                    </td>
-
-                                                    {/* 11. Saldo Actualizado */}
-                                                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
-                                                        <span className="font-bold text-xs text-emerald-700 font-mono">
-                                                            {updatedTm !== null
-                                                                ? `${updatedTm.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM`
+                                                            {saldoActualizado !== null
+                                                                ? `${saldoActualizado.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM`
                                                                 : "-"}
                                                         </span>
                                                     </td>
@@ -1137,8 +1157,8 @@ export default function Create({
                                                         <p className="font-bold text-indigo-700 font-mono uppercase">{selectedOp.tractor_plate}</p>
                                                     </div>
                                                     <div>
-                                                        <span className="text-gray-500 font-medium">Económico:</span>
-                                                        <p className="font-bold text-gray-900 uppercase">{selectedOp.economic_number || "S/N"}</p>
+                                                        <span className="text-gray-500 font-medium">Remolque:</span>
+                                                        <p className="font-bold text-gray-900 font-mono uppercase">{selectedOp.trailer_plate || "S/R"}</p>
                                                     </div>
                                                     <div>
                                                         <span className="text-gray-500 font-medium">Tipo Unidad:</span>
