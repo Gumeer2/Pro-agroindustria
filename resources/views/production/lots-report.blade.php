@@ -931,13 +931,15 @@
                                 @forelse($activities as $act)
                                     @php
                                         $selectedLotIdsForRow = array_map('strval', is_array($lotIds ?? []) ? $lotIds : []);
-                                        $lot = null;
-                                        if (!empty($selectedLotIdsForRow)) {
-                                            $lot = optional($act->shiftStart)->lots?->first(function ($item) use ($selectedLotIdsForRow) {
-                                                return in_array((string) $item->id, $selectedLotIdsForRow, true);
-                                            }) ?? optional($act->shiftStart)->lot;
-                                        } else {
-                                            $lot = optional($act->shiftStart)->lot;
+                                        $lot = $act->lot;
+                                        if (!$lot) {
+                                            if (!empty($selectedLotIdsForRow)) {
+                                                $lot = optional($act->shiftStart)->lots?->first(function ($item) use ($selectedLotIdsForRow) {
+                                                    return in_array((string) $item->id, $selectedLotIdsForRow, true);
+                                                }) ?? optional($act->shiftStart)->lot;
+                                            } else {
+                                                $lot = optional($act->shiftStart)->lot;
+                                            }
                                         }
                                         $product = str_contains(strtoupper((string) optional($lot)->plant_origin), 'UREA')
                                             ? 'UREA AGRICOLA'

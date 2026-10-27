@@ -5,9 +5,17 @@
     RewriteRule ^(?:index\.php|public/index\.php)$ - [END]
     RewriteRule ^$ index.php [END]
 
-    # Expose generated and public assets from the project subfolder.
-    RewriteRule ^(build|images|img|js|css|storage)(/.*)?$ public/$1$2 [END]
-    RewriteRule ^(.+\.(png|jpg|jpeg|gif|ico|svg|webp|woff|woff2|ttf|eot))$ public/$1 [END]
+    # Expose generated and public assets only if they exist in public/
+    RewriteCond %{DOCUMENT_ROOT}/public/$1$2 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/public/$1$2 -d [OR]
+    RewriteCond %{DOCUMENT_ROOT}/Proagroindustria2/public/$1$2 -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^(build|images|img|js|css)(/.*)?$ public/$1$2 [END]
+
+    # If file exists in public/storage, serve it directly
+    RewriteCond %{DOCUMENT_ROOT}/public/storage/$1 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/Proagroindustria2/public/storage/$1 -f
+    RewriteRule ^storage/(.*)$ public/storage/$1 [END]
 
     # Front controller at the project root so Laravel sees the subdirectory
     # (e.g. /Proagroindustria2) as the app base path, not as a route.

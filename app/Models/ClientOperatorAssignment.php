@@ -13,11 +13,19 @@ class ClientOperatorAssignment extends Model
         'sales_order_id',
         'presentation',
         'tm',
+        'original_tm',
+        'destared_tm',
+        'destare_status',
+        'destared_at',
+        'loading_order_id',
         'sack',
     ];
 
     protected $casts = [
         'tm' => 'decimal:2',
+        'original_tm' => 'decimal:2',
+        'destared_tm' => 'decimal:2',
+        'destared_at' => 'datetime',
     ];
 
     public function operator()
@@ -29,4 +37,10 @@ class ClientOperatorAssignment extends Model
     {
         return $this->belongsTo(SalesOrder::class, 'sales_order_id');
     }
+
+    public function loadingOrder()
+    {
+        return $this->belongsTo(LoadingOrder::class, 'loading_order_id');
+    }
 }
+

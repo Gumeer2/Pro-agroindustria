@@ -518,6 +518,16 @@ class WeightTicketController extends Controller
             $order->sales_order?->syncLoadedQuantity();
         }
 
+        // Actualizar TM y destared_tm si hay asignación vinculada a esta orden
+        $editNetTons = round(($validated['net_weight'] ?? 0) / 1000, 2);
+        if ($editNetTons > 0 && !empty($order->id)) {
+            \App\Models\ClientOperatorAssignment::where('loading_order_id', $order->id)->update([
+                'tm' => $editNetTons,
+                'destared_tm' => $editNetTons,
+            ]);
+        }
+
+
         // Determine Warehouse to update in LoadingOrder and ShipmentOrder
         $finalWarehouse = null; // Default to null for cleanup
         if (!empty($validated['lot_id'])) {
@@ -561,12 +571,22 @@ class WeightTicketController extends Controller
                     $order->sales_order?->syncLoadedQuantity();
                 }
 
+                // Revert linked assignment if exists
+                \App\Models\ClientOperatorAssignment::where('loading_order_id', $order->id)->update([
+                    'tm' => \Illuminate\Support\Facades\DB::raw('COALESCE(original_tm, tm)'),
+                    'destared_tm' => null,
+                    'destare_status' => 'pending',
+                    'destared_at' => null,
+                    'loading_order_id' => null,
+                ]);
+
                 // Reset Order
                 // "Authorized" allows creating a new ticket (Entry).
                 $order->update([
                     'status' => 'authorized', // Revert to pre-scale status
                     'destare_status' => 'pending', // Reset to default (cannot be null)
                 ]);
+
             });
 
             return redirect()->back()->with('success', 'Ticket eliminado permanentemente. La orden ha vuelto a estado "Autorizado".');
@@ -623,12 +643,22 @@ class WeightTicketController extends Controller
                             $order->shipment_order?->update(['status' => 'authorized']);
                         }
 
+                        // Revert linked assignment if exists
+                        \App\Models\ClientOperatorAssignment::where('loading_order_id', $order->id)->update([
+                            'tm' => \Illuminate\Support\Facades\DB::raw('COALESCE(original_tm, tm)'),
+                            'destared_tm' => null,
+                            'destare_status' => 'pending',
+                            'destared_at' => null,
+                            'loading_order_id' => null,
+                        ]);
+
                         // Sync Sales Order if linked
                         if ($order->sales_order_id) {
                             $order->sales_order?->syncLoadedQuantity();
                         }
                     }
                 }
+
             });
 
             return redirect()->back()->with('success', 'Ticket cancelado correctamente. El registro permanece en el historial.');
@@ -1350,6 +1380,41 @@ class WeightTicketController extends Controller
                 } elseif ($order->shipment_order && $order->shipment_order->sales_order_id) {
                     $order->shipment_order->sales_order?->syncLoadedQuantity();
                 }
+
+                // Sincronizar Asignación de Operador - Cliente al destarar
+                // Actualiza el TM real destarado y marca como completado para que no se duplique la resta
+                $linkedSalesOrderId = $order->sales_order_id ?? $order->shipment_order?->sales_order_id;
+                if ($linkedSalesOrderId && $netTons > 0) {
+                    $targetOperatorId = $order->exit_operator_id;
+                    if (!$targetOperatorId && !empty($order->operator_name)) {
+                        $targetOperatorId = \App\Models\ExitOperator::where('name', $order->operator_name)->value('id');
+                    }
+
+                    $assignmentQuery = \App\Models\ClientOperatorAssignment::where('sales_order_id', $linkedSalesOrderId)
+                        ->where(function ($q) use ($order) {
+                            $q->whereNull('destare_status')
+                              ->orWhere('destare_status', 'pending')
+                              ->orWhere('loading_order_id', $order->id);
+                        });
+
+                    if ($targetOperatorId) {
+                        $assignmentQuery->where('operator_id', $targetOperatorId);
+                    }
+
+                    $assignment = $assignmentQuery->orderBy('created_at', 'asc')->first();
+
+                    if ($assignment) {
+                        $assignment->update([
+                            'original_tm' => $assignment->original_tm ?? $assignment->tm,
+                            'tm' => $netTons,
+                            'destared_tm' => $netTons,
+                            'destare_status' => 'completed',
+                            'destared_at' => now(),
+                            'loading_order_id' => $order->id,
+                        ]);
+                    }
+                }
+
 
                 // Automatic Burreo Unit Average Recalculation & Application
                 if ($order->vessel_id && ($order->vessel?->apt_operation_type === 'burreo' || $order->operation_type === 'burreo' || $ticket->is_burreo)) {

@@ -1266,13 +1266,7 @@
                 <tbody>
                     @forelse($activities as $activity)
                         @php
-                            $displayLot = null;
-                            if (!empty($selectedLotId)) {
-                                $displayLot = $selectedLots->firstWhere('id', $selectedLotId);
-                            }
-                            if (!$displayLot) {
-                                $displayLot = optional($activity->shiftStart)->lot ?: optional($registration)->lot;
-                            }
+                            $displayLot = $activity->lot ?: ($selectedLots->firstWhere('id', $activity->lot_id) ?: ($selectedLots->firstWhere('id', $selectedLotId) ?: optional($activity->shiftStart)->lot));
                             $displayWarehouse = optional($displayLot)->warehouse ?: '—';
                             $displayFolio = (string) optional($displayLot)->folio;
                             $displayProduct = preg_match('/-UI(?:[-(]|$)/i', $displayFolio)
@@ -1373,6 +1367,7 @@
         const activityLot = document.querySelector('[data-activity-lot]');
         const historyTbody = document.querySelector('.history table tbody');
         let filterAbortController = null;
+        let resetActivityForm = () => {};
 
         const fetchFilteredHistory = async () => {
             if (filterAbortController) {
@@ -1446,6 +1441,7 @@
         activityLot?.addEventListener('change', () => {
             syncActivityLot();
             applyHistoryFilters();
+            resetActivityForm();
         });
         filterDate?.addEventListener('click', () => {
             try {
@@ -1757,42 +1753,79 @@
         saveButton.addEventListener('click', async () => {
             if (!capture.value.trim()) { capture.focus(); capture.setCustomValidity('Captura una actividad antes de guardar.'); capture.reportValidity(); return; }
             if (!capturedEvidence) { evidenceStatus.textContent = 'Toma una evidencia fotográfica para continuar'; evidenceStatus.classList.add('error'); evidenceButton.disabled = false; evidenceButton.focus(); return; }
+            if (!activityLot?.value) { evidenceStatus.textContent = 'Selecciona un lote antes de guardar'; evidenceStatus.classList.add('error'); activityLot?.focus(); return; }
             capture.setCustomValidity('');
             clearInterval(clockTimer);
             const savedAt = nowLocal();
             timeInput.value = savedAt.clock;
             saveButton.disabled = true; saveButton.textContent = 'Guardando...';
             const payload = new FormData();
-            payload.append('production_shift_start_id', shiftId); payload.append('type', type); payload.append('description', capture.value.trim()); payload.append('location', location.value.trim());
+            payload.append('production_shift_start_id', shiftId);
+            if (activityLot && activityLot.value) {
+                payload.append('lot_id', activityLot.value);
+            }
+            payload.append('type', type);
+            payload.append('description', capture.value.trim());
+            payload.append('location', location.value.trim());
             payload.append('occurred_at', savedAt.stamp);
             payload.append('evidence', capturedEvidence);
             const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
             try {
-                const response = await fetch('{{ route('apt.management.activity.store') }}', { method: 'POST', body: payload, credentials: 'same-origin', headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+                const response = await fetch('{{ route('apt.management.activity.store') }}', {
+                    method: 'POST',
+                    body: payload,
+                    credentials: 'same-origin',
+                    headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                });
                 if (response.ok) {
                     await fetchFilteredHistory();
-                    capture.value = '';
-                    location.value = '';
-                    capturedEvidence = null;
-                    evidencePreview.src = '';
-                    evidencePreview.hidden = true;
-                    deletePhotoButton.hidden = true;
-                    evidenceButton.textContent = '＋ 📷 Evidencia fotográfica';
-                    evidenceStatus.textContent = 'Sin evidencia';
-                    return;
+                    resetActivityForm();
+                    showProductionToast('Actividad registrada correctamente.', 'success', 'Actividad guardada');
+                } else {
+                    const result = await response.json().catch(() => ({}));
+                    const message = result.message || Object.values(result.errors || {}).flat()[0] || 'No se pudo guardar la actividad.';
+                    evidenceStatus.textContent = message;
+                    evidenceStatus.classList.add('error');
+                    showProductionToast(message, 'error', 'Error al guardar');
+                    saveButton.disabled = false;
+                    saveButton.textContent = '💾 Guardar';
+                    clockTimer = setInterval(tickClock, 1000);
                 }
-                const result = await response.json().catch(() => ({}));
-                const message = result.message || Object.values(result.errors || {}).flat()[0] || 'No se pudo guardar la actividad.';
-                evidenceStatus.textContent = message;
-                evidenceStatus.classList.add('error');
             } catch (error) {
+                console.error(error);
                 evidenceStatus.textContent = 'No se pudo conectar con el servidor.';
                 evidenceStatus.classList.add('error');
+                showProductionToast('No se pudo conectar con el servidor.', 'error', 'Error de red');
+                saveButton.disabled = false;
+                saveButton.textContent = '💾 Guardar';
+                clockTimer = setInterval(tickClock, 1000);
             }
-            saveButton.disabled = false;
-            saveButton.textContent = '💾 Guardar';
-            clockTimer = setInterval(tickClock, 1000);
         });
+
+        resetActivityForm = () => {
+            if (capture) capture.value = '';
+            if (location) location.value = '';
+            capturedEvidence = null;
+            if (evidencePreview) {
+                evidencePreview.src = '';
+                evidencePreview.hidden = true;
+            }
+            if (deletePhotoButton) deletePhotoButton.hidden = true;
+            if (evidenceButton) {
+                evidenceButton.textContent = '＋ 📷 Evidencia fotográfica';
+                evidenceButton.disabled = false;
+            }
+            if (evidenceStatus) {
+                evidenceStatus.textContent = 'Sin evidencia';
+                evidenceStatus.classList.remove('error');
+            }
+            if (saveButton) {
+                saveButton.disabled = false;
+                saveButton.textContent = '💾 Guardar';
+            }
+            clearInterval(clockTimer);
+            clockTimer = setInterval(tickClock, 1000);
+        };
 
         const waitingPanel = document.querySelector('.panel-waiting');
         if (waitingPanel) {

@@ -170,6 +170,9 @@ class AptController extends Controller
         $evidencePath = $request->hasFile('evidence')
             ? $request->file('evidence')->store('production-shifts', 'public')
             : null;
+        if ($evidencePath) {
+            $this->mirrorEvidenceToPublic($evidencePath);
+        }
 
         $selectedUser = User::with('roles')->findOrFail($validated['user_id']);
         $position = $selectedUser->position ?: ($selectedUser->level ?: 'Almacén');
@@ -289,6 +292,7 @@ class AptController extends Controller
         $this->ensureProductionActivityTable();
         $validated = $request->validate([
             'production_shift_start_id' => 'required|exists:production_shift_starts,id',
+            'lot_id' => 'nullable|exists:lots,id',
             'type' => 'required|in:incidencia,relevancia',
             'description' => 'required|string|max:5000',
             'location' => 'nullable|string|max:120',
@@ -303,9 +307,16 @@ class AptController extends Controller
         }
 
         $evidencePath = $request->file('evidence')->store('production-activities', 'public');
+        $this->mirrorEvidenceToPublic($evidencePath);
+
+        $lotId = $validated['lot_id'] ?? null;
+        if (!$lotId) {
+            $lotId = $shiftStart->lot_id;
+        }
 
         \App\Models\ProductionShiftActivity::create([
             'production_shift_start_id' => $validated['production_shift_start_id'],
+            'lot_id' => $lotId,
             'user_id' => auth()->id(),
             'type' => $validated['type'],
             'description' => $validated['description'],
@@ -314,7 +325,99 @@ class AptController extends Controller
             'occurred_at' => $validated['occurred_at'] ?? now(),
         ]);
 
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Actividad guardada correctamente.',
+            ]);
+        }
+
         return back()->with('success', 'Actividad guardada correctamente.');
+    }
+
+    public function showActivityEvidence($id)
+    {
+        $activity = \App\Models\ProductionShiftActivity::findOrFail($id);
+        return $this->serveEvidenceFile($activity->evidence_path);
+    }
+
+    public function showShiftEvidence($id)
+    {
+        $shift = \App\Models\ProductionShiftStart::findOrFail($id);
+        return $this->serveEvidenceFile($shift->evidence_path);
+    }
+
+    public function showMediaByPath(string $path)
+    {
+        return $this->serveEvidenceFile($path);
+    }
+
+    public function serveEvidenceFile(?string $evidencePath)
+    {
+        if (!$evidencePath) {
+            abort(404, 'Sin evidencia adjunta.');
+        }
+
+        $cleanPath = ltrim($evidencePath, '/\\');
+        if (str_starts_with($cleanPath, 'storage/')) {
+            $cleanPath = substr($cleanPath, 8);
+        }
+        if (str_starts_with($cleanPath, 'public/')) {
+            $cleanPath = substr($cleanPath, 7);
+        }
+
+        if (str_contains($cleanPath, '..')) {
+            abort(403, 'Acceso denegado.');
+        }
+
+        $candidates = [
+            storage_path('app/public/' . $cleanPath),
+            public_path('storage/' . $cleanPath),
+            storage_path('app/' . $cleanPath),
+            public_path($cleanPath),
+            public_path('uploads/' . $cleanPath),
+            storage_path('app/public/' . $evidencePath),
+            public_path($evidencePath),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (file_exists($candidate) && is_file($candidate)) {
+                $mime = @mime_content_type($candidate) ?: 'image/jpeg';
+                return response()->file($candidate, [
+                    'Content-Type' => $mime,
+                    'Cache-Control' => 'public, max-age=86400',
+                ]);
+            }
+        }
+
+        abort(404, 'Archivo de evidencia no encontrado.');
+    }
+
+    private function mirrorEvidenceToPublic(?string $evidencePath): void
+    {
+        if (!$evidencePath) {
+            return;
+        }
+
+        try {
+            $src = storage_path('app/public/' . $evidencePath);
+            $dest = public_path('storage/' . $evidencePath);
+
+            if (file_exists($dest) && @realpath($src) === @realpath($dest)) {
+                return;
+            }
+
+            $destDir = dirname($dest);
+            if (!is_dir($destDir)) {
+                @mkdir($destDir, 0755, true);
+            }
+
+            if (file_exists($src) && is_file($src)) {
+                @copy($src, $dest);
+            }
+        } catch (\Throwable $e) {
+            // Non-fatal
+        }
     }
 
     public function closeProductionLot(Request $request, int $shiftStart, string $lot)
@@ -430,12 +533,15 @@ class AptController extends Controller
             return view('production.activity', compact('registration', 'activities', 'activityType', 'activityDate', 'selectedLotId', 'canCloseLot'));
         }
 
-        $activitiesQuery = \App\Models\ProductionShiftActivity::with(['user:id,name', 'shiftStart.lot', 'shiftStart.lots']);
+        $activitiesQuery = \App\Models\ProductionShiftActivity::with(['user:id,name', 'lot', 'shiftStart.lot', 'shiftStart.lots']);
 
-        $activitiesQuery->whereHas('shiftStart', function ($query) use ($selectedLotId) {
+        $activitiesQuery->where(function ($query) use ($selectedLotId) {
             $query->where('lot_id', $selectedLotId)
-                ->orWhereHas('lots', function ($lotQuery) use ($selectedLotId) {
-                    $lotQuery->where('lots.id', $selectedLotId);
+                ->orWhere(function ($sub) use ($selectedLotId) {
+                    $sub->whereNull('lot_id')
+                        ->whereHas('shiftStart', function ($shiftQuery) use ($selectedLotId) {
+                            $shiftQuery->where('lot_id', $selectedLotId);
+                        });
                 });
         });
 
@@ -477,13 +583,16 @@ class AptController extends Controller
         $activityDate = $request->input('activity_date');
         $selectedLotId = $request->input('lot_id');
 
-        $activitiesQuery = \App\Models\ProductionShiftActivity::with(['user:id,name', 'shiftStart.lot', 'shiftStart.lots']);
+        $activitiesQuery = \App\Models\ProductionShiftActivity::with(['user:id,name', 'lot', 'shiftStart.lot', 'shiftStart.lots']);
 
         if ($selectedLotId) {
-            $activitiesQuery->whereHas('shiftStart', function ($query) use ($selectedLotId) {
+            $activitiesQuery->where(function ($query) use ($selectedLotId) {
                 $query->where('lot_id', $selectedLotId)
-                    ->orWhereHas('lots', function ($lotQuery) use ($selectedLotId) {
-                        $lotQuery->where('lots.id', $selectedLotId);
+                    ->orWhere(function ($sub) use ($selectedLotId) {
+                        $sub->whereNull('lot_id')
+                            ->whereHas('shiftStart', function ($shiftQuery) use ($selectedLotId) {
+                                $shiftQuery->where('lot_id', $selectedLotId);
+                            });
                     });
             });
         }
@@ -523,13 +632,19 @@ class AptController extends Controller
             || $request->filled('date_from')
             || $request->filled('date_to');
 
-        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'shiftStart.lot', 'shiftStart.user']);
+        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'lot', 'shiftStart.lot', 'shiftStart.user']);
 
         if (!empty($lotIds)) {
-            $query->whereHas('shiftStart', function ($q) use ($lotIds) {
+            $query->where(function ($q) use ($lotIds) {
                 $q->whereIn('lot_id', $lotIds)
-                    ->orWhereHas('lots', function ($lotQuery) use ($lotIds) {
-                        $lotQuery->whereIn('lots.id', $lotIds);
+                    ->orWhere(function ($sub) use ($lotIds) {
+                        $sub->whereNull('lot_id')
+                            ->whereHas('shiftStart', function ($shiftQuery) use ($lotIds) {
+                                $shiftQuery->whereIn('lot_id', $lotIds)
+                                    ->orWhereHas('lots', function ($lotQuery) use ($lotIds) {
+                                        $lotQuery->whereIn('lots.id', $lotIds);
+                                    });
+                            });
                     });
             });
         }
@@ -804,22 +919,35 @@ class AptController extends Controller
 
     private function ensureProductionActivityTable(): void
     {
-        if (Schema::hasTable('production_shift_activities')) {
+        if (!Schema::hasTable('production_shift_activities')) {
+            Schema::create('production_shift_activities', function ($table) {
+                $table->id();
+                $table->foreignId('production_shift_start_id')->constrained('production_shift_starts')->cascadeOnDelete();
+                $table->uuid('lot_id')->nullable()->index();
+                $table->foreignId('user_id')->constrained('users');
+                $table->string('type', 20);
+                $table->text('description');
+                $table->string('location')->nullable();
+                $table->string('evidence_path')->nullable();
+                $table->dateTime('occurred_at');
+                $table->timestamps();
+                $table->index(['production_shift_start_id', 'occurred_at'], 'psa_shift_time_idx');
+            });
             return;
         }
 
-        Schema::create('production_shift_activities', function ($table) {
-            $table->id();
-            $table->foreignId('production_shift_start_id')->constrained('production_shift_starts')->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained('users');
-            $table->string('type', 20);
-            $table->text('description');
-            $table->string('location')->nullable();
-            $table->string('evidence_path')->nullable();
-            $table->dateTime('occurred_at');
-            $table->timestamps();
-            $table->index(['production_shift_start_id', 'occurred_at'], 'psa_shift_time_idx');
-        });
+        if (!Schema::hasColumn('production_shift_activities', 'lot_id')) {
+            Schema::table('production_shift_activities', function ($table) {
+                $table->uuid('lot_id')->nullable()->after('production_shift_start_id')->index();
+            });
+
+            try {
+                DB::table('production_shift_activities')
+                    ->whereNull('lot_id')
+                    ->join('production_shift_starts', 'production_shift_activities.production_shift_start_id', '=', 'production_shift_starts.id')
+                    ->update(['production_shift_activities.lot_id' => DB::raw('production_shift_starts.lot_id')]);
+            } catch (\Throwable $e) {}
+        }
     }
     // Operator Registration
     public function createOperator()

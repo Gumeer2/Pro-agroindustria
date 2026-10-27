@@ -107,10 +107,15 @@ export interface ClientOperatorRecord {
     programmed_quantity?: number | string;
     available_balance?: number | string;
     updated_balance?: number | string;
+    destare_status?: string;
+    destared_tm?: number | string;
+    destared_at?: string;
+    original_tm?: number | string;
     updated_at?: string;
     operational_date?: string;
     formatted_updated_at?: string;
 }
+
 
 export default function Create({
     auth,
@@ -180,17 +185,19 @@ export default function Create({
             ? sales_orders.filter((so) => selectedOp.clients!.some((c) => c.id === so.client_id))
             : sales_orders);
 
-    // Mapa con la suma total de TM programados para cada Orden de Venta en este módulo
+    // Mapa con la suma total de TM pendientes por destarar para cada Orden de Venta en este módulo
+    // Los operadores ya destarados no se suman aquí porque su tonelaje real ya está descontado del balance de la OV
     const totalProgrammedByOv = useMemo(() => {
         const map: Record<string, number> = {};
         (client_operators || []).forEach((item) => {
             const soId = String(item.sales_order_id || item.sales_order?.id || "");
-            if (soId) {
+            if (soId && item.destare_status !== "completed") {
                 map[soId] = (map[soId] || 0) + Number(item.tm || 0);
             }
         });
         return map;
     }, [client_operators]);
+
 
     const currentEditingAssignment = clientForm.data.assignment_id
         ? client_operators?.find((co) => String(co.id) === String(clientForm.data.assignment_id))
@@ -585,7 +592,7 @@ export default function Create({
 
             {isFromClients ? (
                 /* VISTA CLIENTES: Tabla de Operadores con botón ASIGNACIÓN OPERADOR - CLIENTE arriba y Modal */
-                <div className="w-full max-w-[1700px] mx-auto py-6 px-3 sm:px-5 lg:px-6 pb-28 space-y-5">
+                <div className="w-full max-w-[1700px] mx-auto py-5 px-2 sm:px-4 lg:px-4 pb-28 space-y-4">
                     {/* Barra de navegación superior */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <Link
@@ -775,19 +782,19 @@ export default function Create({
                     <div className="bg-white rounded-2xl shadow-xl border border-gray-200/80 overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full divide-y divide-gray-200 text-xs table-auto">
-                                <thead className="bg-slate-50 text-slate-700 uppercase font-black tracking-wider text-[11px]">
+                                <thead className="bg-slate-50 text-slate-700 uppercase font-black tracking-wider text-[10px]">
                                     <tr>
-                                        <th className="px-3 py-3 text-left whitespace-nowrap">Orden de Venta</th>
-                                        <th className="px-3 py-3 text-left">Operador</th>
-                                        <th className="px-2.5 py-3 text-left">Línea Transportista</th>
-                                        <th className="px-2 py-3 text-center whitespace-nowrap">Tracto</th>
-                                        <th className="px-2 py-3 text-center whitespace-nowrap">Remolque</th>
-                                        <th className="px-2.5 py-3 text-left">Producto</th>
-                                        <th className="px-2 py-3 text-center whitespace-nowrap">Presentación</th>
-                                        <th className="px-2 py-3 text-center whitespace-nowrap">Envase</th>
-                                        <th className="px-3 py-3 text-right whitespace-nowrap">TM</th>
-                                        <th className="px-3 py-3 text-right whitespace-nowrap">Saldo Actualizado</th>
-                                        <th className="px-2.5 py-3 text-center whitespace-nowrap">Acciones</th>
+                                        <th className="px-2 py-2.5 text-left whitespace-nowrap">Orden de Venta</th>
+                                        <th className="px-2.5 py-2.5 text-left">Operador</th>
+                                        <th className="px-2 py-2.5 text-left">Línea Transportista</th>
+                                        <th className="px-1.5 py-2.5 text-center whitespace-nowrap">Tracto</th>
+                                        <th className="px-1.5 py-2.5 text-center whitespace-nowrap">Remolque</th>
+                                        <th className="px-2 py-2.5 text-left">Producto</th>
+                                        <th className="px-1.5 py-2.5 text-center whitespace-nowrap">Presentación</th>
+                                        <th className="px-1.5 py-2.5 text-center whitespace-nowrap">Envase</th>
+                                        <th className="px-2 py-2.5 text-right whitespace-nowrap">TM</th>
+                                        <th className="px-2 py-2.5 text-right whitespace-nowrap">Saldo Actualizado</th>
+                                        <th className="px-2 py-2.5 text-center whitespace-nowrap">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -823,20 +830,20 @@ export default function Create({
                                             return (
                                                 <tr key={op.id} className="hover:bg-indigo-50/40 transition-colors">
                                                     {/* 1. Orden de Venta */}
-                                                    <td className="px-3 py-2.5 whitespace-nowrap">
+                                                    <td className="px-2 py-2 whitespace-nowrap">
                                                         {op.sales_order?.folio ? (
-                                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200/80 font-mono">
+                                                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200/80 font-mono">
                                                                 <ShoppingCart className="w-3 h-3 text-indigo-600 flex-shrink-0" />
                                                                 {op.sales_order.folio}
                                                             </span>
                                                         ) : (
-                                                            <span className="text-gray-400 italic text-[11px]">Sin OV</span>
+                                                            <span className="text-gray-400 italic text-[10.5px]">Sin OV</span>
                                                         )}
                                                     </td>
 
                                                     {/* 2. Operador */}
-                                                    <td className="px-3 py-2.5">
-                                                        <div className="font-bold text-gray-900 uppercase text-xs leading-tight">
+                                                    <td className="px-2.5 py-2">
+                                                        <div className="font-bold text-gray-900 uppercase text-[11px] leading-tight">
                                                             {op.name}
                                                         </div>
                                                         {op.clients && op.clients.length > 0 && (
@@ -844,7 +851,7 @@ export default function Create({
                                                                 {op.clients.map((c) => (
                                                                     <span
                                                                         key={c.id}
-                                                                        className="text-[10px] text-gray-500 font-medium truncate max-w-[160px] block"
+                                                                        className="text-[9.5px] text-gray-500 font-medium truncate max-w-[130px] block"
                                                                         title={c.business_name}
                                                                     >
                                                                         {c.business_name}
@@ -853,47 +860,46 @@ export default function Create({
                                                             </div>
                                                         )}
                                                         {/* Fecha/Hora y Jornada operativa con corte a las 5:00 AM */}
-                                                        <div className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1 whitespace-nowrap">
-                                                            <Clock className="w-3 h-3 text-indigo-500 flex-shrink-0" />
-                                                            <span>
-                                                                {op.formatted_updated_at || "Fecha N/A"} • Jornada:{" "}
-                                                                <strong className="text-gray-600">{op.operational_date || "N/A"}</strong>
-                                                            </span>
+                                                        <div className="text-[9.5px] text-gray-400 mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0 leading-tight">
+                                                            <Clock className="w-2.5 h-2.5 text-indigo-500 flex-shrink-0" />
+                                                            <span className="whitespace-nowrap">{op.formatted_updated_at || "Fecha N/A"}</span>
+                                                            <span className="text-gray-300">•</span>
+                                                            <span className="whitespace-nowrap">Jornada: <strong className="text-gray-600">{op.operational_date || "N/A"}</strong></span>
                                                         </div>
                                                     </td>
 
                                                     {/* 3. Línea Transportista */}
-                                                    <td className="px-2.5 py-2.5">
-                                                        <span className="font-semibold text-gray-700 uppercase block max-w-[150px] truncate text-[11px]" title={op.transport_line || op.real_transport_line || "N/A"}>
+                                                    <td className="px-2 py-2">
+                                                        <span className="font-semibold text-gray-700 uppercase block max-w-[120px] truncate text-[10.5px]" title={op.transport_line || op.real_transport_line || "N/A"}>
                                                             {op.transport_line || op.real_transport_line || "N/A"}
                                                         </span>
                                                     </td>
 
                                                     {/* 4. Tracto */}
-                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
-                                                        <span className="font-mono font-bold text-indigo-950 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-[11px]">
+                                                    <td className="px-1.5 py-2 whitespace-nowrap text-center">
+                                                        <span className="font-mono font-bold text-indigo-950 bg-slate-100 px-1 py-0.5 rounded border border-slate-200 text-[10.5px]">
                                                             {op.tractor_plate || "-"}
                                                         </span>
                                                     </td>
 
                                                     {/* 5. Remolque */}
-                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
-                                                        <span className="font-mono font-medium text-gray-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 text-[11px]">
+                                                    <td className="px-1.5 py-2 whitespace-nowrap text-center">
+                                                        <span className="font-mono font-medium text-gray-700 bg-slate-50 px-1 py-0.5 rounded border border-slate-200 text-[10.5px]">
                                                             {op.trailer_plate || "S/R"}
                                                         </span>
                                                     </td>
 
                                                     {/* 6. Producto */}
-                                                    <td className="px-2.5 py-2.5">
-                                                        <span className="font-bold text-indigo-950 uppercase block max-w-[160px] truncate text-[11px]" title={op.sales_order?.product?.name || "N/A"}>
+                                                    <td className="px-2 py-2">
+                                                        <span className="font-bold text-indigo-950 uppercase block max-w-[125px] truncate text-[10.5px]" title={op.sales_order?.product?.name || "N/A"}>
                                                             {op.sales_order?.product?.name || "N/A"}
                                                         </span>
                                                     </td>
 
                                                     {/* 7. Presentación */}
-                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
+                                                    <td className="px-1.5 py-2 whitespace-nowrap text-center">
                                                         <span
-                                                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                                            className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-black uppercase ${
                                                                 isGranel
                                                                     ? "bg-amber-100 text-amber-800 border border-amber-200"
                                                                     : "bg-blue-100 text-blue-800 border border-blue-200"
@@ -904,22 +910,34 @@ export default function Create({
                                                     </td>
 
                                                     {/* 8. Envase */}
-                                                    <td className="px-2 py-2.5 whitespace-nowrap text-center">
-                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-800">
+                                                    <td className="px-1.5 py-2 whitespace-nowrap text-center">
+                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-slate-100 text-slate-800">
                                                             {envaseText}
                                                         </span>
                                                     </td>
 
                                                     {/* 9. TM */}
-                                                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
-                                                        <span className="font-black text-xs text-indigo-900 font-mono">
-                                                            {tmNum.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM
-                                                        </span>
+                                                    <td className="px-2 py-2 whitespace-nowrap text-right">
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="font-black text-[11px] text-indigo-900 font-mono leading-tight">
+                                                                {tmNum.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM
+                                                            </span>
+                                                            {op.destare_status === "completed" ? (
+                                                                <span className="inline-flex items-center text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/90 px-1 py-0 rounded mt-0.5" title="Tonelaje real destarado en báscula">
+                                                                    Destarado
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[9px] text-gray-400 font-semibold mt-0.5" title="Tonelaje programado">
+                                                                    Prog.
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </td>
 
+
                                                     {/* 10. Saldo Actualizado */}
-                                                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
-                                                        <span className="font-bold text-xs text-emerald-700 font-mono">
+                                                    <td className="px-2 py-2 whitespace-nowrap text-right">
+                                                        <span className="font-bold text-[11px] text-emerald-700 font-mono">
                                                             {saldoActualizado !== null
                                                                 ? `${saldoActualizado.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM`
                                                                 : "-"}
@@ -927,24 +945,24 @@ export default function Create({
                                                     </td>
 
                                                     {/* 12. Acciones */}
-                                                    <td className="px-2.5 py-2.5 whitespace-nowrap text-center">
-                                                        <div className="flex items-center justify-center gap-1.5">
+                                                    <td className="px-2 py-2 whitespace-nowrap text-center">
+                                                        <div className="flex items-center justify-center gap-1">
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleEditOperator(op)}
-                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 transition-colors shadow-xs"
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 transition-colors shadow-xs"
                                                                 title="Editar o reprogramar operador"
                                                             >
-                                                                <Edit3 className="w-3.5 h-3.5" />
+                                                                <Edit3 className="w-3 h-3" />
                                                                 <span>Editar</span>
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleDeleteOperator(op)}
-                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 transition-colors shadow-xs"
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 transition-colors shadow-xs"
                                                                 title="Eliminar asignación del operador"
                                                             >
-                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                <Trash2 className="w-3 h-3" />
                                                                 <span>Eliminar</span>
                                                             </button>
                                                         </div>

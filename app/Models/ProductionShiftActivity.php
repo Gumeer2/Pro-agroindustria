@@ -11,6 +11,7 @@ class ProductionShiftActivity extends Model
 
     protected $fillable = [
         'production_shift_start_id',
+        'lot_id',
         'user_id',
         'type',
         'description',
@@ -23,14 +24,28 @@ class ProductionShiftActivity extends Model
         'occurred_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'evidence_url',
+    ];
+
     public function shiftStart()
     {
         return $this->belongsTo(ProductionShiftStart::class, 'production_shift_start_id');
     }
 
+    public function lot()
+    {
+        return $this->belongsTo(Lot::class, 'lot_id');
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function getEvidenceUrlAttribute(): ?string
+    {
+        return $this->evidenceUrl();
     }
 
     public function evidenceUrl(): ?string
@@ -41,10 +56,13 @@ class ProductionShiftActivity extends Model
         if (str_starts_with($this->evidence_path, 'http://') || str_starts_with($this->evidence_path, 'https://') || str_starts_with($this->evidence_path, 'data:')) {
             return $this->evidence_path;
         }
-        $path = ltrim($this->evidence_path, '/');
+        if ($this->id) {
+            return route('apt.management.activity.evidence', ['id' => $this->id]);
+        }
+        $path = ltrim($this->evidence_path, '/\\');
         if (str_starts_with($path, 'storage/')) {
             $path = substr($path, 8);
         }
-        return asset('storage/' . $path);
+        return route('apt.management.media', ['path' => $path]);
     }
 }

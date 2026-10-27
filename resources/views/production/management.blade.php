@@ -62,35 +62,61 @@
             padding: 1.5rem 1rem 3rem;
         }
         @media (min-width: 640px) { .page { padding-left: 1.5rem; padding-right: 1.5rem; } }
+        .page {
+            width: 100%;
+            max-width: 80rem;
+            min-height: auto;
+            margin: 0 auto;
+            padding: 1.5rem 1rem 3rem;
+            animation: pageFadeIn 0.35s ease;
+        }
+        @keyframes pageFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @media (min-width: 640px) { .page { padding-left: 1.5rem; padding-right: 1.5rem; } }
         @media (min-width: 1024px) { .page { padding-left: 2rem; padding-right: 2rem; } }
+
+        .app-main {
+            background-color: #f8fafc;
+            background-image: radial-gradient(at 0% 0%, rgba(2, 132, 199, 0.06) 0px, transparent 45%), radial-gradient(at 100% 100%, rgba(79, 70, 229, 0.05) 0px, transparent 45%);
+        }
 
         .nav-row {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             gap: 12px;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         .back-btn {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            color: var(--slate-700);
-            background: #fff;
-            padding: 9px 18px;
-            border-radius: 12px;
-            border: 1px solid var(--slate-200);
-            font-size: 14px;
+            gap: 10px;
+            color: #334155;
+            background: #ffffff;
+            padding: 10px 20px;
+            border-radius: 14px;
+            border: 1.5px solid #e2e8f0;
+            font-size: 13.5px;
             font-weight: 700;
             text-decoration: none;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
-            transition: all .2s;
+            box-shadow: 0 2px 5px rgba(15, 23, 42, 0.04);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .back-btn i {
+            transition: transform 0.2s ease;
+            color: #0284c7;
         }
         .back-btn:hover {
-            color: var(--sky-700);
-            border-color: var(--sky-200);
-            background: var(--sky-50);
+            color: #0284c7;
+            border-color: #bae6fd;
+            background: #f0f9ff;
+            box-shadow: 0 4px 14px rgba(2, 132, 199, 0.12);
             transform: translateY(-1px);
+        }
+        .back-btn:hover i {
+            transform: translateX(-3px);
         }
         .back-subtle {
             background: transparent;
@@ -106,107 +132,176 @@
 
         .shell {
             overflow: visible;
-            border: 1px solid var(--slate-200);
-            border-radius: 2rem;
-            background: #fff;
-            box-shadow: 0 20px 60px -30px rgba(15, 23, 42, .35);
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            border-radius: 1.75rem;
+            background: #ffffff;
+            box-shadow: 0 20px 45px -15px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.02);
+            transition: box-shadow 0.3s ease;
         }
+        .shell:hover {
+            box-shadow: 0 25px 55px -15px rgba(15, 23, 42, 0.11), 0 0 0 1px rgba(15, 23, 42, 0.03);
+        }
+
         .hero {
+            position: relative;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            padding: 1.75rem 2rem;
-            background: linear-gradient(110deg, var(--sky-700), var(--blue-700) 55%, var(--indigo-800));
-            color: #fff;
-            border-radius: 2rem 2rem 0 0;
+            gap: 20px;
+            padding: 2rem 2.5rem;
+            background: linear-gradient(135deg, #091e42 0%, #1e40af 60%, #0284c7 100%);
+            color: #ffffff;
+            border-radius: 1.75rem 1.75rem 0 0;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0; right: 0; bottom: 0; left: 0;
+            background: radial-gradient(circle at 85% 20%, rgba(56, 189, 248, 0.22) 0%, transparent 60%);
+            pointer-events: none;
         }
         .hero-brand {
+            position: relative;
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 18px;
+            z-index: 1;
         }
         .hero-back-icon {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 42px;
-            height: 42px;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.15);
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.14);
             color: #fff;
             text-decoration: none;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: background .2s;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            backdrop-filter: blur(8px);
+            transition: background 0.2s, transform 0.2s;
         }
         .hero-back-icon:hover {
-            background: rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.24);
+            transform: scale(1.05);
         }
         .hero-brand img {
-            width: 52px;
-            height: 52px;
+            width: 56px;
+            height: 56px;
             object-fit: contain;
-            background: #fff;
-            border-radius: 14px;
-            padding: 4px;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 6px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.2);
         }
         .hero-kicker {
             margin: 0;
-            color: var(--sky-100);
+            color: #7dd3fc;
             font-size: 11px;
-            font-weight: 900;
-            letter-spacing: .24em;
+            font-weight: 800;
+            letter-spacing: 0.22em;
             text-transform: uppercase;
         }
         .hero h1 {
             margin: 4px 0 0;
-            font-size: 1.875rem;
+            font-size: 1.85rem;
             font-weight: 900;
-            letter-spacing: -.02em;
+            letter-spacing: -0.025em;
+            color: #ffffff;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
         }
         .hero-meta {
+            position: relative;
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            align-items: center;
+            gap: 10px;
+            z-index: 1;
         }
         .chip {
             display: inline-flex;
             align-items: center;
-            border-radius: 999px;
-            padding: 8px 16px;
+            gap: 8px;
+            border-radius: 9999px;
+            padding: 8px 18px;
             font-size: 12px;
-            font-weight: 900;
-            letter-spacing: .04em;
+            font-weight: 800;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
         }
-        .chip-white { background: #fff; color: var(--sky-700); }
-        .chip-trans { background: rgba(255, 255, 255, .12); color: var(--sky-100); border: 1px solid rgba(255, 255, 255, .2); }
+        .chip-white {
+            background: rgba(255, 255, 255, 0.95);
+            color: #0369a1;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+            backdrop-filter: blur(8px);
+        }
+        .chip-pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 9999px;
+            background: #10b981;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: chipPulseAnim 2s infinite;
+        }
+        @keyframes chipPulseAnim {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .chip-trans {
+            background: rgba(255, 255, 255, 0.14);
+            color: #e0f2fe;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            backdrop-filter: blur(4px);
+        }
 
         .form-body {
-            padding: 2rem;
+            padding: 2.25rem 2.5rem;
         }
-        @media (min-width: 640px) { .form-body { padding: 2.5rem; } }
+        @media (max-width: 640px) {
+            .form-body { padding: 1.5rem; }
+            .hero { padding: 1.5rem; }
+        }
 
         .form-top-bar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            border-bottom: 1px solid var(--slate-100);
-            padding-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 14px;
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 1.25rem;
             margin-bottom: 2rem;
         }
-        .form-top-bar p { margin: 0; font-size: 14px; font-weight: 600; color: var(--slate-500); }
-        .form-top-bar span { font-size: 12px; font-weight: 900; color: var(--slate-400); text-transform: uppercase; }
+        .form-top-bar p {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .required-badge {
+            font-size: 11px;
+            font-weight: 800;
+            color: #e11d48;
+            background: #ffe4e6;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
 
         .grid-3 {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 2rem;
+            gap: 1.75rem;
         }
         @media (min-width: 1024px) {
-            .grid-3 { grid-template-columns: 1fr 1fr 0.9fr; }
+            .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
         }
 
         .field-group {
@@ -217,136 +312,185 @@
         .field-label {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 8px;
-            font-size: 12px;
-            font-weight: 900;
-            letter-spacing: .08em;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: var(--sky-700);
+            color: #334155;
             margin-bottom: 8px;
         }
+        .field-label-main {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .field-label i {
+            color: #0284c7;
+            font-size: 13px;
+        }
+        .tag-auto {
+            font-size: 10px;
+            font-weight: 700;
+            color: #64748b;
+            background: #f1f5f9;
+            padding: 2px 7px;
+            border-radius: 6px;
+            letter-spacing: normal;
+        }
+
         .field-control {
             width: 100%;
+            height: 48px;
             border-radius: 12px;
-            border: 1px solid var(--sky-200);
-            background: #fff;
-            padding: 12px 16px;
-            font-size: 15px;
+            border: 1.5px solid #e2e8f0;
+            background: #ffffff;
+            padding: 0 16px;
+            font-size: 14.5px;
             font-weight: 600;
-            color: var(--slate-800);
+            color: #0f172a;
             outline: none;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
-            transition: all .2s;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+            transition: all 0.2s ease;
+        }
+        select.field-control {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            padding-right: 42px;
+            cursor: pointer;
+        }
+        .field-control:hover:not(:read-only) {
+            border-color: #cbd5e1;
+            background: #fafafa;
         }
         .field-control:focus {
-            border-color: var(--sky-600);
-            box-shadow: 0 0 0 3px rgba(2, 132, 199, .15);
+            border-color: #0284c7;
+            background: #ffffff;
+            box-shadow: 0 0 0 3.5px rgba(2, 132, 199, 0.15);
         }
         .field-control:read-only {
-            background: var(--slate-50);
-            color: var(--slate-500);
-            cursor: not-allowed;
+            background: #f8fafc;
+            border: 1.5px dashed #cbd5e1;
+            color: #475569;
+            cursor: default;
         }
-        .lot-checkboxes {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            max-height: 200px;
-            overflow-y: auto;
-            padding: 8px;
-            border: 1px solid var(--sky-200);
-            border-radius: 12px;
-            background: var(--slate-50);
+
+        .lot-field {
+            width: 100%;
         }
         .lot-dropdown {
             position: relative;
             width: 100%;
-            max-width: 100%;
-            min-width: 0;
-            border: 1px solid var(--sky-200);
-            border-radius: 12px;
-            background: #fff;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
-        }
-        .lot-field {
-            width: 100%;
-            max-width: 100%;
-            min-width: 0;
         }
         .lot-dropdown summary {
             position: relative;
-            display: block;
+            display: flex;
+            align-items: center;
             width: 100%;
-            max-width: 100%;
-            min-width: 0;
+            height: 48px;
             box-sizing: border-box;
-            min-height: 50px;
-            padding: 12px 42px 12px 16px;
-            color: var(--slate-800);
-            font-size: 15px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 12px;
+            background: #ffffff;
+            padding: 0 42px 0 16px;
+            color: #0f172a;
+            font-size: 14.5px;
             font-weight: 600;
             cursor: pointer;
             list-style: none;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+            transition: all 0.2s ease;
         }
         .lot-dropdown summary::-webkit-details-marker { display: none; }
         .lot-dropdown summary::after {
             content: '';
             position: absolute;
-            top: 20px;
+            top: 50%;
             right: 16px;
             width: 7px;
             height: 7px;
-            border-right: 2px solid var(--slate-500);
-            border-bottom: 2px solid var(--slate-500);
-            transform: rotate(45deg);
-            transition: transform .2s ease;
+            border-right: 2.2px solid #64748b;
+            border-bottom: 2.2px solid #64748b;
+            transform: translateY(-65%) rotate(45deg);
+            transition: transform 0.2s ease;
         }
-        .lot-dropdown[open] summary::after { top: 24px; transform: rotate(225deg); }
-        .lot-dropdown[open] { z-index: 30; }
+        .lot-dropdown[open] summary {
+            border-color: #0284c7;
+            box-shadow: 0 0 0 3.5px rgba(2, 132, 199, 0.15);
+            border-radius: 12px;
+        }
+        .lot-dropdown[open] summary::after {
+            transform: translateY(-35%) rotate(225deg);
+            border-color: #0284c7;
+        }
+        .lot-dropdown[open] { z-index: 40; }
         .lot-dropdown .lot-checkboxes {
             position: absolute;
-            top: calc(100% - 1px);
-            left: -1px;
-            right: -1px;
-            z-index: 50;
-            border: 1px solid var(--sky-200);
-            border-radius: 0 0 12px 12px;
-            background: #fff;
-            box-shadow: 0 8px 18px rgba(15, 23, 42, .14);
+            top: calc(100% + 8px);
+            left: 0;
+            right: 0;
+            z-index: 60;
+            max-height: 240px;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 18px 40px -5px rgba(15, 23, 42, 0.16);
+            animation: dropFadeIn 0.2s ease;
         }
-        .lot-accept {
-            width: 100%;
-            margin-top: 6px;
-            padding: 9px 12px;
-            border: 0;
-            border-radius: 8px;
-            background: var(--sky-600);
-            color: #fff;
-            font-size: 14px;
-            font-weight: 800;
-            cursor: pointer;
-            transition: background .2s;
+        @keyframes dropFadeIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .lot-accept:hover { background: var(--sky-700); }
-        .lot-dropdown[open] summary { border-bottom: 1px solid var(--sky-200); border-radius: 12px 12px 0 0; }
         .lot-checkbox {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 6px 8px;
-            color: var(--slate-700);
-            font-size: 14px;
+            gap: 10px;
+            padding: 8px 12px;
+            color: #1e293b;
+            font-size: 13.5px;
             font-weight: 600;
-            text-transform: none;
-            letter-spacing: normal;
             cursor: pointer;
-            border-radius: 6px;
+            border-radius: 8px;
+            transition: all 0.15s ease;
         }
-        .lot-checkbox:hover { background: var(--sky-50); }
-        .lot-checkbox input { width: 16px; height: 16px; accent-color: var(--sky-600); cursor: pointer; }
+        .lot-checkbox:hover {
+            background: #f0f9ff;
+            color: #0284c7;
+        }
+        .lot-checkbox input {
+            width: 17px;
+            height: 17px;
+            accent-color: #0284c7;
+            cursor: pointer;
+        }
+        .lot-accept {
+            width: 100%;
+            margin-top: 8px;
+            padding: 10px 14px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+            color: #ffffff;
+            font-size: 13.5px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+            transition: all 0.2s ease;
+        }
+        .lot-accept:hover {
+            filter: brightness(1.08);
+            transform: translateY(-1px);
+        }
+
         .selected-lots-container {
             animation: fadeInLots 0.25s ease;
         }
@@ -358,42 +502,74 @@
         .date-box {
             display: flex;
             align-items: center;
-            gap: 12px;
-            height: 50px;
+            gap: 14px;
+            height: 48px;
             border-radius: 12px;
-            border: 1px solid var(--slate-200);
-            background: var(--slate-50);
+            border: 1.5px solid #e2e8f0;
+            background: #f8fafc;
             padding: 0 16px;
+            color: #0f172a;
             font-weight: 700;
-            color: var(--slate-600);
+            font-size: 14.5px;
         }
-        .date-box i { color: var(--sky-600); font-size: 18px; }
+        .date-icon-wrap {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            background: #e0f2fe;
+            color: #0284c7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+        }
 
         .btn-save {
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            height: 50px;
+            height: 48px;
             width: 100%;
             border-radius: 12px;
             border: none;
-            background: var(--sky-600);
-            color: #fff;
-            font-size: 16px;
-            font-weight: 900;
+            background: linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%);
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
             cursor: pointer;
-            box-shadow: 0 10px 25px -5px rgba(2, 132, 199, .35);
-            transition: all .2s;
+            box-shadow: 0 8px 20px -4px rgba(2, 132, 199, 0.42), 0 3px 6px -2px rgba(29, 78, 216, 0.2);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .btn-save:hover {
-            background: var(--sky-700);
-            transform: translateY(-1px);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px -4px rgba(2, 132, 199, 0.52);
+            filter: brightness(1.05);
+        }
+        .btn-save:active {
+            transform: translateY(0);
+            filter: brightness(0.96);
         }
         .btn-save:disabled {
-            opacity: 0.6;
+            opacity: 0.65;
             cursor: not-allowed;
             transform: none;
+            box-shadow: none;
+        }
+
+        .alert-error {
+            display: none;
+            background: #fff1f2;
+            border: 1.5px solid #fecdd3;
+            color: #be123c;
+            padding: 14px 18px;
+            border-radius: 14px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 12px rgba(225, 29, 72, 0.08);
+            animation: dropFadeIn 0.25s ease;
         }
 
         .app-shell {
@@ -681,45 +857,6 @@
             display: inline-flex; align-items: center; justify-content: center;
         }
         .app-header-user .logout-btn:hover { color: #dc2626; }
-        .alert-error {
-            display: none;
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #b91c1c;
-            padding: 12px 16px;
-            border-radius: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 20px;
-        }
-        .nav-row {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-        .back-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--slate-700);
-            background: #fff;
-            padding: 9px 18px;
-            border-radius: 12px;
-            border: 1px solid var(--slate-200);
-            font-size: 14px;
-            font-weight: 700;
-            text-decoration: none;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
-            transition: all .2s;
-        }
-        .back-btn:hover {
-            color: var(--sky-700);
-            border-color: var(--sky-200);
-            background: var(--sky-50);
-            transform: translateY(-1px);
-        }
     </style>
 </head>
 <body>
@@ -851,7 +988,10 @@
                     </div>
                 </div>
                 <div class="hero-meta">
-                    <span class="chip chip-white">Lote en recepción</span>
+                    <span class="chip chip-white">
+                        <span class="chip-pulse"></span>
+                        Lote en recepción
+                    </span>
                 </div>
             </div>
 
@@ -861,48 +1001,58 @@
                 <div id="errorBox" class="alert-error"></div>
 
                 <div class="form-top-bar">
-                    <p>Completa los datos para iniciar el turno y generar el lote.</p>
-                    <span>* Campos obligatorios</span>
+                    <p><i class="fa-solid fa-circle-info" style="color: #0284c7;"></i> Completa los datos para iniciar el turno y generar el lote.</p>
+                    <span class="required-badge"><i class="fa-solid fa-asterisk" style="font-size: 8px;"></i> Campos obligatorios</span>
                 </div>
 
                 <div class="grid-3">
                     <div class="field-group">
                         <label>
-                            <span class="field-label"><i class="fa-solid fa-user"></i> Usuario asignado</span>
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-user"></i> Usuario asignado</span>
+                                <span class="tag-auto" style="color: #0284c7; background: #e0f2fe;">Requerido</span>
+                            </span>
                             <select id="user_id" name="user_id" required class="field-control">
-                                <option value="">Seleccionar usuario</option>
+                                <option value="" selected disabled>Seleccionar usuario</option>
                                 @foreach($users as $u)
                                     @php
                                         $userPosition = $u->position ?: ($u->level ?: ($u->roles->pluck('name')->first() ?: 'Almacén'));
-                                        $isSelected = $latestRegistration ? ($latestRegistration->user_id == $u->id) : (auth()->id() == $u->id);
                                     @endphp
-                                    <option value="{{ $u->id }}" data-position="{{ $userPosition }}" {{ $isSelected ? 'selected' : '' }}>
+                                    <option value="{{ $u->id }}" data-position="{{ $userPosition }}">
                                         {{ $u->name }}
                                     </option>
                                 @endforeach
                             </select>
                         </label>
                         <label>
-                            <span class="field-label"><i class="fa-solid fa-clipboard-list"></i> Turno</span>
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-clipboard-list"></i> Turno</span>
+                                <span class="tag-auto" style="color: #0284c7; background: #e0f2fe;">Requerido</span>
+                            </span>
                             <select id="shift" name="shift" required class="field-control">
-                                <option value="">Seleccionar turno</option>
-                                @php $selectedShift = $latestRegistration ? $latestRegistration->shift : ''; @endphp
-                                <option value="Turno 1" {{ $selectedShift == 'Turno 1' ? 'selected' : '' }}>Turno 1</option>
-                                <option value="Turno 2" {{ $selectedShift == 'Turno 2' ? 'selected' : '' }}>Turno 2</option>
-                                <option value="Turno 3" {{ $selectedShift == 'Turno 3' ? 'selected' : '' }}>Turno 3</option>
-                                <option value="Turno 1A" {{ $selectedShift == 'Turno 1A' ? 'selected' : '' }}>Turno 1A</option>
-                                <option value="Turno 1B" {{ $selectedShift == 'Turno 1B' ? 'selected' : '' }}>Turno 1B</option>
+                                <option value="" selected disabled>Seleccionar turno</option>
+                                <option value="Turno 1">Turno 1</option>
+                                <option value="Turno 2">Turno 2</option>
+                                <option value="Turno 3">Turno 3</option>
+                                <option value="Turno 1A">Turno 1A</option>
+                                <option value="Turno 1B">Turno 1B</option>
                             </select>
                         </label>
                     </div>
 
                     <div class="field-group">
                         <label>
-                            <span class="field-label"><i class="fa-solid fa-id-badge"></i> Puesto</span>
-                            <input type="text" id="position" name="position" value="{{ $latestRegistration ? $latestRegistration->position : 'Automático' }}" readonly class="field-control">
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-id-badge"></i> Puesto</span>
+                                <span class="tag-auto">Automático</span>
+                            </span>
+                            <input type="text" id="position" name="position" value="" placeholder="—" readonly class="field-control">
                         </label>
                         <div class="lot-field">
-                            <span class="field-label"><i class="fa-solid fa-box-open"></i> Lote en recepción</span>
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-box-open"></i> Lote en recepción</span>
+                                <span class="tag-auto" style="color: #0284c7; background: #e0f2fe;">Requerido</span>
+                            </span>
                             <details class="lot-dropdown">
                                 <summary data-lot-summary>Seleccionar lote(s)</summary>
                                 <div class="lot-checkboxes">
@@ -918,7 +1068,9 @@
                         </div>
                         <div id="selectedLotsContainer" class="selected-lots-container" style="display: none;">
                             <label>
-                                <span class="field-label"><i class="fa-solid fa-boxes-stacked"></i> Lotes seleccionados</span>
+                                <span class="field-label">
+                                    <span class="field-label-main"><i class="fa-solid fa-boxes-stacked"></i> Lotes seleccionados</span>
+                                </span>
                                 <select id="selected_lots_dropdown" class="field-control">
                                 </select>
                             </label>
@@ -927,9 +1079,14 @@
 
                     <div class="field-group" style="justify-content: space-between;">
                         <div>
-                            <span class="field-label"><i class="fa-solid fa-calendar-days"></i> Fecha</span>
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-calendar-days"></i> Fecha</span>
+                                <span class="tag-auto">Hoy</span>
+                            </span>
                             <div class="date-box">
-                                <i class="fa-solid fa-calendar-day"></i>
+                                <div class="date-icon-wrap">
+                                    <i class="fa-solid fa-calendar-day"></i>
+                                </div>
                                 <span>{{ $latestRegistration ? $latestRegistration->started_at->format('d/m/Y') : date('d/m/Y') }}</span>
                             </div>
                         </div>
@@ -942,21 +1099,25 @@
             @else
             <div class="form-body">
                 <div class="form-top-bar">
-                    <p>{{ $latestRegistration ? 'Información del lote y turno asignado por el Jefe de Almacén.' : 'Información del turno y lote en recepción (Sin lote asignado).' }}</p>
-                    <span>{{ $latestRegistration ? 'Lote activo' : 'Sin datos' }}</span>
+                    <p><i class="fa-solid fa-circle-info" style="color: #0284c7;"></i> {{ $latestRegistration ? 'Información del lote y turno asignado por el Jefe de Almacén.' : 'Información del turno y lote en recepción (Sin lote asignado).' }}</p>
+                    <span class="required-badge" style="{{ $latestRegistration ? 'color: #0369a1; background: #e0f2fe;' : 'color: #64748b; background: #f1f5f9;' }}">{{ $latestRegistration ? 'Lote activo' : 'Sin datos' }}</span>
                 </div>
 
                 <div class="grid-3" style="margin-bottom: 1.5rem;">
                     <div class="field-group">
                         <div>
-                            <span class="field-label"><i class="fa-solid fa-user"></i> Usuario asignado</span>
-                            <div class="field-control" style="background: var(--slate-50); color: var(--slate-800); font-weight: 700;">
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-user"></i> Usuario asignado</span>
+                            </span>
+                            <div class="field-control" style="background: var(--slate-50); color: var(--slate-800); font-weight: 700; display: flex; align-items: center;">
                                 {{ $latestRegistration ? ($latestRegistration->user?->name ?: auth()->user()->name) : (auth()->user()->name ?: '—') }}
                             </div>
                         </div>
                         <div>
-                            <span class="field-label"><i class="fa-solid fa-clipboard-list"></i> Turno</span>
-                            <div class="field-control" style="background: var(--slate-50); color: {{ $latestRegistration ? 'var(--slate-800)' : 'var(--slate-400)' }}; font-weight: 700;">
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-clipboard-list"></i> Turno</span>
+                            </span>
+                            <div class="field-control" style="background: var(--slate-50); color: {{ $latestRegistration ? 'var(--slate-800)' : 'var(--slate-400)' }}; font-weight: 700; display: flex; align-items: center;">
                                 {{ $latestRegistration ? $latestRegistration->shift : '—' }}
                             </div>
                         </div>
@@ -964,14 +1125,18 @@
 
                     <div class="field-group">
                         <div>
-                            <span class="field-label"><i class="fa-solid fa-id-badge"></i> Puesto</span>
-                            <div class="field-control" style="background: var(--slate-50); color: var(--slate-800); font-weight: 700;">
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-id-badge"></i> Puesto</span>
+                            </span>
+                            <div class="field-control" style="background: var(--slate-50); color: var(--slate-800); font-weight: 700; display: flex; align-items: center;">
                                 {{ $latestRegistration ? ($latestRegistration->position ?: 'Almacén') : (auth()->user()->position ?: 'Almacén') }}
                             </div>
                         </div>
                         <div>
-                            <span class="field-label"><i class="fa-solid fa-box-open"></i> Lote en recepción</span>
-                            <div class="field-control" style="background: {{ $latestRegistration ? '#eff6ff' : 'var(--slate-50)' }}; color: {{ $latestRegistration ? '#1d4ed8' : 'var(--slate-400)' }}; font-weight: 800; border-color: {{ $latestRegistration ? '#bfdbfe' : 'var(--slate-200)' }};">
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-box-open"></i> Lote en recepción</span>
+                            </span>
+                            <div class="field-control" style="background: {{ $latestRegistration ? '#eff6ff' : 'var(--slate-50)' }}; color: {{ $latestRegistration ? '#1d4ed8' : 'var(--slate-400)' }}; font-weight: 800; border-color: {{ $latestRegistration ? '#bfdbfe' : 'var(--slate-200)' }}; display: flex; align-items: center;">
                                 {{ $latestRegistration ? ($latestRegistration->lot?->folio ?: 'Lote asignado') : '—' }}
                             </div>
                         </div>
@@ -979,9 +1144,14 @@
 
                     <div class="field-group" style="justify-content: space-between;">
                         <div>
-                            <span class="field-label"><i class="fa-solid fa-calendar-days"></i> Fecha</span>
+                            <span class="field-label">
+                                <span class="field-label-main"><i class="fa-solid fa-calendar-days"></i> Fecha</span>
+                                <span class="tag-auto">Hoy</span>
+                            </span>
                             <div class="date-box">
-                                <i class="fa-solid fa-calendar-day"></i>
+                                <div class="date-icon-wrap">
+                                    <i class="fa-solid fa-calendar-day"></i>
+                                </div>
                                 <span>{{ $latestRegistration ? $latestRegistration->started_at->format('d/m/Y') : date('d/m/Y') }}</span>
                             </div>
                         </div>
@@ -1062,7 +1232,7 @@
                     if (opt && opt.value) {
                         posInput.value = opt.getAttribute('data-position') || 'Almacén';
                     } else {
-                        posInput.value = 'Automático';
+                        posInput.value = '';
                     }
                 };
 

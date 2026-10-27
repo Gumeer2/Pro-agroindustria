@@ -22,6 +22,10 @@ class ProductionShiftStart extends Model
         'started_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'evidence_url',
+    ];
+
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -43,6 +47,11 @@ class ProductionShiftStart extends Model
         return $this->hasMany(ProductionShiftActivity::class);
     }
 
+    public function getEvidenceUrlAttribute(): ?string
+    {
+        return $this->evidenceUrl();
+    }
+
     public function evidenceUrl(): ?string
     {
         if (!$this->evidence_path) {
@@ -51,10 +60,13 @@ class ProductionShiftStart extends Model
         if (str_starts_with($this->evidence_path, 'http://') || str_starts_with($this->evidence_path, 'https://') || str_starts_with($this->evidence_path, 'data:')) {
             return $this->evidence_path;
         }
-        $path = ltrim($this->evidence_path, '/');
+        if ($this->id) {
+            return route('apt.management.shift.evidence', ['id' => $this->id]);
+        }
+        $path = ltrim($this->evidence_path, '/\\');
         if (str_starts_with($path, 'storage/')) {
             $path = substr($path, 8);
         }
-        return asset('storage/' . $path);
+        return route('apt.management.media', ['path' => $path]);
     }
 }

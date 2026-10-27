@@ -377,7 +377,7 @@
             <tbody>
                 @forelse($activities as $index => $activity)
                     @php
-                        $lot = optional($activity->shiftStart)->lot ?: optional($registration)->lot;
+                        $lot = $activity->lot ?: (optional($activity->shiftStart)->lot ?: optional($registration)->lot);
                     @endphp
                     <tr>
                         <td style="text-align: center; font-weight: 700; color: #64748b;">{{ $index + 1 }}</td>

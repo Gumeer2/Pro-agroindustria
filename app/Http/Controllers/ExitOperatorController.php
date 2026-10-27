@@ -70,12 +70,18 @@ class ExitOperatorController extends Controller
         }
         $salesOrders = $salesOrdersQuery->orderBy('created_at', 'desc')->get();
 
-        // Acumulado programado a operadores por OV (solo lectura, para la tabla de saldo)
-        $programmed = ClientOperatorAssignment::selectRaw('sales_order_id, SUM(tm) as total_tm')
+        // Acumulado programado a operadores por OV (solo asignaciones pendientes por destarar)
+        // Lo que ya se destaró se descuenta directamente en el 'balance' de la SalesOrder mediante loaded_quantity
+        $pendingProgrammed = ClientOperatorAssignment::where(function ($q) {
+                $q->whereNull('destare_status')
+                  ->orWhere('destare_status', 'pending');
+            })
+            ->selectRaw('sales_order_id, SUM(tm) as total_tm')
             ->groupBy('sales_order_id')
             ->pluck('total_tm', 'sales_order_id');
-        $salesOrders->each(function ($so) use ($programmed) {
-            $prog = (float) ($programmed[$so->id] ?? 0);
+
+        $salesOrders->each(function ($so) use ($pendingProgrammed) {
+            $prog = (float) ($pendingProgrammed[$so->id] ?? 0);
             $so->setAttribute('programmed_quantity', $prog);
             $so->setAttribute('available_balance', max(0, (float) $so->balance - $prog));
         });
@@ -96,7 +102,7 @@ class ExitOperatorController extends Controller
         $now = now()->timezone('America/Mexico_City');
         $currentOperationalDate = $now->hour < 5 ? $now->subDay()->toDateString() : $now->toDateString();
 
-        $clientAssignments->each(function ($assignment) use ($programmed) {
+        $clientAssignments->each(function ($assignment) use ($pendingProgrammed) {
             $updated = $assignment->updated_at ? $assignment->updated_at->copy()->timezone('America/Mexico_City') : null;
             if ($updated) {
                 // Corte a las 5:00 AM: si la hora es < 5, pertenece a la jornada del día anterior
@@ -120,13 +126,17 @@ class ExitOperatorController extends Controller
                 $assignment->setAttribute('clients', $assignment->operator->clients);
             }
 
+            $assignment->setAttribute('destare_status', $assignment->destare_status ?? 'pending');
+            $assignment->setAttribute('destared_tm', $assignment->destared_tm ? (float) $assignment->destared_tm : null);
+
             if ($assignment->salesOrder) {
-                $prog = (float) ($programmed[$assignment->sales_order_id] ?? 0);
+                $prog = (float) ($pendingProgrammed[$assignment->sales_order_id] ?? 0);
                 $assignment->setAttribute('programmed_quantity', $prog);
                 $assignment->setAttribute('available_balance', (float) $assignment->salesOrder->balance);
                 $assignment->setAttribute('updated_balance', max(0, (float) $assignment->salesOrder->balance - $prog));
             }
         });
+
 
         return Inertia::render('Documentation/ExitOperators/Create', [
             'clients' => $clients,
@@ -199,8 +209,12 @@ class ExitOperatorController extends Controller
                     $operator->clients()->syncWithoutDetaching([$salesOrder->client_id]);
                 }
             }
-            // Saldo disponible en este módulo: saldo de la OV menos lo ya programado por otros operadores
+            // Saldo disponible en este módulo: saldo de la OV menos lo pendiente por programar de otros operadores
             $alreadyProgrammedOther = ClientOperatorAssignment::where('sales_order_id', $salesOrder->id)
+                ->where(function ($q) {
+                    $q->whereNull('destare_status')
+                      ->orWhere('destare_status', 'pending');
+                })
                 ->when(!empty($validated['assignment_id']), function ($q) use ($validated) {
                     $q->where('id', '!=', $validated['assignment_id']);
                 })
@@ -227,6 +241,7 @@ class ExitOperatorController extends Controller
                     'sales_order_id' => $salesOrder->id,
                     'presentation' => mb_strtoupper(trim($validated['presentation']), 'UTF-8'),
                     'tm' => $validated['tm'],
+                    'original_tm' => $currentAssignment->destare_status === 'completed' ? $currentAssignment->original_tm : $validated['tm'],
                     'sack' => $sackVal,
                 ]);
             } else {
@@ -235,9 +250,12 @@ class ExitOperatorController extends Controller
                     'sales_order_id' => $salesOrder->id,
                     'presentation' => mb_strtoupper(trim($validated['presentation']), 'UTF-8'),
                     'tm' => $validated['tm'],
+                    'original_tm' => $validated['tm'],
+                    'destare_status' => 'pending',
                     'sack' => $sackVal,
                 ]);
             }
+
 
             // También actualizamos el operador con su asignación más reciente
             $operator->update([

@@ -411,14 +411,7 @@ Route::middleware('auth')->group(function () {
 
 require __DIR__ . '/auth.php';
 
-Route::get('/storage/{path}', function ($path) {
-    $filePath = storage_path('app/public/' . $path);
-    if (file_exists($filePath)) {
-        return response()->file($filePath);
-    }
-    $filePath2 = public_path('storage/' . $path);
-    if (file_exists($filePath2)) {
-        return response()->file($filePath2);
-    }
-    abort(404);
-})->where('path', '.*');
+Route::get('/apt/management/activity/evidence/{id}', [\App\Http\Controllers\AptController::class , 'showActivityEvidence'])->name('apt.management.activity.evidence');
+Route::get('/apt/management/shift/evidence/{id}', [\App\Http\Controllers\AptController::class , 'showShiftEvidence'])->name('apt.management.shift.evidence');
+Route::get('/apt/management/media/{path}', [\App\Http\Controllers\AptController::class , 'showMediaByPath'])->where('path', '.*')->name('apt.management.media');
+Route::get('/storage/{path}', [\App\Http\Controllers\AptController::class, 'showMediaByPath'])->where('path', '.*');
