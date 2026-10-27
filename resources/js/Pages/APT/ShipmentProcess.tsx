@@ -775,7 +775,7 @@ export default function ShipmentProcess({
                 Swal.fire({
                     icon: "warning",
                     title: "Muestreo Incompleto",
-                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de ensacadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 40 estibas</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 40 estibas requeridas.`,
+                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de ensacadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 40 muestras</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 40 muestras requeridas.`,
                     confirmButtonColor: "#4f46e5",
                     confirmButtonText: "Entendido",
                 });
@@ -1274,7 +1274,7 @@ export default function ShipmentProcess({
                                                     </div>
                                                     <div>
                                                         <h4 className="text-sm font-bold text-gray-900">
-                                                            Control de Estibas y Plan de Muestreo
+                                                            Control y Plan de Muestreo
                                                         </h4>
                                                         <p className="text-xs text-gray-500">
                                                             Distribución y cálculo dinámico de muestras para control en ensacadoras
@@ -1287,10 +1287,10 @@ export default function ShipmentProcess({
                                             </div>
 
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                {/* Número de Estibas */}
+                                                {/* Número de Muestras */}
                                                 <div>
                                                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                                                        Número de Estibas
+                                                        Número de Muestras
                                                     </label>
                                                     <div className="relative">
                                                         <input
@@ -1304,12 +1304,12 @@ export default function ShipmentProcess({
                                                         />
                                                         <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                                                             <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-1 rounded-md border border-gray-200">
-                                                                Estibas
+                                                                Muestras
                                                             </span>
                                                         </div>
                                                     </div>
                                                     <p className="text-[11px] text-gray-500 mt-1">
-                                                        Cantidad de estibas en la unidad
+                                                        Cantidad de muestras en la unidad
                                                     </p>
                                                 </div>
 
@@ -1597,7 +1597,7 @@ export default function ShipmentProcess({
                                                 </div>
                                                 {row.stowage_count ? (
                                                     <div className="text-[10px] text-indigo-600 font-bold">
-                                                        {row.stowage_count} estibas
+                                                        {row.stowage_count} muestras
                                                     </div>
                                                 ) : null}
                                             </td>
@@ -1643,7 +1643,7 @@ export default function ShipmentProcess({
                                                                 type="button"
                                                                 disabled
                                                                 className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] cursor-not-allowed whitespace-nowrap flex items-center gap-1 opacity-80 shrink-0"
-                                                                title="Muestreo de ensacadora completado y finalizado (40/40 estibas)"
+                                                                title="Muestreo de ensacadora completado y finalizado (40/40 muestras)"
                                                             >
                                                                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                                                 <span>Muestreo OK</span>
@@ -1656,7 +1656,7 @@ export default function ShipmentProcess({
                                                                     setIsSamplingModalOpen(true);
                                                                 }}
                                                                 className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
-                                                                title={`Muestreo de ensacadora incompleto (${samplingStatus.samplesCount} de 40 estibas). Haga clic para continuar capturando.`}
+                                                                title={`Muestreo de ensacadora incompleto (${samplingStatus.samplesCount} de 40 muestras). Haga clic para continuar capturando.`}
                                                             >
                                                                 <Scale className="w-3 h-3" />
                                                                 <span>Muestreo ({samplingStatus.samplesCount}/40)</span>

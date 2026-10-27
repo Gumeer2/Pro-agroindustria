@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import {
     UserX,
     Search,
-    QrCode,
     ArrowLeft,
     ShieldAlert,
     Truck,
@@ -32,11 +31,15 @@ import {
     ExternalLink,
     Eye,
     Printer,
+    Building2,
+    Users,
+    QrCode,
 } from "lucide-react";
 import axios from "axios";
 // @ts-ignore
 import { debounce } from "lodash";
 import Modal from "@/Components/Modal";
+import QrScannerModal from "@/Components/QrScannerModal";
 import Pagination from "@/Components/Pagination";
 import Swal from "sweetalert2";
 
@@ -55,6 +58,7 @@ interface Operator {
     policy: string;
     validity: string;
     status: string;
+    clients?: Array<{ id: number; business_name: string }>;
     veto_reason?: string;
     vetoed_at?: string;
     vetoed_by_name?: string;
@@ -82,6 +86,15 @@ interface HistoryLog {
 
 interface Props {
     auth: any;
+    all_operators?: {
+        data: Operator[];
+        links: any[];
+        total: number;
+        current_page: number;
+        last_page: number;
+        from?: number;
+        to?: number;
+    };
     vetoed_operators?: Operator[];
     history_logs?: {
         data: HistoryLog[];
@@ -91,45 +104,57 @@ interface Props {
         last_page: number;
     };
     stats?: {
+        total_operators_count?: number;
         active_vetoed_count: number;
         total_history_count: number;
         total_vetoes: number;
         total_unvetoes: number;
     };
     filters?: {
+        tab?: string;
         action: string;
         history_search: string;
         date_from: string;
         date_to: string;
+        operator_search?: string;
+        operator_status?: string;
     };
 }
 
 export default function VetoOperator({
     auth,
+    all_operators = { data: [], links: [], total: 0, current_page: 1, last_page: 1, from: 0, to: 0 },
     vetoed_operators = [],
     history_logs = { data: [], links: [], total: 0, current_page: 1, last_page: 1 },
     stats = {
+        total_operators_count: 0,
         active_vetoed_count: 0,
         total_history_count: 0,
         total_vetoes: 0,
         total_unvetoes: 0,
     },
     filters = {
+        tab: "operators_list",
         action: "all",
         history_search: "",
         date_from: "",
         date_to: "",
+        operator_search: "",
+        operator_status: "all",
     },
 }: Props) {
     // Search / Inspection State
-    const [search, setSearch] = useState("");
     const [operator, setOperator] = useState<Operator | null>(null);
-    const [searching, setSearching] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const searchRef = useRef<HTMLInputElement>(null);
 
     // Active Tab in bottom section
-    const [activeTab, setActiveTab] = useState<"active_vetoed" | "history">("active_vetoed");
+    const [activeTab, setActiveTab] = useState<"operators_list" | "active_vetoed" | "history">(
+        (filters.tab as any) || "operators_list"
+    );
+
+    // Operator List Filters (searches directly the operator list)
+    const [operatorSearch, setOperatorSearch] = useState(filters.operator_search || "");
+    const [operatorStatus, setOperatorStatus] = useState(filters.operator_status || "all");
 
     // Local Search Filter for Active Vetoed table
     const [activeVetoFilter, setActiveVetoFilter] = useState("");
@@ -143,58 +168,53 @@ export default function VetoOperator({
     // Modals State
     const [vetoModalOpen, setVetoModalOpen] = useState(false);
     const [unvetoModalOpen, setUnvetoModalOpen] = useState(false);
+    const [showQrScanner, setShowQrScanner] = useState(false);
     const [targetOperator, setTargetOperator] = useState<Operator | null>(null);
     const [modalReason, setModalReason] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
-    // Fetch operators by search input
-    const fetchOperators = async (query: string) => {
-        const trimmedQuery = query.trim();
-        if (!trimmedQuery) {
-            setOperator(null);
-            return;
+    // Parse and extract ID / clean term from QR codes (e.g. OP_EXIT 668, OP?EXIT 668, OP_VESSEL 12, #668, 668)
+    const parseQrInput = (raw: string): string => {
+        let clean = raw.trim();
+        const normalized = clean.replace(/[\?\'\-\|]/g, "_").toUpperCase();
+        const exitMatch = normalized.match(/OP[_\s]*EXIT[_\s]*(\d+)/i);
+        if (exitMatch) {
+            return exitMatch[1];
         }
-
-        const normalizedQuery = trimmedQuery
-            .replace(/\?/g, "_")
-            .replace(/\]/g, "|")
-            .replace(/\[/g, "|")
-            .replace(/\}/g, "|")
-            .replace(/\{/g, "|");
-
-        setSearching(true);
-        setError(null);
-        try {
-            const response = await axios.get(route("surveillance.operators.search"), {
-                params: { q: normalizedQuery },
-            });
-
-            if (response.data.length > 0) {
-                setOperator(response.data[0]);
-            } else {
-                setOperator(null);
-                setError("No se encontró ningún operador con esos datos.");
-            }
-        } catch (err) {
-            console.error(err);
-            setError("Error al buscar el operador.");
-        } finally {
-            setSearching(false);
+        const vesselMatch = normalized.match(/OP[_\s]*VESSEL[_\s]*(\d+)/i);
+        if (vesselMatch) {
+            return vesselMatch[1];
         }
+        const opMatch = normalized.match(/^OP[_\s]*(\d+)/i);
+        if (opMatch) {
+            return opMatch[1];
+        }
+        if (clean.includes("|")) {
+            return clean.split("|")[0].trim();
+        }
+        return clean;
     };
 
-    const debouncedSearch = useRef(
-        debounce((query: string) => fetchOperators(query), 500)
-    ).current;
+    const handleQrScan = (data: string | null) => {
+        if (!data) return;
+        setShowQrScanner(false);
+        const parsed = parseQrInput(data);
+        setOperatorSearch(parsed);
+        setOperatorStatus("all");
+        handleApplyOperatorFilters({ operator_search: parsed, operator_status: "all", is_qr: 1 });
+    };
 
-    useEffect(() => {
-        const normalizedSearch = search.replace(/\?/g, "_").replace(/\]/g, "|");
-        if (normalizedSearch.match(/^OP[_\-? \.]?EXIT\s/i)) {
-            fetchOperators(search);
+    const handleOperatorSearchChange = (value: string) => {
+        const isQrCode = /OP[_\s]*(EXIT|VESSEL)?[_\s]*\d+/i.test(value);
+        if (isQrCode) {
+            const parsed = parseQrInput(value);
+            setOperatorSearch(parsed);
+            setOperatorStatus("all");
+            handleApplyOperatorFilters({ operator_search: parsed, operator_status: "all", is_qr: 1 });
         } else {
-            debouncedSearch(search);
+            setOperatorSearch(value);
         }
-    }, [search]);
+    };
 
     // Open Veto Modal
     const handleOpenVetoModal = (op: Operator) => {
@@ -311,7 +331,58 @@ export default function VetoOperator({
         );
     };
 
+    // Select operator to view detailed card above
+    const handleSelectOperator = (op: Operator) => {
+        setOperator(op);
+        window.scrollTo({ top: 300, behavior: "smooth" });
+    };
+
+    // Apply Operator List Filters
+    const handleApplyOperatorFilters = (newParams?: { operator_search?: string; operator_status?: string; operator_page?: number; is_qr?: number }) => {
+        const searchTerm = newParams?.operator_search !== undefined ? newParams.operator_search : operatorSearch;
+        const isQr = newParams?.is_qr !== undefined ? newParams.is_qr : (/^(\d+|#\d+|OP_EXIT.*)$/i.test(searchTerm.trim()) ? 1 : 0);
+
+        router.get(
+            route("surveillance.veto"),
+            {
+                tab: "operators_list",
+                operator_search: searchTerm,
+                operator_status: newParams?.operator_status !== undefined ? newParams.operator_status : operatorStatus,
+                operator_page: newParams?.operator_page || 1,
+                is_qr: isQr,
+                history_search: historySearch,
+                action: actionFilter,
+                date_from: dateFrom,
+                date_to: dateTo,
+            },
+            {
+                preserveState: true,
+                preserveScroll: true,
+            }
+        );
+    };
+
+    // Clear Operator List Filters
+    const handleClearOperatorFilters = () => {
+        setOperatorSearch("");
+        setOperatorStatus("all");
+        router.get(
+            route("surveillance.veto"),
+            {
+                tab: "operators_list",
+                operator_search: "",
+                operator_status: "all",
+                operator_page: 1,
+            },
+            {
+                preserveState: true,
+                preserveScroll: true,
+            }
+        );
+    };
+
     // Clear History Filters
+
     const handleClearHistoryFilters = () => {
         setHistorySearch("");
         setActionFilter("all");
@@ -424,10 +495,49 @@ export default function VetoOperator({
                         </div>
                     </div>
 
-                    {/* KPI Stat Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* 1. Active Vetoed */}
-                        <div className="bg-gradient-to-br from-red-600 to-rose-700 rounded-3xl p-5 text-white shadow-xl shadow-red-200/50 flex items-center justify-between">
+                    {/* KPI Stat Cards (5 Tarjetas Interactivas) */}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        {/* 1. Total Padrón Operadores */}
+                        <div
+                            onClick={() => setActiveTab("operators_list")}
+                            className={`rounded-3xl p-5 border shadow-md flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${
+                                activeTab === "operators_list"
+                                    ? "bg-gradient-to-br from-indigo-900 to-indigo-800 text-white shadow-indigo-200 border-indigo-700 ring-4 ring-indigo-200"
+                                    : "bg-white text-slate-900 border-slate-200/80 hover:border-indigo-300"
+                            }`}
+                            title="Ver padrón general de operadores registrados"
+                        >
+                            <div>
+                                <p className={`text-xs font-black uppercase tracking-widest ${activeTab === "operators_list" ? "text-indigo-200" : "text-slate-400"}`}>
+                                    Padrón Operadores
+                                </p>
+                                <p className={`text-3xl font-black mt-1 tracking-tight ${activeTab === "operators_list" ? "text-white" : "text-indigo-950"}`}>
+                                    {stats.total_operators_count ?? all_operators.total}
+                                </p>
+                                <p className={`text-[11px] font-bold mt-1 ${activeTab === "operators_list" ? "text-indigo-200" : "text-slate-500"}`}>
+                                    Total registrados
+                                </p>
+                            </div>
+                            <div className={`w-13 h-13 rounded-2xl flex items-center justify-center border ${
+                                activeTab === "operators_list"
+                                    ? "bg-white/15 border-white/20 text-white"
+                                    : "bg-indigo-50 border-indigo-100 text-indigo-600"
+                            }`}>
+                                <Truck className="w-6 h-6" />
+                            </div>
+                        </div>
+
+                        {/* 2. Active Vetoed */}
+                        <div
+                            onClick={() => setActiveTab("active_vetoed")}
+                            className={`rounded-3xl p-5 text-white shadow-xl shadow-red-200/50 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${
+                                activeTab === "active_vetoed"
+                                    ? "bg-gradient-to-br from-red-600 to-rose-700 ring-4 ring-red-300"
+                                    : "bg-gradient-to-br from-red-600 to-rose-700 opacity-90 hover:opacity-100"
+                            }`}
+                            title="Ver lista de operadores vetados actualmente"
+                        >
                             <div>
                                 <p className="text-xs font-black uppercase tracking-widest text-red-200">
                                     Vetados Actualmente
@@ -439,12 +549,12 @@ export default function VetoOperator({
                                     Acceso restringido en planta
                                 </p>
                             </div>
-                            <div className="w-14 h-14 bg-white/15 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20">
-                                <UserX className="w-7 h-7 text-white" />
+                            <div className="w-13 h-13 bg-white/15 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20">
+                                <UserX className="w-6 h-6 text-white" />
                             </div>
                         </div>
 
-                        {/* 2. Total Veto Events */}
+                        {/* 3. Total Veto Events */}
                         <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-md flex items-center justify-between">
                             <div>
                                 <p className="text-xs font-black uppercase tracking-widest text-slate-400">
@@ -457,12 +567,12 @@ export default function VetoOperator({
                                     Sanciones en bitácora
                                 </p>
                             </div>
-                            <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center border border-red-100 text-red-600">
-                                <ShieldAlert className="w-7 h-7" />
+                            <div className="w-13 h-13 bg-red-50 rounded-2xl flex items-center justify-center border border-red-100 text-red-600">
+                                <ShieldAlert className="w-6 h-6" />
                             </div>
                         </div>
 
-                        {/* 3. Total Unveto Events */}
+                        {/* 4. Total Unveto Events */}
                         <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-md flex items-center justify-between">
                             <div>
                                 <p className="text-xs font-black uppercase tracking-widest text-slate-400">
@@ -475,87 +585,131 @@ export default function VetoOperator({
                                     Reactivaciones autorizadas
                                 </p>
                             </div>
-                            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center border border-emerald-100 text-emerald-600">
-                                <ShieldCheck className="w-7 h-7" />
+                            <div className="w-13 h-13 bg-emerald-50 rounded-2xl flex items-center justify-center border border-emerald-100 text-emerald-600">
+                                <ShieldCheck className="w-6 h-6" />
                             </div>
                         </div>
 
-                        {/* 4. Total History Log */}
-                        <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-md flex items-center justify-between">
+                        {/* 5. Total History Log */}
+                        <div
+                            onClick={() => setActiveTab("history")}
+                            className={`rounded-3xl p-5 border shadow-md flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${
+                                activeTab === "history"
+                                    ? "bg-gradient-to-br from-indigo-700 to-indigo-900 text-white shadow-indigo-200 border-indigo-600 ring-4 ring-indigo-200"
+                                    : "bg-white text-slate-900 border-slate-200/80 hover:border-indigo-300"
+                            }`}
+                            title="Ver historial de movimientos de veto"
+                        >
                             <div>
-                                <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+                                <p className={`text-xs font-black uppercase tracking-widest ${activeTab === "history" ? "text-indigo-200" : "text-slate-400"}`}>
                                     Total Movimientos
                                 </p>
-                                <p className="text-3xl font-black text-indigo-600 mt-1 tracking-tight">
+                                <p className={`text-3xl font-black mt-1 tracking-tight ${activeTab === "history" ? "text-white" : "text-indigo-600"}`}>
                                     {stats.total_history_count}
                                 </p>
-                                <p className="text-[11px] font-bold text-slate-500 mt-1">
-                                    Auditoría completa registrada
+                                <p className={`text-[11px] font-bold mt-1 ${activeTab === "history" ? "text-indigo-200" : "text-slate-500"}`}>
+                                    Auditoría completa
                                 </p>
                             </div>
-                            <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100 text-indigo-600">
-                                <History className="w-7 h-7" />
+                            <div className={`w-13 h-13 rounded-2xl flex items-center justify-center border ${
+                                activeTab === "history"
+                                    ? "bg-white/15 border-white/20 text-white"
+                                    : "bg-indigo-50 border-indigo-100 text-indigo-600"
+                            }`}>
+                                <History className="w-6 h-6" />
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Search / Scan Bar Section */}
-                <div className="space-y-4">
+                {/* Buscador de Operadores (Filtro para la lista de operadores) */}
+                <div className="space-y-3">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
                             <Search className="w-4 h-4 text-indigo-600" />
-                            Buscador Rápido / Escáner de Gafete
+                            Buscador de Operadores
                         </span>
-                        {operator && (
+                        {(operatorSearch || operatorStatus !== "all") && (
                             <button
-                                onClick={() => {
-                                    setOperator(null);
-                                    setSearch("");
-                                }}
-                                className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                                type="button"
+                                onClick={handleClearOperatorFilters}
+                                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
                             >
                                 <X className="w-3.5 h-3.5" />
-                                Limpiar búsqueda
+                                Limpiar filtros
                             </button>
                         )}
                     </div>
 
-                    <div className="bg-white p-5 rounded-3xl shadow-xl border border-gray-100 overflow-hidden relative group">
-                        <div className="bg-indigo-600 absolute bottom-0 left-0 h-1 w-full scale-x-0 group-focus-within:scale-x-100 transition-transform duration-500" />
-                        <div className="relative">
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            handleApplyOperatorFilters();
+                        }}
+                        className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl border border-gray-100 overflow-hidden relative group flex flex-col md:flex-row items-center gap-4"
+                    >
+                        <div className="relative flex-1 w-full">
                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                {searching ? (
-                                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600" />
-                                ) : (
-                                    <Search className="h-6 w-6 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                                )}
+                                <Search className="h-6 w-6 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
                             </div>
                             <input
                                 ref={searchRef}
                                 type="text"
-                                className="block w-full pl-14 pr-12 py-4 bg-gray-50 border-none rounded-2xl focus:ring-0 text-lg font-black placeholder-gray-400 transition-all uppercase tracking-wide"
-                                placeholder="ESCRIBIR ID, NOMBRE O ESCANEAR CÓDIGO QR..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
+                                className="block w-full pl-14 pr-12 py-3.5 bg-gray-50 border-none rounded-2xl focus:ring-0 text-base sm:text-lg font-black placeholder-gray-400 transition-all uppercase tracking-wide"
+                                placeholder="BUSCAR POR NOMBRE, LÍNEA, PLACAS, ID O ESCANEAR QR..."
+                                value={operatorSearch}
+                                onChange={(e) => handleOperatorSearchChange(e.target.value)}
                             />
-                            <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-indigo-400 group-focus-within:text-indigo-600 transition-colors animate-pulse">
-                                <QrCode className="h-7 w-7" />
-                            </div>
+                            {operatorSearch && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setOperatorSearch("");
+                                        handleApplyOperatorFilters({ operator_search: "" });
+                                    }}
+                                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                                    title="Borrar texto"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            )}
                         </div>
-                    </div>
-                </div>
 
-                {/* Error Alert */}
-                {error && (
-                    <div className="bg-amber-50 border-l-4 border-amber-500 p-5 rounded-r-2xl flex items-center shadow-md animate-fade-in-down">
-                        <AlertCircle className="w-7 h-7 text-amber-500 mr-4 shrink-0" />
-                        <div>
-                            <p className="text-amber-900 font-black text-base">SIN RESULTADOS</p>
-                            <p className="text-amber-700 font-bold text-xs tracking-wide">{error}</p>
+                        <div className="flex items-center gap-3 w-full md:w-auto">
+                            {/* Botón Escanear QR */}
+                            <button
+                                type="button"
+                                onClick={() => setShowQrScanner(true)}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-xs uppercase tracking-wider border border-indigo-200 shadow-xs hover:shadow-sm transition-all cursor-pointer whitespace-nowrap"
+                                title="Abrir cámara para escanear código QR"
+                            >
+                                <QrCode className="w-4 h-4 text-indigo-600" />
+                                <span>Escanear QR</span>
+                            </button>
+
+                            <select
+                                value={operatorStatus}
+                                onChange={(e) => {
+                                    const newStatus = e.target.value;
+                                    setOperatorStatus(newStatus);
+                                    handleApplyOperatorFilters({ operator_status: newStatus });
+                                }}
+                                className="py-3.5 px-5 bg-gray-50 hover:bg-gray-100 border-none rounded-2xl text-xs sm:text-sm font-bold text-gray-700 focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full md:w-auto"
+                            >
+                                <option value="all">Todos los Estados</option>
+                                <option value="active">Activos</option>
+                                <option value="vetoed">Vetados</option>
+                            </select>
+
+                            <button
+                                type="submit"
+                                className="px-6 py-3.5 bg-indigo-900 hover:bg-indigo-800 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all shrink-0 cursor-pointer"
+                            >
+                                Buscar
+                            </button>
                         </div>
-                    </div>
-                )}
+                    </form>
+                </div>
 
                 {/* Operator Details Card (Inspection / Action) */}
                 {operator && (
@@ -783,8 +937,29 @@ export default function VetoOperator({
                     <div className="px-6 pt-6 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center space-x-2">
                             <button
+                                onClick={() => setActiveTab("operators_list")}
+                                className={`flex items-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-wide transition-all cursor-pointer ${
+                                    activeTab === "operators_list"
+                                        ? "bg-indigo-900 text-white shadow-lg shadow-indigo-300 -mb-px"
+                                        : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                                }`}
+                            >
+                                <Truck className="w-4 h-4" />
+                                <span>Lista de Operadores</span>
+                                <span
+                                    className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
+                                        activeTab === "operators_list"
+                                            ? "bg-indigo-800 text-white"
+                                            : "bg-indigo-100 text-indigo-700"
+                                    }`}
+                                >
+                                    {all_operators?.total || 0}
+                                </span>
+                            </button>
+
+                            <button
                                 onClick={() => setActiveTab("active_vetoed")}
-                                className={`flex items-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-wide transition-all ${
+                                className={`flex items-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-wide transition-all cursor-pointer ${
                                     activeTab === "active_vetoed"
                                         ? "bg-red-600 text-white shadow-lg shadow-red-200 -mb-px"
                                         : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
@@ -805,7 +980,7 @@ export default function VetoOperator({
 
                             <button
                                 onClick={() => setActiveTab("history")}
-                                className={`flex items-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-wide transition-all ${
+                                className={`flex items-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-wide transition-all cursor-pointer ${
                                     activeTab === "history"
                                         ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200 -mb-px"
                                         : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
@@ -840,8 +1015,205 @@ export default function VetoOperator({
                         </div>
                     </div>
 
-                    {/* Tab 1: Operadores Vetados Actualmente */}
+                    {/* Tab: Padrón General / Lista de Operadores */}
+                    {activeTab === "operators_list" && (
+                        <div className="p-6 sm:p-8 space-y-6">
+                            {/* Summary Bar for All Operators */}
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                                <div className="text-xs font-bold text-slate-500">
+                                    Mostrando <span className="font-black text-indigo-950">{all_operators?.from || 0}</span> a <span className="font-black text-indigo-950">{all_operators?.to || 0}</span> de <span className="font-black text-indigo-950">{all_operators?.total || 0}</span> operador(es)
+                                    {operatorSearch && (
+                                        <span className="ml-2 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 text-[11px]">
+                                            Búsqueda: "{operatorSearch}"
+                                        </span>
+                                    )}
+                                    {operatorStatus !== "all" && (
+                                        <span className={`ml-2 px-2.5 py-0.5 rounded-full font-bold text-[11px] uppercase ${
+                                            operatorStatus === "active"
+                                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                : "bg-rose-50 text-rose-700 border border-rose-200"
+                                        }`}>
+                                            {operatorStatus === "active" ? "Solo Activos" : "Solo Vetados"}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {(operatorSearch || operatorStatus !== "all") && (
+                                    <button
+                                        type="button"
+                                        onClick={handleClearOperatorFilters}
+                                        className="text-xs font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                        Limpiar filtros
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Operators Table */}
+                            {all_operators?.data && all_operators.data.length > 0 ? (
+                                <div className="rounded-2xl border border-slate-200/80 overflow-hidden bg-white shadow-sm">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left divide-y divide-slate-200/80">
+                                            <thead className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white text-[10px] font-black uppercase tracking-wider">
+                                                <tr>
+                                                    <th className="px-5 py-3.5 text-center w-20">ID</th>
+                                                    <th className="px-5 py-3.5">Operador</th>
+                                                    <th className="px-5 py-3.5">Línea Trans.</th>
+                                                    <th className="px-5 py-3.5">Unidad / Placas</th>
+                                                    <th className="px-5 py-3.5 text-center">Estado</th>
+                                                    <th className="px-5 py-3.5 text-center">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700 bg-white">
+                                                {all_operators.data.map((op) => (
+                                                    <tr key={op.id} className="hover:bg-indigo-50/40 transition-colors">
+                                                        {/* ID */}
+                                                        <td className="px-5 py-3 text-center whitespace-nowrap">
+                                                            <span className="font-mono font-black text-indigo-900 bg-indigo-50 border border-indigo-200/80 px-2 py-1 rounded-lg text-xs">
+                                                                #{op.id}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* Operador */}
+                                                        <td className="px-5 py-3">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-sm shrink-0 uppercase shadow-xs">
+                                                                    {op.name.charAt(0)}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="font-black text-slate-900 uppercase text-xs truncate max-w-xs">
+                                                                        {op.name}
+                                                                    </p>
+                                                                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                                                        Lic: {op.license || "N/A"}
+                                                                    </p>
+                                                                    {op.clients && op.clients.length > 0 && (
+                                                                        <div className="mt-1 flex flex-wrap gap-1">
+                                                                            <span
+                                                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                                                                title={op.clients.map(c => c.business_name).join(', ')}
+                                                                            >
+                                                                                <Building2 className="w-2.5 h-2.5" />
+                                                                                {op.clients.length === 1
+                                                                                    ? op.clients[0].business_name
+                                                                                    : `${op.clients.length} clientes`}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Línea Trans */}
+                                                        <td className="px-5 py-3">
+                                                            <div className="font-bold text-slate-800 uppercase text-xs">
+                                                                {op.transport_line || "N/A"}
+                                                            </div>
+                                                            {op.real_transport_line && (
+                                                                <div className="text-[10px] text-slate-400 italic">
+                                                                    Real: {op.real_transport_line}
+                                                                </div>
+                                                            )}
+                                                        </td>
+
+                                                        {/* Unidad / Placas */}
+                                                        <td className="px-5 py-3 whitespace-nowrap">
+                                                            <div className="text-xs font-semibold text-slate-700">
+                                                                {op.unit_type || "N/A"} {op.brand_model ? `- ${op.brand_model}` : ""}
+                                                            </div>
+                                                            <div className="text-[11px] font-mono font-bold text-indigo-700 mt-0.5">
+                                                                Tracto: <span className="bg-slate-100 px-1 py-0.2 rounded border border-slate-200">{op.tractor_plate || "S/P"}</span>
+                                                                {op.trailer_plate && (
+                                                                    <span className="ml-1 text-slate-500">
+                                                                        | Rem: <span className="bg-slate-50 px-1 py-0.2 rounded border border-slate-200 font-medium">{op.trailer_plate}</span>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Estado */}
+                                                        <td className="px-5 py-3 text-center whitespace-nowrap">
+                                                            {op.status === "active" ? (
+                                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200/90 shadow-2xs">
+                                                                    <ShieldCheck className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                                                                    ACTIVO
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-black bg-rose-50 text-rose-800 border border-rose-200/90 shadow-2xs">
+                                                                    <ShieldAlert className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                                                                    VETADO
+                                                                </span>
+                                                            )}
+                                                        </td>
+
+                                                        {/* Acciones */}
+                                                        <td className="px-5 py-3 text-center whitespace-nowrap">
+                                                            <div className="flex items-center justify-center gap-1.5">
+                                                                {op.status === "active" ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenVetoModal(op)}
+                                                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs shadow-rose-200 transition-all cursor-pointer"
+                                                                        title="Aplicar veto de acceso a planta"
+                                                                    >
+                                                                        <ShieldAlert className="w-3.5 h-3.5" />
+                                                                        <span>Vetar</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenUnvetoModal(op)}
+                                                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs shadow-emerald-200 transition-all cursor-pointer"
+                                                                        title="Retirar veto y reactivar acceso"
+                                                                    >
+                                                                        <ShieldCheck className="w-3.5 h-3.5" />
+                                                                        <span>Activar</span>
+                                                                    </button>
+                                                                )}
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSelectOperator(op)}
+                                                                    className="inline-flex items-center p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                                                    title="Inspeccionar detalles del operador"
+                                                                >
+                                                                    <Eye className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Pagination */}
+                                    {all_operators.links && all_operators.links.length > 3 && (
+                                        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                                            <Pagination links={all_operators.links} />
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-center py-16 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 space-y-3">
+                                    <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                                        <Truck className="w-8 h-8" />
+                                    </div>
+                                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
+                                        No se encontraron operadores
+                                    </h3>
+                                    <p className="text-sm font-medium text-slate-500 max-w-md mx-auto">
+                                        No hay registros de operadores que coincidan con los filtros aplicados.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Tab 2: Operadores Vetados Actualmente */}
                     {activeTab === "active_vetoed" && (
+
                         <div className="p-6 sm:p-8 space-y-6">
                             {/* Filter Bar for Active Vetoed */}
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -1411,6 +1783,14 @@ export default function VetoOperator({
                     </div>
                 </div>
             </Modal>
+
+            {/* Modal: Escáner QR de Cámara */}
+            <QrScannerModal
+                isOpen={showQrScanner}
+                onClose={() => setShowQrScanner(false)}
+                onScan={handleQrScan}
+                title="Escanear Código QR de Operador"
+            />
         </DashboardLayout>
     );
 }

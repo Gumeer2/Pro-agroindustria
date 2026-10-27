@@ -129,7 +129,40 @@ class SalesOrder extends Model
                 $isCompletedAtTime = ($ticket->weighing_status === 'completed' && (!$cutOff || ($ticket->weigh_out_at ? $ticket->weigh_out_at <= $cutOff : $ticket->created_at <= $cutOff)));
 
                 if ($isCompletedAtTime) {
-                    $total += ((float) $ticket->net_weight / 1000);
+                    $shipmentOrder = $trip->shipment_order;
+                    $presUpper = strtoupper(trim($shipmentOrder?->presentation ?? $trip->presentation ?? ''));
+
+                    $linkedAssignment = null;
+                    if ($trip->id) {
+                        $linkedAssignment = \App\Models\ClientOperatorAssignment::where('loading_order_id', $trip->id)->first();
+                        if (!$presUpper && $linkedAssignment) {
+                            $presUpper = strtoupper(trim($linkedAssignment->presentation ?? ''));
+                        }
+                    }
+
+                    $isEnvasado = str_contains($presUpper, 'ENVAS') || str_contains($presUpper, 'SACO');
+
+                    if ($isEnvasado) {
+                        // REGLA: Para envasado se considera el peso programado
+                        $prog = 0;
+                        if ($shipmentOrder && (float) ($shipmentOrder->programmed_tons ?? 0) > 0) {
+                            $prog = (float) $shipmentOrder->programmed_tons;
+                        } elseif ($shipmentOrder && (float) ($shipmentOrder->programmed_weight ?? 0) > 0) {
+                            $prog = (float) $shipmentOrder->programmed_weight;
+                        } elseif ((float) ($trip->programmed_tons ?? 0) > 0) {
+                            $prog = (float) $trip->programmed_tons;
+                        } elseif ($linkedAssignment && (float) ($linkedAssignment->original_tm ?? $linkedAssignment->tm ?? 0) > 0) {
+                            $prog = (float) ($linkedAssignment->original_tm ?? $linkedAssignment->tm);
+                        }
+
+                        if ($prog > 0) {
+                            $total += ($prog >= 100 ? ($prog / 1000) : $prog);
+                        } else {
+                            $total += ((float) $ticket->net_weight / 1000);
+                        }
+                    } else {
+                        $total += ((float) $ticket->net_weight / 1000);
+                    }
                 }
             }
         }

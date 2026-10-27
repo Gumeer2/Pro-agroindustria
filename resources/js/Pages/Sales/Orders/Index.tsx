@@ -67,6 +67,7 @@ export default function Index({
     auth,
     orders,
     filters,
+    from,
     flash,
 }: {
     auth: any;
@@ -79,9 +80,24 @@ export default function Index({
         search?: string;
         status?: string;
         historical_date?: string;
+        from?: string;
     };
+    from?: string;
     flash?: { success?: string; error?: string };
 }) {
+    const isFromDocumentation =
+        from === "documentation" ||
+        filters?.from === "documentation" ||
+        (typeof window !== "undefined" &&
+            new URLSearchParams(window.location.search).get("from") === "documentation");
+
+    const backHref = isFromDocumentation
+        ? route("documentation.index")
+        : route("sales.index");
+    const backLabel = isFromDocumentation
+        ? "Volver a Documentación"
+        : "Volver a Comercialización";
+
     const [search, setSearch] = useState(filters.search || "");
     const [status, setStatus] = useState(filters.status || "created");
     const [historicalDate, setHistoricalDate] = useState(filters.historical_date || "");
@@ -125,7 +141,12 @@ export default function Index({
             if (hasSearchChanged || hasStatusChanged || hasDateChanged) {
                 router.get(
                     route("sales.orders.index"),
-                    { search, status, historical_date: historicalDate },
+                    {
+                        search,
+                        status,
+                        historical_date: historicalDate,
+                        ...(isFromDocumentation ? { from: "documentation" } : {}),
+                    },
                     {
                         preserveState: true,
                         preserveScroll: true,
@@ -136,7 +157,7 @@ export default function Index({
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [search, status, historicalDate]);
+    }, [search, status, historicalDate, isFromDocumentation]);
 
     const filteredOrders = orders.data;
 
@@ -192,11 +213,11 @@ export default function Index({
                     <div className="flex-1 min-w-0">
                         <div className="mb-4">
                             <Link
-                                href={route("sales.index")}
+                                href={backHref}
                                 className="text-gray-500 hover:text-gray-900 flex items-center text-sm font-medium transition-colors"
                             >
                                 <ArrowLeft className="w-4 h-4 mr-1" />
-                                Volver a Comercialización
+                                {backLabel}
                             </Link>
                         </div>
                         <h2 className="text-2xl font-bold leading-7 text-indigo-900 sm:text-3xl sm:truncate flex items-center">
@@ -374,7 +395,7 @@ export default function Index({
                                                                             <Link
                                                                                 href={route("sales.show", {
                                                                                     sales: order.id,
-                                                                                    module: "sales",
+                                                                                    module: isFromDocumentation ? "sales_from_documentation" : "sales",
                                                                                 })}
                                                                                 className={`${active ? 'bg-indigo-600 text-white' : 'text-gray-900'} group flex rounded-lg items-center w-full px-3 py-2 text-sm transition-colors`}
                                                                             >

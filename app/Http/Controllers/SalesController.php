@@ -91,7 +91,9 @@ class SalesController extends Controller
                 'search' => $request->input('search'),
                 'status' => $cutOff ? 'historical' : ($request->input('status') ?? 'created'),
                 'historical_date' => $historicalDate,
+                'from' => $request->input('from'),
             ],
+            'from' => $request->input('from'),
             'flash' => [
                 'success' => session('success'),
                 'error' => session('error'),
@@ -139,9 +141,35 @@ class SalesController extends Controller
             $shipment = $trip->shipment_order;
             $activeAdj = $shipment?->activeAdjustment;
             $isCompleted = $trip->weight_ticket?->weighing_status === 'completed';
-            $rawWeight = $isCompleted
-                ? ((float)($trip->weight_ticket?->net_weight ?? 0) / 1000)
-                : ((float)($trip->programmed_tons ?? 0));
+
+            // REGLA: Para envasado se considera el peso programado solo para el envasado
+            $presUpper = strtoupper(trim($shipment?->presentation ?? $trip->presentation ?? ''));
+            $linkedAssignment = null;
+            if ($trip->id) {
+                $linkedAssignment = \App\Models\ClientOperatorAssignment::where('loading_order_id', $trip->id)->first();
+                if (!$presUpper && $linkedAssignment) {
+                    $presUpper = strtoupper(trim($linkedAssignment->presentation ?? ''));
+                }
+            }
+            $isEnvasado = str_contains($presUpper, 'ENVAS') || str_contains($presUpper, 'SACO');
+
+            if ($isCompleted && $isEnvasado) {
+                $prog = 0;
+                if ($shipment && (float) ($shipment->programmed_tons ?? 0) > 0) {
+                    $prog = (float) $shipment->programmed_tons;
+                } elseif ($shipment && (float) ($shipment->programmed_weight ?? 0) > 0) {
+                    $prog = (float) $shipment->programmed_weight;
+                } elseif ((float) ($trip->programmed_tons ?? 0) > 0) {
+                    $prog = (float) $trip->programmed_tons;
+                } elseif ($linkedAssignment && (float) ($linkedAssignment->original_tm ?? $linkedAssignment->tm ?? 0) > 0) {
+                    $prog = (float) ($linkedAssignment->original_tm ?? $linkedAssignment->tm);
+                }
+                $rawWeight = $prog > 0 ? ($prog >= 100 ? ($prog / 1000) : $prog) : ((float)($trip->weight_ticket?->net_weight ?? 0) / 1000);
+            } else {
+                $rawWeight = $isCompleted
+                    ? ((float)($trip->weight_ticket?->net_weight ?? 0) / 1000)
+                    : ((float)($trip->programmed_tons ?? 0));
+            }
 
             $isAdjusted = false;
             $adjustedWeight = $rawWeight;

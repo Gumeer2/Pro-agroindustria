@@ -706,13 +706,18 @@ class SurveillanceController extends Controller
     }
 
     /**
-     * Delete log
+     * Delete / Cancel access log
      */
     public function destroy($id)
     {
-        $log = AccessLog::findOrFail($id);
+        $log = AccessLog::with('subject')->findOrFail($id);
+        $operatorName = $log->subject?->operator_name ?? $log->subject?->name ?? 'Operador';
+
+        // Detach linked shipment orders so they remain available and unlinked
+        $log->shipmentOrders()->detach();
         $log->delete();
-        return back()->with('success', 'Registro eliminado correctamente.');
+
+        return back()->with('success', "Se canceló la entrada del operador {$operatorName} y se eliminó el registro de planta.");
     }
 
     /**
@@ -992,8 +997,75 @@ class SurveillanceController extends Controller
 
     public function vetoIndex(Request $request)
     {
-        // 1. Fetch currently vetoed operators (ExitOperator and VesselOperator)
-        $vetoedExitOperators = ExitOperator::with('vetoedByUser')
+        // 1. Fetch full list of operators (ExitOperator with clients and veto details)
+        $operatorsQuery = ExitOperator::with(['clients', 'vetoedByUser']);
+
+        $isQr = false;
+        if ($request->filled('operator_search')) {
+            $rawTerm = trim($request->operator_search);
+            $cleanId = null;
+            $normalized = str_replace(['?', "'", '-', '|'], '_', strtoupper($rawTerm));
+
+            if (preg_match('/OP[_\-\s]*EXIT[_\-\s]*(\d+)/i', $normalized, $matches)) {
+                $cleanId = (int) $matches[1];
+                $isQr = true;
+            } elseif (preg_match('/^OP[_\-\s]*(\d+)/i', $normalized, $matches)) {
+                $cleanId = (int) $matches[1];
+                $isQr = true;
+            } elseif (str_starts_with($rawTerm, '#') && is_numeric(ltrim($rawTerm, '#'))) {
+                $cleanId = (int) ltrim($rawTerm, '#');
+                $isQr = true;
+            } elseif ($request->boolean('is_qr') && is_numeric($rawTerm)) {
+                $cleanId = (int) $rawTerm;
+                $isQr = true;
+            } elseif (is_numeric($rawTerm)) {
+                $cleanId = (int) $rawTerm;
+            }
+
+            if ($isQr && $cleanId !== null && $cleanId > 0) {
+                // When scanned by QR (or #ID), show ONLY the exact operator!
+                $operatorsQuery->where('id', $cleanId);
+            } elseif ($cleanId !== null && is_numeric($rawTerm) && strlen($rawTerm) <= 6) {
+                // If numeric ID matches an existing operator exactly, show ONLY that exact operator
+                $existsExact = ExitOperator::where('id', $cleanId)->exists();
+                if ($existsExact) {
+                    $operatorsQuery->where('id', $cleanId);
+                } else {
+                    $operatorsQuery->where(function ($q) use ($rawTerm) {
+                        $q->where('tractor_plate', 'like', "%{$rawTerm}%")
+                          ->orWhere('trailer_plate', 'like', "%{$rawTerm}%")
+                          ->orWhere('economic_number', 'like', "%{$rawTerm}%");
+                    });
+                }
+            } else {
+                $operatorsQuery->where(function ($q) use ($rawTerm) {
+                    $q->where('name', 'like', "%{$rawTerm}%")
+                      ->orWhere('transport_line', 'like', "%{$rawTerm}%")
+                      ->orWhere('real_transport_line', 'like', "%{$rawTerm}%")
+                      ->orWhere('tractor_plate', 'like', "%{$rawTerm}%")
+                      ->orWhere('trailer_plate', 'like', "%{$rawTerm}%")
+                      ->orWhere('license', 'like', "%{$rawTerm}%")
+                      ->orWhere('economic_number', 'like', "%{$rawTerm}%")
+                      ->orWhereHas('clients', function ($cq) use ($rawTerm) {
+                          $cq->where('business_name', 'like', "%{$rawTerm}%")
+                             ->orWhere('rfc', 'like', "%{$rawTerm}%");
+                      });
+                });
+            }
+        }
+
+        if (!$isQr && $request->filled('operator_status') && in_array($request->operator_status, ['active', 'vetoed'])) {
+            $operatorsQuery->where('status', $request->operator_status);
+        }
+
+        $allOperators = $operatorsQuery->orderBy('created_at', 'desc')
+            ->paginate(15, ['*'], 'operator_page')
+            ->withQueryString();
+
+        $allOperators->getCollection()->transform(fn($op) => $this->formatExitOperator($op));
+
+        // 2. Fetch currently vetoed operators (ExitOperator and VesselOperator)
+        $vetoedExitOperators = ExitOperator::with(['vetoedByUser', 'clients'])
             ->where('status', 'vetoed')
             ->orderBy('vetoed_at', 'desc')
             ->orderBy('updated_at', 'desc')
@@ -1009,7 +1081,7 @@ class SurveillanceController extends Controller
 
         $allVetoed = $vetoedExitOperators->concat($vetoedVesselOperators)->values();
 
-        // 2. Query history logs with filters
+        // 3. Query history logs with filters
         $historyQuery = OperatorVetoLog::with('user')->orderBy('created_at', 'desc');
 
         if ($request->filled('action') && in_array($request->action, ['vetoed', 'unvetoed'])) {
@@ -1042,26 +1114,32 @@ class SurveillanceController extends Controller
 
         $historyLogs = $historyQuery->paginate(15)->withQueryString();
 
-        // 3. Stats for dashboard counters
+        // 4. Stats for dashboard counters
         $stats = [
-            'active_vetoed_count' => $allVetoed->count(),
-            'total_history_count' => OperatorVetoLog::count(),
-            'total_vetoes'        => OperatorVetoLog::where('action', 'vetoed')->count(),
-            'total_unvetoes'      => OperatorVetoLog::where('action', 'unvetoed')->count(),
+            'total_operators_count' => ExitOperator::count(),
+            'active_vetoed_count'   => $allVetoed->count(),
+            'total_history_count'   => OperatorVetoLog::count(),
+            'total_vetoes'          => OperatorVetoLog::where('action', 'vetoed')->count(),
+            'total_unvetoes'        => OperatorVetoLog::where('action', 'unvetoed')->count(),
         ];
 
         return Inertia::render('Surveillance/VetoOperator', [
+            'all_operators'    => $allOperators,
             'vetoed_operators' => $allVetoed,
             'history_logs'     => $historyLogs,
             'stats'            => $stats,
             'filters'          => [
-                'action'         => $request->action ?? 'all',
-                'history_search' => $request->history_search ?? '',
-                'date_from'      => $request->date_from ?? '',
-                'date_to'        => $request->date_to ?? '',
+                'tab'              => $request->tab ?? 'operators_list',
+                'action'           => $request->action ?? 'all',
+                'history_search'   => $request->history_search ?? '',
+                'date_from'        => $request->date_from ?? '',
+                'date_to'          => $request->date_to ?? '',
+                'operator_search'  => $request->operator_search ?? '',
+                'operator_status'  => $request->operator_status ?? 'all',
             ],
         ]);
     }
+
 
     /**
      * Reporte Imprimible de Operadores Vetados (Padrón Oficial y Auditoría)
@@ -1247,7 +1325,11 @@ class SurveillanceController extends Controller
             'policy'              => $op->policy ?? '',
             'validity'            => $op->validity ? (is_string($op->validity) ? $op->validity : $op->validity->format('Y-m-d')) : '',
             'status'              => $op->status ?? 'active',
+            'clients'             => $op->relationLoaded('clients') && $op->clients
+                ? $op->clients->map(fn($c) => ['id' => $c->id, 'business_name' => $c->business_name])->values()->all()
+                : ($op->clients ? $op->clients->map(fn($c) => ['id' => $c->id, 'business_name' => $c->business_name])->values()->all() : []),
             'veto_reason'         => $op->veto_reason ?? '',
+
             'vetoed_at'           => $op->vetoed_at ? Carbon::parse($op->vetoed_at)->format('Y-m-d H:i:s') : null,
             'vetoed_by_name'      => $op->vetoedByUser?->name ?? null,
             'unveto_reason'       => $op->unveto_reason ?? '',

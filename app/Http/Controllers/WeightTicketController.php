@@ -521,10 +521,17 @@ class WeightTicketController extends Controller
         // Actualizar TM y destared_tm si hay asignación vinculada a esta orden
         $editNetTons = round(($validated['net_weight'] ?? 0) / 1000, 2);
         if ($editNetTons > 0 && !empty($order->id)) {
-            \App\Models\ClientOperatorAssignment::where('loading_order_id', $order->id)->update([
-                'tm' => $editNetTons,
-                'destared_tm' => $editNetTons,
-            ]);
+            $assignments = \App\Models\ClientOperatorAssignment::where('loading_order_id', $order->id)->get();
+            foreach ($assignments as $asg) {
+                $presUpper = strtoupper(trim($asg->presentation ?? $order->shipment_order?->presentation ?? $order->presentation ?? ''));
+                $isEnvasado = str_contains($presUpper, 'ENVAS') || str_contains($presUpper, 'SACO');
+                if (!$isEnvasado) {
+                    $asg->update([
+                        'tm' => $editNetTons,
+                        'destared_tm' => $editNetTons,
+                    ]);
+                }
+            }
         }
 
 
@@ -1404,14 +1411,25 @@ class WeightTicketController extends Controller
                     $assignment = $assignmentQuery->orderBy('created_at', 'asc')->first();
 
                     if ($assignment) {
+                        $presUpper = strtoupper(trim($assignment->presentation ?? $order->shipment_order?->presentation ?? $order->presentation ?? ''));
+                        $isEnvasado = str_contains($presUpper, 'ENVAS') || str_contains($presUpper, 'SACO');
+                        $finalAssignmentTm = $isEnvasado ? (float) ($assignment->original_tm ?? $assignment->tm) : $netTons;
+
                         $assignment->update([
                             'original_tm' => $assignment->original_tm ?? $assignment->tm,
-                            'tm' => $netTons,
-                            'destared_tm' => $netTons,
+                            'tm' => $finalAssignmentTm,
+                            'destared_tm' => $isEnvasado ? $finalAssignmentTm : $netTons,
                             'destare_status' => 'completed',
                             'destared_at' => now(),
                             'loading_order_id' => $order->id,
                         ]);
+
+                        // Re-sincronizar orden de venta para reflejar la asignación destarada
+                        if ($order->sales_order_id) {
+                            $order->sales_order?->syncLoadedQuantity();
+                        } elseif ($order->shipment_order && $order->shipment_order->sales_order_id) {
+                            $order->shipment_order->sales_order?->syncLoadedQuantity();
+                        }
                     }
                 }
 

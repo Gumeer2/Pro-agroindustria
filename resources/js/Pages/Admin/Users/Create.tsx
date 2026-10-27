@@ -12,12 +12,21 @@ import {
     Key,
     IdCard,
     FileText,
+    Building2,
     Eye,
     EyeOff
 } from "lucide-react";
 import { FormEventHandler, useState } from "react";
 
-export default function Create({ auth, roles }: { auth: any; roles: any[] }) {
+export default function Create({
+    auth,
+    roles,
+    clients = [],
+}: {
+    auth: any;
+    roles: any[];
+    clients?: { id: number; business_name: string; rfc?: string; contact_info?: string }[];
+}) {
     const { data, setData, post, processing, errors } = useForm({
         name: "",
         username: "",
@@ -26,6 +35,8 @@ export default function Create({ auth, roles }: { auth: any; roles: any[] }) {
         password_confirmation: "",
         role: "",
     });
+
+    const isClientRole = data.role?.toLowerCase() === "clientes";
 
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -78,17 +89,36 @@ export default function Create({ auth, roles }: { auth: any; roles: any[] }) {
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
                                     Nombre Completo <span className="text-red-500">*</span>
                                 </label>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        value={data.name}
-                                        onChange={(e) => setData("name", e.target.value)}
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 text-sm"
-                                        required
-                                        placeholder="Ej: Juan Pérez"
-                                    />
-                                    <User className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
-                                </div>
+                                {isClientRole ? (
+                                    <div className="relative">
+                                        <select
+                                            value={data.name}
+                                            onChange={(e) => setData("name", e.target.value)}
+                                            className="w-full rounded-lg border-indigo-300 bg-indigo-50/20 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 pr-4 text-sm font-semibold text-gray-800"
+                                            required
+                                        >
+                                            <option value="">Seleccione un Cliente del Directorio...</option>
+                                            {clients.map((client) => (
+                                                <option key={client.id} value={client.business_name}>
+                                                    {client.business_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Building2 className="w-5 h-5 text-indigo-600 absolute left-3 top-2.5 pointer-events-none" />
+                                    </div>
+                                ) : (
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={data.name}
+                                            onChange={(e) => setData("name", e.target.value)}
+                                            className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 text-sm"
+                                            required
+                                            placeholder="Ej: Juan Pérez"
+                                        />
+                                        <User className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
+                                    </div>
+                                )}
                                 <InputError message={errors.name} className="mt-1" />
                             </div>
 
@@ -143,7 +173,15 @@ export default function Create({ auth, roles }: { auth: any; roles: any[] }) {
                                 <div className="relative">
                                     <select
                                         value={data.role}
-                                        onChange={(e) => setData("role", e.target.value)}
+                                        onChange={(e) => {
+                                            const newRole = e.target.value;
+                                            const willBeClient = newRole.toLowerCase() === "clientes";
+                                            setData((prev) => ({
+                                                ...prev,
+                                                role: newRole,
+                                                name: willBeClient ? (clients.some(c => c.business_name === prev.name) ? prev.name : "") : prev.name
+                                            }));
+                                        }}
                                         className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white text-sm"
                                         required
                                     >

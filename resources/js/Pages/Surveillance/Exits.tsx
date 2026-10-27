@@ -95,6 +95,51 @@ export default function Exits({
         );
     };
 
+    // Cancel authorized entry and delete in-plant access record
+    const handleCancelEntry = (log: any) => {
+        const opName = log.subject?.operator_name || log.subject?.name || "este operador";
+        const tracto = log.subject?.tractor_plate ? ` (Tracto: ${log.subject.tractor_plate})` : "";
+
+        Swal.fire({
+            title: "¿Cancelar entrada a planta?",
+            html: `
+                <div class="text-left text-sm text-slate-700 space-y-2">
+                    <p>Se cancelará el ingreso del operador <b>${opName}</b>${tracto}.</p>
+                    <p class="text-xs text-slate-500">Se eliminará el registro de entrada actual y se desvincularán las órdenes asociadas. El operador podrá registrar un nuevo ingreso cuando corresponda.</p>
+                </div>
+            `,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#e11d48",
+            cancelButtonColor: "#64748b",
+            confirmButtonText: "Sí, Cancelar Entrada",
+            cancelButtonText: "No, Volver",
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.delete(route("surveillance.destroy", log.id), {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        setInPlantLogs((curr) => curr.filter((l) => l.id !== log.id));
+                        Swal.fire({
+                            icon: "success",
+                            title: "Entrada Cancelada",
+                            text: `Se ha cancelado la entrada de ${opName} y se eliminó el registro.`,
+                            timer: 3000,
+                            showConfirmButton: false,
+                        });
+                    },
+                    onError: () => {
+                        Swal.fire({
+                            icon: "error",
+                            title: "Error",
+                            text: "No se pudo cancelar el registro de entrada.",
+                        });
+                    },
+                });
+            }
+        });
+    };
+
     // Order Selection Modal (Linking 1 to 3 orders)
     const [orderModalLog, setOrderModalLog] = useState<any>(null);
     const [availableOrders, setAvailableOrders] = useState<any[]>([]);
@@ -645,11 +690,11 @@ export default function Exits({
                     </div>
 
                     {/* In Plant & Exits Table */}
-                    <div className="overflow-x-auto rounded-3xl border border-gray-100 shadow-xl bg-white">
-                        <table className="w-full divide-y divide-gray-200 text-left">
+                    <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-xl bg-white">
+                        <table className="w-full divide-y divide-gray-200 text-left text-xs">
                             <thead className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 text-white">
                                 <tr>
-                                    <th className="px-3 py-3.5 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap w-12">
+                                    <th className="px-2 py-3 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap w-10">
                                         <input
                                             type="checkbox"
                                             checked={isAllSelected}
@@ -658,22 +703,22 @@ export default function Exits({
                                             title="Seleccionar todos (dentro de planta)"
                                         />
                                     </th>
-                                    <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
+                                    <th className="px-2.5 py-3 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                         Entrada / Registro
                                     </th>
-                                    <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100">
+                                    <th className="px-2.5 py-3 text-xs font-black uppercase tracking-wider text-indigo-100">
                                         Orden de Embarque
                                     </th>
-                                    <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
+                                    <th className="px-2.5 py-3 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                         Operador
                                     </th>
-                                    <th className="px-4 py-3.5 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
+                                    <th className="px-2.5 py-3 text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                         Unidad
                                     </th>
-                                    <th className="px-4 py-3.5 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
+                                    <th className="px-2 py-3 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
                                         Estatus
                                     </th>
-                                    <th className="px-4 py-3.5 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap">
+                                    <th className="px-2 py-3 text-center text-xs font-black uppercase tracking-wider text-indigo-100 whitespace-nowrap w-36">
                                         Acciones
                                     </th>
                                 </tr>
@@ -703,13 +748,13 @@ export default function Exits({
                                                 }`}
                                             >
                                                 {/* Column 0: Checkbox */}
-                                                <td className="px-3 py-3.5 text-center whitespace-nowrap w-12">
+                                                <td className="px-2 py-2.5 text-center whitespace-nowrap w-10">
                                                     <input
                                                         type="checkbox"
                                                         disabled={isPendingLog}
                                                         checked={isChecked && !isPendingLog}
                                                         onChange={() => !isPendingLog && toggleSelectRow(rowKey)}
-                                                        className={`w-4.5 h-4.5 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 ${
+                                                        className={`w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 ${
                                                             isPendingLog ? "opacity-30 cursor-not-allowed bg-gray-100" : "cursor-pointer"
                                                         }`}
                                                         title={isPendingLog ? "Solo unidades dentro de planta pueden marcar salida" : "Seleccionar"}
@@ -717,30 +762,30 @@ export default function Exits({
                                                 </td>
 
                                                 {/* Column 1: Entry / Registration Time */}
-                                                <td className="px-4 py-3.5 whitespace-nowrap text-sm font-medium">
+                                                <td className="px-2.5 py-2.5 whitespace-nowrap">
                                                     {log.entry_at ? (
                                                         <>
-                                                            <div className="flex items-center text-gray-900 font-bold">
-                                                                <Clock className="w-4 h-4 mr-1.5 text-indigo-500" />
+                                                            <div className="flex items-center text-gray-900 font-bold text-xs">
+                                                                <Clock className="w-3.5 h-3.5 mr-1 text-indigo-500 flex-shrink-0" />
                                                                 {new Date(log.entry_at).toLocaleTimeString([], {
                                                                     hour: "2-digit",
                                                                     minute: "2-digit",
                                                                 })}
                                                             </div>
-                                                            <span className="text-xs text-gray-400 font-bold ml-5">
+                                                            <span className="text-[10px] text-gray-400 font-semibold block pl-4.5">
                                                                 {new Date(log.entry_at).toLocaleDateString()}
                                                             </span>
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <div className="flex items-center text-amber-700 font-bold">
-                                                                <Clock className="w-4 h-4 mr-1.5 text-amber-500" />
+                                                            <div className="flex items-center text-amber-700 font-bold text-xs">
+                                                                <Clock className="w-3.5 h-3.5 mr-1 text-amber-500 flex-shrink-0" />
                                                                 {log.created_at ? new Date(log.created_at).toLocaleTimeString([], {
                                                                     hour: "2-digit",
                                                                     minute: "2-digit",
                                                                 }) : "--:--"}
                                                             </div>
-                                                            <span className="text-xs text-amber-600/80 font-bold ml-5">
+                                                            <span className="text-[10px] text-amber-600/80 font-semibold block pl-4.5">
                                                                 {log.created_at ? new Date(log.created_at).toLocaleDateString() : "Por ingresar"}
                                                             </span>
                                                         </>
@@ -748,9 +793,9 @@ export default function Exits({
                                                 </td>
 
                                                 {/* Column 2: Linked Shipment Orders */}
-                                                <td className="px-4 py-3.5">
+                                                <td className="px-2.5 py-2.5">
                                                     {orders.length > 0 ? (
-                                                        <div className="flex flex-col gap-2 max-w-lg">
+                                                        <div className="flex flex-col gap-1.5 max-w-sm">
                                                             {orders.map((order: any, idx: number) => {
                                                                 const isCancelled = order.is_cancelled || order.status === "cancelled";
                                                                 const isCompleted = order.is_completed || order.has_destare || order.destare_status === "completed";
@@ -758,7 +803,7 @@ export default function Exits({
                                                                 return (
                                                                     <div
                                                                         key={order.id || idx}
-                                                                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold w-full shadow-2xs transition-all ${
+                                                                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold w-full shadow-2xs transition-all ${
                                                                             isCancelled
                                                                                 ? "bg-slate-100 border-slate-200 text-slate-700"
                                                                                 : isCompleted
@@ -766,9 +811,9 @@ export default function Exits({
                                                                                 : "bg-amber-50 border-amber-200 text-amber-900"
                                                                         }`}
                                                                     >
-                                                                        <div className="flex items-center gap-1.5 min-w-0">
+                                                                        <div className="flex items-center gap-1 min-w-0">
                                                                             <FileText
-                                                                                className={`w-4 h-4 flex-shrink-0 ${
+                                                                                className={`w-3.5 h-3.5 flex-shrink-0 ${
                                                                                     isCancelled
                                                                                         ? "text-slate-500"
                                                                                         : isCompleted
@@ -776,22 +821,22 @@ export default function Exits({
                                                                                         : "text-amber-600"
                                                                                 }`}
                                                                             />
-                                                                            <span className="font-mono">Folio: {order.folio ?? (order.id ? String(order.id).slice(0, 8) : "")}</span>
+                                                                            <span className="font-mono text-[11px]">Folio: {order.folio ?? (order.id ? String(order.id).slice(0, 8) : "")}</span>
                                                                         </div>
-                                                                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                                                        <div className="flex items-center gap-1 flex-wrap justify-end">
                                                                             <span
-                                                                                className="text-[10px] px-2 py-0.5 rounded-md bg-white/90 font-bold uppercase text-gray-800 shadow-2xs max-w-[130px] truncate"
+                                                                                className="text-[9px] px-1.5 py-0.5 rounded bg-white/90 font-bold uppercase text-gray-800 shadow-2xs max-w-[110px] truncate"
                                                                                 title={order.client?.business_name || order.client?.name || order.client || order.client_name || "Cliente"}
                                                                             >
                                                                                 {order.client?.business_name || order.client?.name || order.client || order.client_name || "Cliente"}
                                                                             </span>
                                                                             {order.is_sader && (
-                                                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase bg-emerald-600 text-white shadow-sm flex items-center gap-0.5">
-                                                                                    🛡️ SADER / CONVOY
+                                                                                <span className="text-[8px] px-1 py-0.5 rounded-full font-black uppercase bg-emerald-600 text-white shadow-2xs flex items-center gap-0.5">
+                                                                                    🛡️ SADER
                                                                                 </span>
                                                                             )}
                                                                             <span
-                                                                                className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase border ${
+                                                                                className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase border ${
                                                                                     isCancelled
                                                                                         ? "bg-slate-200 text-slate-800 border-slate-300"
                                                                                         : isCompleted
@@ -802,8 +847,8 @@ export default function Exits({
                                                                                 {isCancelled
                                                                                     ? "Cancelada"
                                                                                     : isCompleted
-                                                                                    ? "Completada / Destarada"
-                                                                                    : "Pendiente Báscula"}
+                                                                                    ? "Destarada"
+                                                                                    : "Pendiente"}
                                                                             </span>
                                                                             {orders.length > 1 && isCompleted && !isPendingLog && (
                                                                                 <button
@@ -812,7 +857,7 @@ export default function Exits({
                                                                                         e.stopPropagation();
                                                                                         openExitModal([{ log, order }]);
                                                                                     }}
-                                                                                    className="text-[9px] font-black text-rose-700 hover:text-white hover:bg-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md transition-all shadow-2xs"
+                                                                                    className="text-[9px] font-black text-rose-700 hover:text-white hover:bg-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded transition-all shadow-2xs"
                                                                                     title={`Dar salida individual solo a esta orden (${order.folio})`}
                                                                                 >
                                                                                     Salida Orden
@@ -831,69 +876,70 @@ export default function Exits({
                                                 </td>
 
                                                 {/* Column 3: Operator */}
-                                                <td className="px-4 py-3.5 whitespace-nowrap">
-                                                    <div className="text-sm font-black text-gray-900 uppercase">
+                                                <td className="px-2.5 py-2.5 max-w-[210px]">
+                                                    <div className="text-xs font-black text-gray-900 uppercase truncate" title={log.subject?.operator_name || log.subject?.name || "N/A"}>
                                                         {log.subject?.operator_name || log.subject?.name || "N/A"}
                                                     </div>
-                                                    <div className="text-xs text-gray-500 font-medium">
+                                                    <div className="text-[11px] text-gray-500 font-medium">
                                                         Lic: <span className="font-bold">{log.subject?.license || "N/A"}</span>
                                                     </div>
-                                                    <div className="text-[11px] text-indigo-600 font-bold">
+                                                    <div className="text-[10px] text-indigo-600 font-bold truncate" title={log.subject?.transport_line || log.subject?.transporter_line || ""}>
                                                         {log.subject?.transport_line || log.subject?.transporter_line || ""}
                                                     </div>
                                                 </td>
 
                                                 {/* Column 4: Vehicle Unit & Unit Type */}
-                                                <td className="px-4 py-3.5 whitespace-nowrap">
-                                                    <div className="flex flex-wrap items-center gap-1.5">
-                                                        <span className="text-xs font-black text-gray-900 font-mono bg-gray-100 px-2 py-0.5 rounded-md inline-block border border-gray-200" title="Placa Tracto">
+                                                <td className="px-2.5 py-2.5 whitespace-nowrap">
+                                                    <div className="flex flex-wrap items-center gap-1">
+                                                        <span className="text-[11px] font-black text-gray-900 font-mono bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" title="Placa Tracto">
                                                             T: {log.subject?.tractor_plate || "S/P"}
                                                         </span>
                                                         {log.subject?.trailer_plate && (
-                                                            <span className="text-xs font-black text-indigo-900 font-mono bg-indigo-50 px-2 py-0.5 rounded-md inline-block border border-indigo-200" title="Placa Remolque">
+                                                            <span className="text-[11px] font-black text-indigo-900 font-mono bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200" title="Placa Remolque">
                                                                 R: {log.subject?.trailer_plate}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="flex items-center justify-between gap-2 mt-1">
-                                                        <span className="text-xs text-gray-500">
+                                                    <div className="flex items-center justify-between gap-1 mt-1 text-[11px]">
+                                                        <span className="text-gray-500">
                                                             Econ: <span className="font-bold text-gray-800">{log.subject?.economic_number || "S/N"}</span>
                                                         </span>
-                                                        <span className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
-                                                            <Truck className="w-3 h-3 text-indigo-500" />
+                                                        <span className="text-[9px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
+                                                            <Truck className="w-2.5 h-2.5 text-indigo-500" />
                                                             {log.unit_type || log.subject?.unit_type || "N/A"}
                                                         </span>
                                                     </div>
                                                 </td>
 
                                                 {/* Column 5: Status (Por Ingresar / Dentro de Planta) */}
-                                                <td className="px-4 py-3.5 whitespace-nowrap text-center">
+                                                <td className="px-2 py-2.5 whitespace-nowrap text-center">
                                                     {isPendingLog ? (
-                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs">
-                                                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs">
+                                                            <Clock className="w-3 h-3 text-amber-600" />
                                                             Por Ingresar
                                                         </span>
                                                     ) : (
-                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
-                                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                                             Dentro de Planta
                                                         </span>
                                                     )}
                                                 </td>
 
                                                 {/* Column 6: Actions */}
-                                                <td className="px-4 py-3.5 whitespace-nowrap text-center text-sm font-medium">
-                                                    <div className="inline-flex items-center justify-center gap-2">
+                                                <td className="px-2 py-2.5 whitespace-nowrap text-center">
+                                                    <div className="flex flex-col gap-1 items-stretch justify-center w-32 mx-auto">
                                                         {isPendingLog ? (
                                                             <span
-                                                                className="text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl font-black text-xs uppercase inline-flex items-center gap-1.5 shadow-2xs"
+                                                                className="text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg font-black text-[10px] uppercase inline-flex items-center justify-center gap-1 shadow-2xs"
                                                                 title="Operador pendiente de ingresar a planta"
                                                             >
-                                                                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                                                <Clock className="w-3 h-3 text-amber-600" />
                                                                 Por Ingresar
                                                             </span>
                                                         ) : !canExit ? (
                                                             <button
+                                                                type="button"
                                                                 onClick={() => {
                                                                     const uncompletedFoliosStr = uncompletedOrders
                                                                         .map((o: any) => o.folio || o.id)
@@ -906,21 +952,33 @@ export default function Exits({
                                                                         confirmButtonText: "Entendido",
                                                                     });
                                                                 }}
-                                                                className="text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-3 py-2 rounded-xl transition-all shadow-sm font-black text-xs uppercase inline-flex items-center gap-1.5"
+                                                                className="text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-1 rounded-lg transition-all shadow-2xs font-black text-[10px] uppercase inline-flex items-center justify-center gap-1"
                                                                 title="Salida bloqueada: Órdenes pendientes por completar en báscula"
                                                             >
-                                                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                                                                Salida Bloqueada
+                                                                <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                                                                <span>Salida Bloqueada</span>
                                                             </button>
                                                         ) : (
                                                             <button
+                                                                type="button"
                                                                 onClick={() => openExitModal([{ log, order: null }])}
-                                                                className="text-white bg-red-600 hover:bg-red-700 px-3.5 py-2 rounded-xl transition-all shadow-md shadow-red-100 font-black text-xs uppercase inline-flex items-center gap-1.5"
+                                                                className="text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded-lg transition-all shadow-xs font-black text-[10px] uppercase inline-flex items-center justify-center gap-1 cursor-pointer"
                                                             >
-                                                                <LogOut className="w-3.5 h-3.5" />
-                                                                Marcar Salida
+                                                                <LogOut className="w-3 h-3 flex-shrink-0" />
+                                                                <span>Marcar Salida</span>
                                                             </button>
                                                         )}
+
+                                                        {/* Botón Cancelar Entrada */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCancelEntry(log)}
+                                                            className="text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition-all shadow-2xs hover:shadow-xs font-bold text-[10px] uppercase inline-flex items-center justify-center gap-1 cursor-pointer"
+                                                            title="Cancelar entrada de este operador y borrar registro de planta"
+                                                        >
+                                                            <Ban className="w-3 h-3 flex-shrink-0" />
+                                                            <span>Cancelar Entrada</span>
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>

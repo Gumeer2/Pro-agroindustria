@@ -370,7 +370,7 @@ export default function EnsacadoraSamplingModal({
             Swal.fire({
                 icon: "success",
                 title: "¡Muestreo Completado y Guardado!",
-                html: "Se han guardado las <b>40 estibas</b> en la base de datos con éxito.<br/><br/>Muestreo finalizado y certificado.",
+                html: "Se han guardado las <b>40 muestras</b> en la base de datos con éxito.<br/><br/>Muestreo finalizado y certificado.",
                 confirmButtonColor: "#16a34a",
                 confirmButtonText: "Aceptar",
             });
@@ -385,7 +385,7 @@ export default function EnsacadoraSamplingModal({
                 position: "top-end",
                 icon: "info",
                 title: "Avance guardado",
-                text: `${samples.length} de 40 estibas guardadas en la base de datos. Se sincronizarán en cualquier navegador.`,
+                text: `${samples.length} de 40 muestras guardadas en la base de datos. Se sincronizarán en cualquier navegador.`,
                 showConfirmButton: false,
                 timer: 3000,
             });
@@ -406,7 +406,7 @@ export default function EnsacadoraSamplingModal({
                 Swal.fire({
                     icon: "warning",
                     title: `ENS-${env} completada`,
-                    text: `La ensacadora ENS-${env} ya cuenta con sus 20 estibas capturadas. Por favor seleccione la otra ensacadora.`,
+                    text: `La ensacadora ENS-${env} ya cuenta con sus 20 muestras capturadas. Por favor seleccione la otra ensacadora.`,
                     confirmButtonColor: "#4f46e5",
                 });
                 return;
@@ -414,8 +414,8 @@ export default function EnsacadoraSamplingModal({
             if (samples.length >= 40) {
                 Swal.fire({
                     icon: "info",
-                    title: "40 estibas completadas",
-                    text: "Ya se completaron las 40 estibas requeridas en total. Por favor guarde el muestreo.",
+                    title: "40 muestras completadas",
+                    text: "Ya se completaron las 40 muestras requeridas en total. Por favor guarde el muestreo.",
                     confirmButtonColor: "#16a34a",
                 });
                 return;
@@ -558,8 +558,8 @@ export default function EnsacadoraSamplingModal({
         if (samples.length >= 40) {
             Swal.fire({
                 icon: "info",
-                title: "40 estibas completadas",
-                text: "Ya se ha capturado el total de 40 estibas requeridas. Haga clic en 'Guardar Muestreo' para finalizar y bloquear el registro.",
+                title: "40 muestras completadas",
+                text: "Ya se ha capturado el total de 40 muestras requeridas. Haga clic en 'Guardar Muestreo' para finalizar y bloquear el registro.",
                 confirmButtonColor: "#16a34a",
             });
             return;
@@ -742,7 +742,7 @@ export default function EnsacadoraSamplingModal({
                                                 {isLocked ? (
                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                                                         <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                        Guardado Finalizado (40/40 estibas)
+                                                        Guardado Finalizado (40/40 muestras)
                                                     </span>
                                                 ) : samples.length > 0 ? (
                                                     <span
@@ -750,11 +750,11 @@ export default function EnsacadoraSamplingModal({
                                                         title="Su avance se encuentra autoguardado en tiempo real"
                                                     >
                                                         <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
-                                                        Autoguardado activo ({samples.length}/40 estibas)
+                                                        Autoguardado activo ({samples.length}/40 muestras)
                                                     </span>
                                                 ) : (
                                                     <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200">
-                                                        40 estibas requeridas (20 por ENS)
+                                                        40 muestras requeridas (20 por ENS)
                                                     </span>
                                                 )}
                                             </div>
@@ -791,10 +791,10 @@ export default function EnsacadoraSamplingModal({
                                             }`}
                                             title={
                                                 samples.length === 40
-                                                    ? "Guardar y certificar 40 estibas (Muestreo Completo)"
+                                                    ? "Guardar y certificar 40 muestras (Muestreo Completo)"
                                                     : isLocked
                                                     ? "Muestreo finalizado y guardado - Salir"
-                                                    : `Guardar avance (${samples.length}/40 estibas) y salir`
+                                                    : `Guardar avance (${samples.length}/40 muestras) y salir`
                                             }
                                         >
                                             {isLocked || samples.length === 40 ? (
@@ -921,7 +921,7 @@ export default function EnsacadoraSamplingModal({
                                                 <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
                                                     Muestreo Guardado y Bloqueado
                                                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 font-bold">
-                                                        40 / 40 Estibas Completadas
+                                                        40 / 40 Muestras Completadas
                                                     </span>
                                                 </h4>
                                                 <p className="text-xs text-emerald-700 mt-0.5">
@@ -944,7 +944,7 @@ export default function EnsacadoraSamplingModal({
                                                 onClick={() => {
                                                     Swal.fire({
                                                         title: "¿Desbloquear para corregir?",
-                                                        text: "Se habilitará nuevamente la edición y captura de estibas.",
+                                                        text: "Se habilitará nuevamente la edición y captura de muestras.",
                                                         icon: "question",
                                                         showCancelButton: true,
                                                         confirmButtonText: "Sí, desbloquear",
@@ -958,7 +958,7 @@ export default function EnsacadoraSamplingModal({
                                                     });
                                                 }}
                                                 className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
-                                                title="Habilitar edición para corregir estibas"
+                                                title="Habilitar edición para corregir muestras"
                                             >
                                                 <Pencil className="w-3.5 h-3.5" />
                                                 <span>Desbloquear</span>
@@ -973,13 +973,13 @@ export default function EnsacadoraSamplingModal({
                                             </div>
                                             <div>
                                                 <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
-                                                    ¡Las 40 estibas han sido completadas!
+                                                    ¡Las 40 muestras han sido completadas!
                                                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 font-bold">
-                                                        40 / 40 estibas (20 en ENS-1 y 20 en ENS-2)
+                                                        40 / 40 muestras (20 en ENS-1 y 20 en ENS-2)
                                                     </span>
                                                 </h4>
                                                 <p className="text-xs text-emerald-700 mt-0.5">
-                                                    Todas las estibas han sido registradas y autoguardadas. Haga clic en <b>"Guardar Muestreo"</b> para finalizar.
+                                                    Todas las muestras han sido registradas y autoguardadas. Haga clic en <b>"Guardar Muestreo"</b> para finalizar.
                                                 </p>
                                             </div>
                                         </div>
@@ -1000,7 +1000,7 @@ export default function EnsacadoraSamplingModal({
                                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                                             <div className="flex items-center gap-2 text-xs font-bold text-gray-700 whitespace-nowrap">
                                                 <Scale className="w-4 h-4 text-indigo-600" />
-                                                <span>Capturar estiba (#{samples.length + 1} de 40):</span>
+                                                <span>Capturar muestra (#{samples.length + 1} de 40):</span>
                                             </div>
 
                                             <div className="relative flex-1">
@@ -1059,7 +1059,7 @@ export default function EnsacadoraSamplingModal({
                                                 Últimos Muestreos ENS-1
                                             </span>
                                             <span className="text-[11px] font-semibold text-indigo-600 font-mono">
-                                                {samplesEnv1.length} / 20 estibas
+                                                {samplesEnv1.length} / 20 muestras
                                             </span>
                                         </div>
                                         <div className="overflow-x-auto max-h-40 overflow-y-auto">
@@ -1151,7 +1151,7 @@ export default function EnsacadoraSamplingModal({
                                                 Últimos Muestreos ENS-2
                                             </span>
                                             <span className="text-[11px] font-semibold text-emerald-600 font-mono">
-                                                {samplesEnv2.length} / 20 estibas
+                                                {samplesEnv2.length} / 20 muestras
                                             </span>
                                         </div>
                                         <div className="overflow-x-auto max-h-40 overflow-y-auto">

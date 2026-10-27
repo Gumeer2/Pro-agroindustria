@@ -1001,7 +1001,7 @@
                 <div id="errorBox" class="alert-error"></div>
 
                 <div class="form-top-bar">
-                    <p><i class="fa-solid fa-circle-info" style="color: #0284c7;"></i> Completa los datos para iniciar el turno y generar el lote.</p>
+                    <p><i class="fa-solid fa-circle-info" style="color: #0284c7;"></i> Completa los datos para iniciar el turno y asignar el lote.</p>
                     <span class="required-badge"><i class="fa-solid fa-asterisk" style="font-size: 8px;"></i> Campos obligatorios</span>
                 </div>
 

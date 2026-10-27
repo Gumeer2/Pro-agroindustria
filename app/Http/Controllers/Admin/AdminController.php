@@ -50,7 +50,8 @@ class AdminController extends Controller
     public function create()
     {
         return Inertia::render('Admin/Users/Create', [
-            'roles' => Role::all()
+            'roles' => Role::all(),
+            'clients' => \App\Models\Client::orderBy('business_name')->get(['id', 'business_name', 'rfc', 'address', 'contact_info']),
         ]);
     }
 
@@ -89,7 +90,8 @@ class AdminController extends Controller
                 'email' => $user->email,
                 'role' => $user->roles->first()?->name
             ],
-            'roles' => Role::all()
+            'roles' => Role::all(),
+            'clients' => \App\Models\Client::orderBy('business_name')->get(['id', 'business_name', 'rfc', 'address', 'contact_info']),
         ]);
     }
 

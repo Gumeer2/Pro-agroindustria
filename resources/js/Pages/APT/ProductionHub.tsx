@@ -7,7 +7,7 @@ export default function ProductionHub({ auth }: { auth: any }) {
         {
             id: 1,
             name: "Asignación Lote Empleado",
-            description: "Completar datos para iniciar el turno y generar el lote.",
+            description: "Completar datos para iniciar el turno y asignar el lote.",
             icon: UserCheck,
             href: route("apt.management"),
             color: "bg-blue-50 text-blue-600",

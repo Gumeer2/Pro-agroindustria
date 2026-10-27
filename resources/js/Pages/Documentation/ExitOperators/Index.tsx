@@ -322,28 +322,6 @@ export default function Index({
                                                         </>
                                                     )}
 
-                                                    <Link
-                                                        href={route("documentation.exit-operators.toggle", operator.id)}
-                                                        method="patch"
-                                                        as="button"
-                                                        className={`inline-flex items-center justify-center w-28 px-3 py-1.5 rounded-lg border transition-all font-bold ${operator.status === 'active'
-                                                            ? 'text-red-600 bg-red-50 border-red-100 hover:bg-red-100 hover:border-red-300'
-                                                            : 'text-green-600 bg-green-50 border-green-100 hover:bg-green-100 hover:border-green-300'
-                                                            }`}
-                                                    >
-                                                        {operator.status === 'active' ? (
-                                                            <>
-                                                                <ShieldAlert className="w-4 h-4 mr-1.5" />
-                                                                Vetar
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <ShieldCheck className="w-4 h-4 mr-1.5" />
-                                                                Activar
-                                                            </>
-                                                        )}
-                                                    </Link>
-
                                                     <button
                                                         onClick={() => {
                                                             if (confirm("¿Estás seguro de que deseas eliminar este operador? Esta acción no se puede deshacer.")) {

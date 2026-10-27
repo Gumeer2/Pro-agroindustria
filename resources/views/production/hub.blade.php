@@ -611,7 +611,7 @@
                         <i class="fa-solid fa-user-gear"></i>
                     </div>
                     <h3>Asignación Lote Empleado</h3>
-                    <p>Completar datos para iniciar el turno y generar el lote.</p>
+                    <p>Completar datos para iniciar el turno y asignar el lote.</p>
                 </a>
 
                 <a href="{{ route('apt.management.lots.report') }}" class="hub-card hub-card-emerald">
