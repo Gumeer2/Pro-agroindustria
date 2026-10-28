@@ -35,6 +35,7 @@ import Swal from "sweetalert2";
 import QrScannerModal from "@/Components/QrScannerModal";
 import TransportLineDropdown from "@/Components/TransportLineDropdown";
 import ClientMultiSelect, { ClientItem } from "@/Components/ClientMultiSelect";
+import TypeDropdown, { ExitOperatorTypeItem } from "@/Components/TypeDropdown";
 
 export interface OperatorItem {
     id: number;
@@ -49,6 +50,7 @@ export interface OperatorItem {
     presentation?: string;
     tm?: number | string;
     sack?: string;
+    type?: string;
     status?: string;
     clients?: Array<{ id: number; business_name: string }>;
     client_ids?: number[];
@@ -88,6 +90,7 @@ export interface ClientOperatorRecord {
     presentation?: string;
     tm?: number | string;
     sack?: string;
+    type?: string;
     sales_order_id?: string;
     sales_order?: {
         id: string;
@@ -123,6 +126,7 @@ export default function Create({
     operators = [],
     sales_orders = [],
     client_operators = [],
+    exit_operator_types = [],
     current_operational_date = "",
     from,
 }: {
@@ -131,6 +135,7 @@ export default function Create({
     operators?: OperatorItem[];
     sales_orders?: SalesOrderItem[];
     client_operators?: ClientOperatorRecord[];
+    exit_operator_types?: ExitOperatorTypeItem[];
     current_operational_date?: string;
     from?: string;
 }) {
@@ -171,6 +176,7 @@ export default function Create({
         presentation: "GRANEL",
         tm: "",
         sack: "",
+        type: "",
         from: "clients",
     });
 
@@ -368,6 +374,7 @@ export default function Create({
             presentation: "GRANEL",
             tm: "",
             sack: "",
+            type: "",
             from: "clients",
         });
         setQrInput("");
@@ -383,6 +390,7 @@ export default function Create({
             presentation: "GRANEL",
             tm: "",
             sack: "",
+            type: "",
             from: "clients",
         });
         setQrInput("");
@@ -405,11 +413,13 @@ export default function Create({
     const handlePresentationChange = (newPres: string) => {
         clientForm.clearErrors("presentation");
         clientForm.clearErrors("sack");
+        clientForm.clearErrors("type");
         clientForm.setData((prev) => ({
             ...prev,
             presentation: newPres,
-            // Si es GRANEL no lleva saco; si es ENVASADO se inicializa en 25 KG
+            // Si es GRANEL no lleva saco ni tipo; si es ENVASADO se inicializa en 25 KG
             sack: newPres === "GRANEL" ? "" : (prev.sack || "25 KG"),
+            type: newPres === "GRANEL" ? "" : prev.type,
         }));
     };
 
@@ -496,6 +506,7 @@ export default function Create({
             presentation: op.presentation || "GRANEL",
             tm: op.tm ? String(op.tm) : "",
             sack: op.sack || (op.presentation === "ENVASADO" ? "25 KG" : ""),
+            type: op.type || "",
             from: "clients",
         });
         setScanError(null);
@@ -544,6 +555,7 @@ export default function Create({
         const prod = op.sales_order?.product?.name?.toLowerCase() || "";
         const pres = op.presentation?.toLowerCase() || "";
         const sack = op.sack?.toLowerCase() || "";
+        const type = op.type?.toLowerCase() || "";
         return (
             ovFolio.includes(q) ||
             opName.includes(q) ||
@@ -552,7 +564,8 @@ export default function Create({
             remolque.includes(q) ||
             prod.includes(q) ||
             pres.includes(q) ||
-            sack.includes(q)
+            sack.includes(q) ||
+            type.includes(q)
         );
     });
 
@@ -802,7 +815,7 @@ export default function Create({
                                         filteredClientOperators.map((op) => {
                                             const presUpper = (op.presentation || "").toUpperCase();
                                             const isGranel = presUpper === "GRANEL";
-                                            const envaseText = isGranel ? "A GRANEL" : (op.sack || "25 KG");
+                                            const envaseText = isGranel ? "A GRANEL" : [op.sack || "25 KG", op.type].filter(Boolean).join(" - ");
                                             const tmNum = Number(op.tm || 0);
 
                                             const soId = String(op.sales_order_id || op.sales_order?.id || "");
@@ -1048,8 +1061,8 @@ export default function Create({
                                             </h3>
                                             <p className="text-indigo-200 text-xs">
                                                 {clientForm.data.assignment_id
-                                                    ? "Modifique la orden de venta, presentación, tonelaje o saco de la asignación"
-                                                    : "Seleccione el operador y configure presentación, TM y saco"}
+                                                    ? "Modifique la orden de venta, presentación, tonelaje, saco o tipo de la asignación"
+                                                    : "Seleccione el operador y configure presentación, TM, saco y tipo"}
                                             </p>
                                         </div>
                                     </div>
@@ -1291,11 +1304,11 @@ export default function Create({
                                         )}
                                     </div>
 
-                                    {/* Sección 3: Presentación, TM y Saco */}
+                                    {/* Sección 3: Presentación, TM, Saco y Tipo */}
                                     <div className={`grid gap-6 pt-2 ${
                                         clientForm.data.presentation === "GRANEL"
                                             ? "grid-cols-1 md:grid-cols-2"
-                                            : "grid-cols-1 md:grid-cols-3"
+                                            : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
                                     }`}>
                                         {/* Presentación */}
                                         <div>
@@ -1380,12 +1393,26 @@ export default function Create({
                                                     >
                                                         <option value="25 KG">25 KG</option>
                                                         <option value="50 KG">50 KG</option>
+                                                        <option value="1000 KG">1000 KG</option>
                                                     </select>
                                                     <Package className="w-5 h-5 text-gray-400 absolute left-3 top-2.5 pointer-events-none" />
                                                 </div>
                                                 {clientForm.errors.sack && (
                                                     <p className="text-red-500 text-xs mt-1">{clientForm.errors.sack}</p>
                                                 )}
+                                            </div>
+                                        )}
+
+                                        {/* Tipo — Solo visible si presentación es ENVASADO */}
+                                        {clientForm.data.presentation === "ENVASADO" && (
+                                            <div className="animate-in fade-in duration-200">
+                                                <TypeDropdown
+                                                    value={clientForm.data.type || ""}
+                                                    initialTypes={exit_operator_types}
+                                                    onChange={(val) => clientForm.setData("type", val)}
+                                                    label="Tipo:"
+                                                    error={clientForm.errors.type}
+                                                />
                                             </div>
                                         )}
                                     </div>
@@ -1461,7 +1488,7 @@ export default function Create({
                                                 <strong>
                                                     {Math.round(
                                                         (parseFloat(clientForm.data.tm) * 1000) /
-                                                            (clientForm.data.sack.includes("50") ? 50 : 25)
+                                                            (clientForm.data.sack.includes("1000") ? 1000 : clientForm.data.sack.includes("50") ? 50 : 25)
                                                     ).toLocaleString()}
                                                 </strong>{" "}
                                                 sacos de {clientForm.data.sack} para {parseFloat(clientForm.data.tm).toFixed(2)} TM.

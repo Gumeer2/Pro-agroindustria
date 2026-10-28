@@ -195,6 +195,20 @@ class DocumentationController extends Controller
             }
         }
 
+        if ($validated['presentation'] === 'ENVASADO') {
+            $exitOp = !empty($validated['operator_name']) ? \App\Models\ExitOperator::where('name', $validated['operator_name'])->first() : null;
+            $assignment = $exitOp && !empty($validated['sales_order_id']) 
+                ? \App\Models\ClientOperatorAssignment::where('operator_id', $exitOp->id)->where('sales_order_id', $validated['sales_order_id'])->first() 
+                : null;
+            $sackType = $assignment?->type ?: ($exitOp?->type ?: ($assignment?->sack ?: ($exitOp?->sack ?: null)));
+            if ($sackType && !str_contains(strtoupper($validated['observations'] ?? ''), strtoupper($sackType))) {
+                $typeText = "TIPO DE SACO: " . strtoupper($sackType);
+                $validated['observations'] = !empty($validated['observations']) 
+                    ? trim($validated['observations']) . " " . $typeText 
+                    : $typeText;
+            }
+        }
+
         $order = ShipmentOrder::create($validated + ['status' => 'created']);
 
         // Sync Sales Order for pre-calculated totals (especially for ENVASADO)
@@ -344,6 +358,7 @@ class DocumentationController extends Controller
                 $presentation = $latestAssignment?->presentation ?? $op->presentation ?? 'GRANEL';
                 $tm = $latestAssignment?->tm ?? $op->tm ?? '';
                 $sack = $latestAssignment?->sack ?? $op->sack ?? '';
+                $type = $latestAssignment?->type ?? $op->type ?? '';
 
                 return [
                     'id' => $op->id,
@@ -363,6 +378,7 @@ class DocumentationController extends Controller
                     'presentation' => $presentation,
                     'programmed_tons' => $tm !== '' ? (string) $tm : '',
                     'sack' => $sack,
+                    'type' => $type,
                     'sales_order' => $salesOrder ? [
                         'id' => $salesOrder->id,
                         'folio' => $salesOrder->folio,
@@ -381,6 +397,7 @@ class DocumentationController extends Controller
                             'presentation' => $a->presentation,
                             'tm' => $a->tm,
                             'sack' => $a->sack,
+                            'type' => $a->type,
                             'folio' => $a->salesOrder?->folio,
                             'balance' => $a->salesOrder?->balance,
                             'client_id' => $a->salesOrder?->client_id,
@@ -690,7 +707,28 @@ class DocumentationController extends Controller
         // UI Requirement: If ENVASADO, ensure the product description doesn't have the weight suffix
         if ($order->presentation === 'ENVASADO') {
             $productText = trim(preg_replace('/-\s*\d+\s*KG/i', '', $productText));
+
+            // Reflejar el tipo de saco seleccionado en observaciones si no está presente
+            $exitOp = !empty($order->operator_name) ? \App\Models\ExitOperator::where('name', $order->operator_name)->first() : null;
+            $assignment = $exitOp && $order->sales_order_id 
+                ? \App\Models\ClientOperatorAssignment::where('operator_id', $exitOp->id)->where('sales_order_id', $order->sales_order_id)->first() 
+                : null;
+            $sackType = $assignment?->type ?: ($exitOp?->type ?: ($assignment?->sack ?: ($exitOp?->sack ?: null)));
+            if ($sackType && !str_contains(strtoupper($order->observations ?? ''), strtoupper($sackType))) {
+                $typeText = "TIPO DE SACO: " . strtoupper($sackType);
+                $order->observations = !empty($order->observations) 
+                    ? trim($order->observations) . " " . $typeText 
+                    : $typeText;
+            }
         }
+
+        $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        $stowagePlan = $order->stowage_plan ?? $history?->stowage_plan;
+        $stowagePlanStatus = $order->stowage_plan_status ?? $history?->stowage_plan_status ?? 'pending';
+        $samples = !empty($history?->samples) ? $history->samples : ($order->samples ?? []);
+        $samplingStatus = $history?->sampling_status ?? ($order->sampling_status ?? (count($samples) >= 80 ? 'completed' : 'pending'));
+        $samplingAvg = $history?->sampling_avg ?? ($order->sampling_avg ?? null);
+        $samplingCompletedAt = $history?->sampling_completed_at ?? ($order->sampling_completed_at ?? null);
 
         return $order->toArray() + [
             'product_code' => $productCode,
@@ -699,6 +737,14 @@ class DocumentationController extends Controller
             'scale_name' => $order->scale_name ?? $order->scale_operator?->name ?? null,
             'client_name' => $order->client?->business_name ?? $order->client?->name ?? 'N/A',
             'operator_name' => $order->operator_name ?? 'N/A',
+            'stowage_plan' => $stowagePlan,
+            'stowage_plan_status' => $stowagePlanStatus,
+            'stowage_plan_saved_at' => ($order->stowage_plan_saved_at ?? $history?->stowage_plan_saved_at) ? \Carbon\Carbon::parse($order->stowage_plan_saved_at ?? $history?->stowage_plan_saved_at)->toIso8601String() : null,
+            'stowage_plan_saved_by' => $order->stowage_plan_saved_by ?? $history?->stowage_plan_saved_by,
+            'samples' => $samples,
+            'sampling_status' => $samplingStatus,
+            'sampling_avg' => $samplingAvg,
+            'sampling_completed_at' => $samplingCompletedAt ? \Carbon\Carbon::parse($samplingCompletedAt)->toIso8601String() : null,
         ];
     }
 
@@ -793,6 +839,19 @@ class DocumentationController extends Controller
         // UI Requirement: If ENVASADO, ensure the product description doesn't have the weight suffix
         if ($order->presentation === 'ENVASADO') {
             $productText = trim(preg_replace('/-\s*\d+\s*KG/i', '', $productText));
+
+            // Reflejar el tipo de saco seleccionado en observaciones si no está presente
+            $exitOp = !empty($order->operator_name) ? \App\Models\ExitOperator::where('name', $order->operator_name)->first() : null;
+            $assignment = $exitOp && $order->sales_order_id 
+                ? \App\Models\ClientOperatorAssignment::where('operator_id', $exitOp->id)->where('sales_order_id', $order->sales_order_id)->first() 
+                : null;
+            $sackType = $assignment?->type ?: ($exitOp?->type ?: ($assignment?->sack ?: ($exitOp?->sack ?: null)));
+            if ($sackType && !str_contains(strtoupper($order->observations ?? ''), strtoupper($sackType))) {
+                $typeText = "TIPO DE SACO: " . strtoupper($sackType);
+                $order->observations = !empty($order->observations) 
+                    ? trim($order->observations) . " " . $typeText 
+                    : $typeText;
+            }
         }
 
         return Inertia::render('Documentation/Orders/PrintInstruction', [
@@ -969,6 +1028,20 @@ class DocumentationController extends Controller
             $destination = ShipmentDestination::where('name', strtoupper(trim($validated['destination'])))->first();
             if ($destination) {
                 $validated['destination_id'] = $destination->id;
+            }
+        }
+
+        if ($validated['presentation'] === 'ENVASADO') {
+            $exitOp = !empty($validated['operator_name']) ? \App\Models\ExitOperator::where('name', $validated['operator_name'])->first() : null;
+            $assignment = $exitOp && !empty($validated['sales_order_id']) 
+                ? \App\Models\ClientOperatorAssignment::where('operator_id', $exitOp->id)->where('sales_order_id', $validated['sales_order_id'])->first() 
+                : null;
+            $sackType = $assignment?->type ?: ($exitOp?->type ?: ($assignment?->sack ?: ($exitOp?->sack ?: null)));
+            if ($sackType && !str_contains(strtoupper($validated['observations'] ?? ''), strtoupper($sackType))) {
+                $typeText = "TIPO DE SACO: " . strtoupper($sackType);
+                $validated['observations'] = !empty($validated['observations']) 
+                    ? trim($validated['observations']) . " " . $typeText 
+                    : $typeText;
             }
         }
 
@@ -1624,11 +1697,7 @@ class DocumentationController extends Controller
             return response()->json(['error' => "Orden de embarque no encontrada: {$folio}"], 404);
         }
 
-        if ($order->lot_id) {
-            return response()->json([
-                'error' => "La orden de embarque {$order->folio} ya está registrada en el historial.",
-            ], 409);
-        }
+        $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
 
         $tractorPlate = trim($order->tractor_plate ?? '');
         if ($tractorPlate) {
@@ -1668,6 +1737,8 @@ class DocumentationController extends Controller
 
         return response()->json([
             'order' => $this->formatOrderForPrint($order),
+            'history' => $history ? $this->formatProcessHistoryItem($history) : null,
+            'is_registered' => !empty($order->lot_id) || !empty($history),
         ]);
     }
 
@@ -1795,12 +1866,24 @@ class DocumentationController extends Controller
             return response()->json(['message' => 'No se encontró el registro de proceso de embarque.'], 404);
         }
 
+        // Candado estricto para envasados: el estibador debe guardar la nota de estiba primero
+        $productText = mb_strtoupper(($order?->product ?? '') . ' ' . ($order?->presentation ?? ''));
+        $isEnvasado = str_contains($productText, 'ENVASADO') || str_contains($productText, 'SACO') || str_contains($productText, '25KG') || str_contains($productText, '50KG');
+        $stowageDone = ($order?->stowage_plan_status === 'completed' || !empty($order?->stowage_plan_saved_at)) 
+            || ($history && ($history->stowage_plan_status === 'completed' || !empty($history->stowage_plan_saved_at)));
+
+        if ($isEnvasado && !$stowageDone) {
+            return response()->json([
+                'message' => 'Candado Activo: El usuario Estibador debe guardar la Nota de Estiba (GLS-AP-FO-002) antes de registrar las muestras de ensacadora.',
+            ], 422);
+        }
+
         $samples = $request->input('samples', []);
         if (is_string($samples)) {
             $samples = json_decode($samples, true) ?: [];
         }
         $stowageCount = $request->input('stowage_count');
-        $isCompleted = count($samples) >= 40 || $request->boolean('is_completed');
+        $isCompleted = count($samples) >= 80 || $request->boolean('is_completed');
 
         $avg = null;
         if (count($samples) > 0) {
@@ -1824,12 +1907,21 @@ class DocumentationController extends Controller
         if ($isCompleted) {
             $updateData['sampling_completed_at'] = $history->sampling_completed_at ?? now();
         } else {
-            if (count($samples) < 40) {
+            if (count($samples) < 80) {
                 $updateData['sampling_completed_at'] = null;
             }
         }
 
         $history->update($updateData);
+
+        if ($order) {
+            $order->update([
+                'samples' => $samples,
+                'sampling_avg' => $avg,
+                'sampling_status' => $updateData['sampling_status'],
+                'sampling_completed_at' => $updateData['sampling_completed_at'] ?? null,
+            ]);
+        }
 
         return response()->json([
             'message' => 'Estibas y muestreo guardados correctamente en la tabla de historial.',
@@ -1872,8 +1964,143 @@ class DocumentationController extends Controller
             'samples' => $history->samples ?? [],
             'stowage_count' => $history->stowage_count,
             'sampling_completed_at' => $history->sampling_completed_at?->toIso8601String(),
-            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 40 ? 'completed' : 'pending'),
+            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 80 ? 'completed' : 'pending'),
             'sampling_avg' => $history->sampling_avg,
+        ]);
+    }
+
+    public function getStowagePlan(Request $request, string $id)
+    {
+        $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
+        if (!$order && $request->filled('shipment_order_id')) {
+            $order = ShipmentOrder::where('id', $request->input('shipment_order_id'))->orWhere('folio', $request->input('shipment_order_id'))->first();
+        }
+        if (!$order && $request->filled('folio')) {
+            $order = ShipmentOrder::where('folio', $request->input('folio'))->first();
+        }
+
+        $history = null;
+        if ($order) {
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        }
+        if (!$history) {
+            $history = ShipmentProcessHistory::find($id);
+            if ($history && !$order) {
+                $order = $history->shipmentOrder;
+            }
+        }
+        if (!$history && $request->filled('history_id')) {
+            $history = ShipmentProcessHistory::find($request->input('history_id'));
+            if ($history && !$order) {
+                $order = $history->shipmentOrder;
+            }
+        }
+
+        $stowagePlan = $history?->stowage_plan ?? $order?->stowage_plan ?? null;
+        $status = $history?->stowage_plan_status ?? $order?->stowage_plan_status ?? 'pending';
+
+        return response()->json([
+            'stowage_plan' => $stowagePlan,
+            'stowage_plan_status' => $status,
+            'stowage_plan_saved_at' => ($history?->stowage_plan_saved_at ?? $order?->stowage_plan_saved_at)?->toIso8601String(),
+            'stowage_plan_saved_by' => $history?->stowage_plan_saved_by ?? $order?->stowage_plan_saved_by,
+        ]);
+    }
+
+    public function saveStowagePlan(Request $request, string $id)
+    {
+        $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
+        if (!$order && $request->filled('shipment_order_id')) {
+            $order = ShipmentOrder::where('id', $request->input('shipment_order_id'))->orWhere('folio', $request->input('shipment_order_id'))->first();
+        }
+        if (!$order && $request->filled('folio')) {
+            $order = ShipmentOrder::where('folio', $request->input('folio'))->first();
+        }
+        if (!$order && $request->filled('order_id')) {
+            $order = ShipmentOrder::where('id', $request->input('order_id'))->orWhere('folio', $request->input('order_id'))->first();
+        }
+
+        $history = null;
+        if ($order) {
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        }
+        if (!$history) {
+            $history = ShipmentProcessHistory::find($id);
+            if ($history && !$order) {
+                $order = $history->shipmentOrder;
+            }
+        }
+        if (!$history && $request->filled('history_id')) {
+            $history = ShipmentProcessHistory::find($request->input('history_id'));
+            if ($history && !$order) {
+                $order = $history->shipmentOrder;
+            }
+        }
+
+        if (!$history && $order) {
+            $history = ShipmentProcessHistory::create([
+                'shipment_order_id' => $order->id,
+                'lot_id' => $order->lot_id,
+                'warehouse' => $order->warehouse,
+                'loading_administrator' => $order->loading_administrator ?? $request->user()?->name ?? 'Administrador',
+                'loading_squad_leader' => $order->loading_squad_leader,
+                'loading_assistant' => $order->loading_assistant,
+                'started_at' => $order->loaded_at ?? now(),
+                'status' => 'loading',
+            ]);
+        }
+
+        if (!$history && !$order) {
+            return response()->json(['message' => 'No se encontró la orden ni el registro de historial de embarque.'], 404);
+        }
+
+        $stowagePlan = $request->input('stowage_plan', []);
+        if (is_string($stowagePlan)) {
+            $stowagePlan = json_decode($stowagePlan, true) ?: [];
+        }
+
+        $now = now();
+        $userId = auth()->id();
+
+        $updateData = [
+            'stowage_plan' => $stowagePlan,
+            'stowage_plan_status' => 'completed',
+            'stowage_plan_saved_at' => $now,
+            'stowage_plan_saved_by' => $userId,
+        ];
+
+        // Also if stowages array has values, calculate non-empty pallets count to populate stowage_count if empty
+        if (isset($stowagePlan['stowages']) && is_array($stowagePlan['stowages'])) {
+            $nonEmptyStowages = collect($stowagePlan['stowages'])->filter(fn($val) => !is_null($val) && (float)$val > 0)->count();
+            if ($nonEmptyStowages > 0) {
+                $updateData['stowage_count'] = $nonEmptyStowages;
+            }
+        }
+
+        if ($history) {
+            $history->update($updateData);
+        }
+
+        if ($order) {
+            $order->update([
+                'stowage_plan' => $stowagePlan,
+                'stowage_plan_status' => 'completed',
+                'stowage_plan_saved_at' => $now,
+                'stowage_plan_saved_by' => $userId,
+            ]);
+        }
+
+        $freshHistory = $history ? $history->fresh(['shipmentOrder.items.product', 'lot']) : null;
+        $formatted = $freshHistory
+            ? $this->formatProcessHistoryItem($freshHistory)
+            : $this->formatLoadingHistoryItem($order->fresh(['items.product', 'lot']));
+
+        return response()->json([
+            'message' => 'Plan de estiba guardado exitosamente.',
+            'stowage_plan' => $stowagePlan,
+            'stowage_plan_status' => 'completed',
+            'stowage_plan_saved_at' => $now->toIso8601String(),
+            'history' => $formatted,
         ]);
     }
 
@@ -2005,8 +2232,12 @@ class DocumentationController extends Controller
             'stowage_count' => $history->stowage_count,
             'samples' => $history->samples ?? [],
             'sampling_completed_at' => $history->sampling_completed_at?->toIso8601String(),
-            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 40 ? 'completed' : (count($history->samples ?? []) > 0 ? 'in_progress' : 'pending')),
+            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 80 ? 'completed' : (count($history->samples ?? []) > 0 ? 'in_progress' : 'pending')),
             'sampling_avg' => $history->sampling_avg,
+            'stowage_plan' => $history->stowage_plan ?? $order?->stowage_plan,
+            'stowage_plan_status' => $history->stowage_plan_status ?? $order?->stowage_plan_status ?? 'pending',
+            'stowage_plan_saved_at' => ($history->stowage_plan_saved_at ?? $order?->stowage_plan_saved_at)?->toIso8601String(),
+            'stowage_plan_saved_by' => $history->stowage_plan_saved_by ?? $order?->stowage_plan_saved_by,
         ];
     }
 
@@ -2038,8 +2269,12 @@ class DocumentationController extends Controller
             'stowage_count' => $history?->stowage_count,
             'samples' => $history?->samples ?? [],
             'sampling_completed_at' => $history?->sampling_completed_at?->toIso8601String(),
-            'sampling_status' => $history?->sampling_status ?? (count($history?->samples ?? []) >= 40 ? 'completed' : (count($history?->samples ?? []) > 0 ? 'in_progress' : 'pending')),
+            'sampling_status' => $history?->sampling_status ?? (count($history?->samples ?? []) >= 80 ? 'completed' : (count($history?->samples ?? []) > 0 ? 'in_progress' : 'pending')),
             'sampling_avg' => $history?->sampling_avg,
+            'stowage_plan' => $history?->stowage_plan ?? $order->stowage_plan,
+            'stowage_plan_status' => $history?->stowage_plan_status ?? $order->stowage_plan_status ?? 'pending',
+            'stowage_plan_saved_at' => ($history?->stowage_plan_saved_at ?? $order->stowage_plan_saved_at)?->toIso8601String(),
+            'stowage_plan_saved_by' => $history?->stowage_plan_saved_by ?? $order->stowage_plan_saved_by,
         ];
     }
 

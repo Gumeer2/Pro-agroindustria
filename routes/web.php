@@ -345,6 +345,8 @@ Route::middleware('auth')->group(function () {
                 Route::get('/documentation/shipment-orders/loading-history', 'loadingHistory')->name('documentation.shipment-orders.loading-history');
                 Route::post('/documentation/shipment-orders/{id}/save-sampling', 'saveSampling')->name('documentation.shipment-orders.save-sampling');
                 Route::get('/documentation/shipment-orders/{id}/sampling', 'getSampling')->name('documentation.shipment-orders.get-sampling');
+                Route::post('/documentation/shipment-orders/{id}/save-stowage-plan', 'saveStowagePlan')->name('documentation.shipment-orders.save-stowage-plan');
+                Route::get('/documentation/shipment-orders/{id}/stowage-plan', 'getStowagePlan')->name('documentation.shipment-orders.get-stowage-plan');
                 Route::patch('/documentation/shipment-orders/{id}/finish-loading', 'finishLoading')->name('documentation.shipment-orders.finish-loading');
                 Route::delete('/documentation/shipment-orders/{id}/delete-loading', 'deleteLoading')->name('documentation.shipment-orders.delete-loading');
             Route::put('/documentation/shipment-orders/{id}', 'updateOrder')->name('documentation.update');
@@ -392,6 +394,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/shipment-destinations', [\App\Http\Controllers\ShipmentDestinationController::class , 'store'])->name('shipment-destinations.store');
         Route::put('/shipment-destinations/{destination}', [\App\Http\Controllers\ShipmentDestinationController::class , 'update'])->name('shipment-destinations.update');
         Route::delete('/shipment-destinations/{destination}', [\App\Http\Controllers\ShipmentDestinationController::class , 'destroy'])->name('shipment-destinations.destroy');
+
+        // Exit Operator Types (Manageable Types)
+        Route::get('/exit-operator-types', [\App\Http\Controllers\ExitOperatorTypeController::class, 'index'])->name('exit-operator-types.index');
+        Route::post('/exit-operator-types', [\App\Http\Controllers\ExitOperatorTypeController::class, 'store'])->name('exit-operator-types.store');
+        Route::put('/exit-operator-types/{exit_operator_type}', [\App\Http\Controllers\ExitOperatorTypeController::class, 'update'])->name('exit-operator-types.update');
+        Route::delete('/exit-operator-types/{exit_operator_type}', [\App\Http\Controllers\ExitOperatorTypeController::class, 'destroy'])->name('exit-operator-types.destroy');
 
         Route::resource('apt', \App\Http\Controllers\AptController::class)->only(['index']);
 

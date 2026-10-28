@@ -15,6 +15,8 @@ class ShipmentProcessHistory extends Model
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
         'stowage_count' => 'integer',
+        'stowage_plan' => 'array',
+        'stowage_plan_saved_at' => 'datetime',
         'samples' => 'array',
         'sampling_completed_at' => 'datetime',
         'sampling_avg' => 'float',

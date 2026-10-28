@@ -143,6 +143,7 @@ class ExitOperatorController extends Controller
             'operators' => $operators,
             'sales_orders' => $salesOrders,
             'client_operators' => $clientAssignments,
+            'exit_operator_types' => \App\Models\ExitOperatorType::orderBy('name')->get(),
             'current_operational_date' => $currentOperationalDate,
             'from' => $from,
             'module' => ($isClientUser || $from === 'clients') ? 'clients' : 'documentation',
@@ -168,6 +169,7 @@ class ExitOperatorController extends Controller
                 'presentation' => 'required|string|max:100',
                 'tm' => 'required|numeric|min:0.01',
                 'sack' => 'nullable|string|max:100',
+                'type' => 'nullable|string|max:100',
             ], [
                 'sales_order_id.required' => 'Debe seleccionar una Orden de Venta (OV).',
                 'operator_id.required' => 'Debe seleccionar un operador.',
@@ -230,6 +232,7 @@ class ExitOperatorController extends Controller
 
             $isGranel = mb_strtoupper(trim($validated['presentation']), 'UTF-8') === 'GRANEL';
             $sackVal = (!$isGranel && !empty($validated['sack'])) ? mb_strtoupper(trim($validated['sack']), 'UTF-8') : null;
+            $typeVal = (!$isGranel && !empty($validated['type'])) ? trim($validated['type']) : null;
 
             $currentAssignment = !empty($validated['assignment_id'])
                 ? ClientOperatorAssignment::find($validated['assignment_id'])
@@ -243,6 +246,7 @@ class ExitOperatorController extends Controller
                     'tm' => $validated['tm'],
                     'original_tm' => $currentAssignment->destare_status === 'completed' ? $currentAssignment->original_tm : $validated['tm'],
                     'sack' => $sackVal,
+                    'type' => $typeVal,
                 ]);
             } else {
                 ClientOperatorAssignment::create([
@@ -253,6 +257,7 @@ class ExitOperatorController extends Controller
                     'original_tm' => $validated['tm'],
                     'destare_status' => 'pending',
                     'sack' => $sackVal,
+                    'type' => $typeVal,
                 ]);
             }
 
@@ -263,6 +268,7 @@ class ExitOperatorController extends Controller
                 'presentation' => mb_strtoupper(trim($validated['presentation']), 'UTF-8'),
                 'tm' => $validated['tm'],
                 'sack' => $sackVal,
+                'type' => $typeVal,
             ]);
 
             foreach ($operator->clients as $client) {
@@ -271,6 +277,7 @@ class ExitOperatorController extends Controller
                     'presentation' => mb_strtoupper(trim($validated['presentation']), 'UTF-8'),
                     'tm' => $validated['tm'],
                     'sack' => $sackVal,
+                    'type' => $typeVal,
                 ]);
             }
 

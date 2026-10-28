@@ -19,6 +19,7 @@ class ClientOperatorAssignment extends Model
         'destared_at',
         'loading_order_id',
         'sack',
+        'type',
     ];
 
     protected $casts = [

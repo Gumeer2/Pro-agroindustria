@@ -16,6 +16,10 @@ class ShipmentOrder extends Model
         'cancelled_at' => 'datetime',
         'loaded_at' => 'datetime',
         'loading_finished_at' => 'datetime',
+        'stowage_plan' => 'array',
+        'stowage_plan_saved_at' => 'datetime',
+        'samples' => 'array',
+        'sampling_completed_at' => 'datetime',
     ];
 
     public function sales_order()

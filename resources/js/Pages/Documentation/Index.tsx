@@ -21,7 +21,7 @@ export default function Index({ auth }: { auth: any }) {
             hover: "hover:border-amber-500",
         },
         {
-            name: "Gestion Operadores Salida",
+            name: "Operadores de Salida",
             icon: Anchor, // or another icon like Users
             href: route("documentation.exit-operators.index"),
             description: "Registro de operadores de salida, lista de operadores y qr de operadores.",

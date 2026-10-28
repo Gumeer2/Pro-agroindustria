@@ -24,6 +24,7 @@ class ExitOperator extends Model
         'presentation',
         'tm',
         'sack',
+        'type',
         'sales_order_id',
         'client_ids',
         'status',

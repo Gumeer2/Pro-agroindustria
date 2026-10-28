@@ -476,10 +476,15 @@ export default function Create({
                 autoFields.programmed_tons = String(operator.programmed_tons);
             }
 
-            // Observaciones con buque si aplica
+            // Observaciones con buque y tipo de saco si aplica
             const vesselName = matchedSo?.vessel?.name || operator.sales_order?.vessel_name;
-            if (vesselName) {
-                autoFields.observations = `PRODUCTO PROPIEDAD DE ${clientName}, PROVENIENTE DEL BUQUE "${vesselName}".`;
+            const vesselObs = vesselName ? `PRODUCTO PROPIEDAD DE ${clientName}, PROVENIENTE DEL BUQUE "${vesselName}".` : "";
+            const isEnvasado = (operator.presentation || "").toUpperCase() === "ENVASADO";
+            const sackTypeVal = isEnvasado ? (operator.type || operator.sack || "") : "";
+            const sackObs = sackTypeVal ? `TIPO DE SACO: ${sackTypeVal.toUpperCase()}` : "";
+            const combinedObs = [vesselObs, sackObs].filter(Boolean).join(" ");
+            if (combinedObs) {
+                autoFields.observations = combinedObs;
             }
         }
 
@@ -506,13 +511,18 @@ export default function Create({
         const so = sales_orders.find((s) => s.id.toString() === soId);
 
         if (so) {
-            const updatedObservations = so.vessel
+            const vesselObs = so.vessel
                 ? `PRODUCTO PROPIEDAD DE ${so.client?.business_name || ""}, PROVENIENTE DEL BUQUE "${so.vessel.name}".`
                 : "";
 
             const matchAssignment = operatorAssignments.find(
                 (a) => a.sales_order_id?.toString() === soId.toString()
             );
+
+            const isEnvasado = matchAssignment ? (matchAssignment.presentation || "").toUpperCase() === "ENVASADO" : data.presentation === "ENVASADO";
+            const sackTypeVal = isEnvasado ? (matchAssignment?.type || matchAssignment?.sack || "") : "";
+            const sackObs = sackTypeVal ? `TIPO DE SACO: ${sackTypeVal.toUpperCase()}` : "";
+            const finalObservations = [vesselObs, sackObs].filter(Boolean).join(" ");
 
             setData((data) => ({
                 ...data,
@@ -523,7 +533,7 @@ export default function Create({
                 address: so.client?.address || "",
                 product: so.product?.name || "",
                 balance: so.balance ? so.balance.toString() : "0",
-                observations: updatedObservations,
+                observations: finalObservations,
                 presentation: matchAssignment?.presentation ? matchAssignment.presentation.toUpperCase() : data.presentation,
                 sack_type: matchAssignment?.sack ? matchAssignment.sack.replace(/[^0-9]/g, "") : data.sack_type,
                 programmed_tons: matchAssignment?.tm ? String(matchAssignment.tm) : (matchAssignment ? "" : data.programmed_tons),

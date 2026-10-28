@@ -12,7 +12,7 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
 
     const safeOrder = order || {};
 
-    const gridCols = Array.from({ length: 24 }, (_, i) => i + 1);
+    const gridCols = Array.from({ length: 24 }, (_, i) => 24 - i);
 
     const borderClass = `border ${!tenant || tenant?.slug === 'proagro' ? 'border-green-800' : (tenant?.primary_color ? 'border-gray-800' : 'border-green-800')}`;
     const bgColor = !tenant || tenant?.slug === 'proagro' ? 'bg-green-200' : (tenant?.primary_color ? 'bg-gray-200' : 'bg-green-200');
@@ -73,13 +73,13 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                     <div className={`flex-1 flex ${borderClass} border-b`}>
                         <div className={`w-[40%] ${bgColor} font-bold flex items-center justify-center ${borderClass} border-r`}>TURNO</div>
                         <div className="w-[60%] flex items-center justify-center px-1 font-bold">
-                            {safeOrder.shift || ""}
+                            {safeOrder.stowage_plan?.shift || safeOrder.shift || ""}
                         </div>
                     </div>
                     <div className={`flex-1 flex ${borderClass}`}>
                         <div className={`w-[40%] ${bgColor} font-bold flex items-center justify-center ${borderClass} border-r`}>HORA</div>
                         <div className="w-[60%] flex items-center justify-center px-1 font-bold">
-                            {safeOrder.created_at ? new Date(safeOrder.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) : ""}
+                            {safeOrder.stowage_plan?.hour || (safeOrder.created_at ? new Date(safeOrder.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) : "")}
                         </div>
                     </div>
                 </div>
@@ -157,11 +157,11 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                         </div>
                     </div>
                 </div>
-                {/* Supervisor (Cargando el nombre del auxiliar del formulario) */}
+                {/* Supervisor (Cargando el nombre del auxiliar del formulario o plan de estiba) */}
                 <div className="w-[20%] flex flex-col">
                     <div className={`${bgColor} text-[7px] text-center font-bold ${borderClass} border-b p-0.5`}>SUPERVISOR</div>
                     <div className="flex-1 flex items-center justify-center font-bold text-[7.5px] uppercase px-1 text-center truncate">
-                        {safeOrder.loading_assistant || safeOrder.assistant || safeOrder.loading_administrator || ""}
+                        {safeOrder.stowage_plan?.supervisor || safeOrder.loading_assistant || safeOrder.assistant || safeOrder.loading_administrator || ""}
                     </div>
                 </div>
             </div>
@@ -181,9 +181,17 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                         </thead>
                         <tbody>
                             <tr className="h-10 bg-white">
-                                {gridCols.map(col => (
-                                    <td key={`cell-${col}`} className="border border-green-800"></td>
-                                ))}
+                                {gridCols.map(col => {
+                                    const val = safeOrder.stowage_plan?.stowages?.[col - 1];
+                                    const isTachado = val === 'X' || val === 'x' || val === true || val === 1 || val === '1' || (typeof val === 'number' && val > 0);
+                                    return (
+                                        <td key={`cell-${col}`} className="border border-green-800 font-black text-center text-[13px] leading-none">
+                                            {isTachado ? (
+                                                <span className="text-black font-black">X</span>
+                                            ) : (val !== undefined && val !== null ? val : "")}
+                                        </td>
+                                    );
+                                })}
                             </tr>
                         </tbody>
                     </table>
@@ -207,8 +215,8 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                     { label: 'DESCRIPCIÓN DEL PRODUCTO', width: '40%', value: safeOrder.product_text || safeOrder.product?.name || safeOrder.product || "" },
                     { label: 'NO. DE ALMACEN', width: '15%', value: safeOrder.warehouse ? safeOrder.warehouse.replace("Almacen ", "") : "" },
                     { label: 'TOTAL DE SACOS', width: '10%', value: calculateSacks() },
-                    { label: 'AJUSTE', width: '10%', value: "" },
-                    { label: 'JUSTIFICAR', width: '10%', value: "" }
+                    { label: 'AJUSTE', width: '10%', value: safeOrder.stowage_plan?.adjustment || "" },
+                    { label: 'JUSTIFICAR', width: '10%', value: safeOrder.stowage_plan?.justification || "" }
                 ].map((col, idx) => (
                     <div key={idx} className={`flex flex-col ${idx < 5 ? borderClass + ' border-r' : ''}`} style={{ width: col.width }}>
                         <div className={`bg-gray-100 ${borderClass} border-b text-center font-bold text-[6.5px] p-0.5 uppercase h-3.5 flex items-center justify-center`}>
@@ -221,15 +229,15 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                 ))}
             </div>
 
-            {/* Lot / Verificador / Line Row (VERIFICADOR en blanco) */}
+            {/* Lot / Verificador / Line Row */}
             <div className={`w-full ${borderClass} border-2 mb-1 flex h-8`}>
                 {[
                     { label: 'NO. DE LOTE', width: '15%', value: safeOrder.lot_folio || "" },
-                    { label: 'VERIFICADOR', width: '20%', value: "" },
-                    { label: 'LINEA 1', width: '16.25%', value: "" },
-                    { label: 'LINEA 2', width: '16.25%', value: "" },
-                    { label: 'LINEA 3', width: '16.25%', value: "" },
-                    { label: 'LINEA 4', width: '16.25%', value: "" }
+                    { label: 'VERIFICADOR', width: '20%', value: safeOrder.stowage_plan?.verifier || "" },
+                    { label: 'LINEA 1', width: '16.25%', value: safeOrder.stowage_plan?.line_1 || "" },
+                    { label: 'LINEA 2', width: '16.25%', value: safeOrder.stowage_plan?.line_2 || "" },
+                    { label: 'LINEA 3', width: '16.25%', value: safeOrder.stowage_plan?.line_3 || "" },
+                    { label: 'LINEA 4', width: '16.25%', value: safeOrder.stowage_plan?.line_4 || "" }
                 ].map((col, idx) => (
                     <div key={idx} className={`flex flex-col ${idx < 5 ? borderClass + ' border-r' : ''}`} style={{ width: col.width }}>
                         <div className={`bg-gray-100 ${borderClass} border-b text-center font-bold text-[6.5px] p-0.5 uppercase h-3 flex items-center justify-center`}>
@@ -263,8 +271,8 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                 <div className="w-[55%] flex flex-col p-1">
                     <div className={`${accentColor} ${borderClass} text-[7px] font-bold text-center mb-0.5`}>COMENTARIOS</div>
                     <div className={`flex-1 ${borderClass} bg-white p-1`}>
-                        {safeOrder.observations ? (
-                            <span className="text-[7.5px] text-gray-700 uppercase">{safeOrder.observations}</span>
+                        {safeOrder.stowage_plan?.comments || safeOrder.observations ? (
+                            <span className="text-[7.5px] text-gray-700 uppercase">{safeOrder.stowage_plan?.comments || safeOrder.observations}</span>
                         ) : null}
                     </div>
                 </div>

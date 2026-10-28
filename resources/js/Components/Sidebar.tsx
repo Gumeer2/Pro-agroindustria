@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship, Building2 } from 'lucide-react';
+import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship, Building2, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -17,8 +17,13 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
     const isClientRole = roles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'clientes') &&
         !roles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'admin');
 
+    const isEstibadorRole = roles.some((r: any) => {
+        const name = (typeof r === 'string' ? r : r.name || '').toLowerCase();
+        return name === 'estibadores' || name === 'estibador';
+    }) && !roles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'admin');
+
     const allLinks = [
-        { name: 'Inicio', href: route('dashboard'), icon: LayoutDashboard, show: !isClientRole, module: 'dashboard', color: 'text-indigo-400' },
+        { name: 'Inicio', href: route('dashboard'), icon: LayoutDashboard, show: !isClientRole && !isEstibadorRole, module: 'dashboard', color: 'text-indigo-400' },
         { name: 'Comercialización', href: route('sales.index'), icon: ClipboardList, permission: 'view commercialization', module: 'sales', color: 'text-blue-400' },
         { name: 'Tráfico', href: route('traffic.index'), icon: Truck, permission: 'view traffic', role: 'Admin', module: 'traffic', color: 'text-orange-400' },
         { name: 'Vigilancia', icon: Search, href: route('surveillance.index'), permission: 'view surveillance', module: 'surveillance', color: 'text-red-400' },
@@ -43,6 +48,16 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
 
     if (isClientRole) {
         visibleLinks = visibleLinks.filter((link: any) => link.module === 'clients');
+    } else if (isEstibadorRole) {
+        visibleLinks = [
+            {
+                name: 'Proceso de Embarques',
+                href: route('apt.shipment-process'),
+                icon: Layers,
+                module: 'apt',
+                color: 'text-emerald-400',
+            },
+        ];
     }
 
     return (
@@ -55,7 +70,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
             {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent py-6 space-y-8">
                 <div className="px-4 flex flex-col items-center">
-                    <Link href={isClientRole ? route('clients.index') : route('dashboard')} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
+                    <Link href={isClientRole ? route('clients.index') : (isEstibadorRole ? route('apt.shipment-process') : route('dashboard'))} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
                         <img
                             src={props.tenant?.logo || `/images/logovecode.png`}
                             alt={props.tenant?.name || "Logo"}

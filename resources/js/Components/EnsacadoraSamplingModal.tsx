@@ -23,6 +23,7 @@ import {
     ArrowRight,
     Lock,
     Cloud,
+    RotateCcw,
 } from "lucide-react";
 
 interface SampleRecord {
@@ -31,6 +32,8 @@ interface SampleRecord {
     ensacadora: 1 | 2;
     envasadora?: 1 | 2;
     weight: number;
+    time?: string;
+    captured_at?: string;
 }
 
 interface Props {
@@ -48,7 +51,7 @@ export default function EnsacadoraSamplingModal({
     onClose,
     order,
     stowageCount,
-    totalSamplesCount = 40,
+    totalSamplesCount = 80,
     onOpenPrintDocuments,
     onSave,
 }: Props) {
@@ -133,19 +136,16 @@ export default function EnsacadoraSamplingModal({
     useEffect(() => {
         if (isOpen && order) {
             isLoadedRef.current = false;
-            
-            let loadedSamples: SampleRecord[] = [];
-            let loadedIsSaved = false;
-            let loadedSavedAt: string | null = null;
 
-            // 1. Check if order passed in props already has samples from shipment_process_histories
-            if (Array.isArray(order.samples) && order.samples.length > 0) {
-                loadedSamples = order.samples;
-                loadedIsSaved = order.samples.length === 40 || order.sampling_status === "completed";
-                loadedSavedAt = order.sampling_completed_at || null;
-            }
+            // 1. Inicializar estrictamente desde los datos de la orden en DB
+            const initialSamples = Array.isArray(order.samples) ? order.samples : [];
+            const initialSaved = initialSamples.length >= 80 || order.sampling_status === "completed";
+            setSamples(initialSamples);
+            setIsSaved(initialSaved);
+            setSavedAt(order.sampling_completed_at || null);
+            setLastAutosavedAt(null);
 
-            // 2. Check localStorage drafts
+            // 2. Claves de almacenamiento de esta orden
             const primaryKey = getStorageKey();
             const candidateKeys = [
                 primaryKey,
@@ -157,66 +157,35 @@ export default function EnsacadoraSamplingModal({
                 order.folio ? `ensacadora_sampling_${order.folio}` : null,
                 order.order_number ? `ensacadora_sampling_order_${order.order_number}` : null,
                 "ensacadora_sampling_draft_temp",
+                "envasadora_sampling_draft_temp",
             ].filter(Boolean) as string[];
 
-            try {
-                let bestPayload: any = null;
-                let maxCount = loadedSamples.length;
-
-                for (const k of candidateKeys) {
-                    try {
-                        const raw = localStorage.getItem(k);
-                        if (!raw) continue;
-                        const parsed = JSON.parse(raw);
-                        if (parsed && Array.isArray(parsed.samples)) {
-                            const count = parsed.samples.length;
-                            if (count > maxCount) {
-                                maxCount = count;
-                                bestPayload = parsed;
-                            }
-                        }
-                    } catch (e) {}
-                }
-
-                if (bestPayload && Array.isArray(bestPayload.samples) && bestPayload.samples.length > loadedSamples.length) {
-                    loadedSamples = bestPayload.samples;
-                    loadedIsSaved = Boolean(bestPayload.isSaved) && loadedSamples.length === 40;
-                    loadedSavedAt = loadedIsSaved ? (bestPayload.savedAt || null) : null;
-                }
-            } catch (e) {}
-
-            if (loadedSamples.length > 0) {
-                setSamples(loadedSamples);
-                setIsSaved(loadedIsSaved);
-                setSavedAt(loadedSavedAt);
-            } else {
-                setSamples([]);
-                setIsSaved(false);
-                setSavedAt(null);
-                setLastAutosavedAt(null);
-            }
-
-            // 3. Fetch from API to ensure fresh database state from shipment_process_histories
-            // 3. Fetch from API to ensure fresh database state from shipment_process_histories
+            // 3. Consultar la base de datos de manera autoritativa
             const currentOrderId = order.id || order.shipment_order_id || order.folio;
             if (currentOrderId) {
-                try {
-                    axios
-                        .get(route("documentation.shipment-orders.get-sampling", currentOrderId))
-                        .then((res) => {
-                            if (res.data?.samples && Array.isArray(res.data.samples) && res.data.samples.length > 0) {
-                                setSamples(res.data.samples);
-                                if (res.data.samples.length >= 40 || res.data.sampling_completed_at) {
-                                    setIsSaved(true);
-                                    setSavedAt(res.data.sampling_completed_at || null);
-                                }
-                            } else if (loadedSamples.length > 0) {
-                                // If database is empty or has fewer samples, immediately sync the loaded local samples to DB!
-                                saveSamplesToDatabase(loadedSamples, loadedIsSaved);
+                axios
+                    .get(route("documentation.shipment-orders.get-sampling", currentOrderId))
+                    .then((res) => {
+                        const dbSamples = Array.isArray(res.data?.samples) ? res.data.samples : [];
+                        if (dbSamples.length > 0) {
+                            setSamples(dbSamples);
+                            if (dbSamples.length >= 80 || res.data.sampling_completed_at) {
+                                setIsSaved(true);
+                                setSavedAt(res.data.sampling_completed_at || null);
                             }
-                        })
-                        .catch(() => {});
-                } catch (e) {}
+                        } else {
+                            // En base de datos no hay muestras: garantizar 0 y limpiar borradores
+                            setSamples([]);
+                            setIsSaved(false);
+                            setSavedAt(null);
+                            candidateKeys.forEach((k) => {
+                                try {
+                                    localStorage.removeItem(k);
+                                } catch (err) {}
+                            });
+                        }
+                    })
+                    .catch(() => {});
             }
 
             setSampleInput("");
@@ -327,7 +296,7 @@ export default function EnsacadoraSamplingModal({
     // Autoguardado continuo de respaldo en tiempo real
     useEffect(() => {
         if (!isLoadedRef.current || !order || !isOpen) return;
-        const effectiveIsSaved = isSaved && samples.length === 40;
+        const effectiveIsSaved = isSaved && samples.length === 80;
 
         const currentOrderId = order.id || order.shipment_order_id || order.folio;
         if (currentOrderId && samples.length > 0) {
@@ -339,8 +308,8 @@ export default function EnsacadoraSamplingModal({
         }
     }, [samples, isSaved, savedAt, selectedEnsacadora, stowageCount, order?.id, order?.folio]);
 
-    // Bloqueo estricto: solo está bloqueado si TIENE LAS 40 ESTIBAS y fue guardado
-    const isLocked = isSaved && samples.length === 40;
+    // Bloqueo estricto: solo está bloqueado si TIENE LAS 80 ESTIBAS y fue guardado
+    const isLocked = isSaved && samples.length === 80;
 
     // Proteger contra cierre involuntario de pestaña/navegador si hay estibas sin guardar
     useEffect(() => {
@@ -356,7 +325,7 @@ export default function EnsacadoraSamplingModal({
 
     const handleSave = async () => {
         const now = new Date().toISOString();
-        const isCompleted = samples.length === 40;
+        const isCompleted = samples.length === 80;
 
         // Guardar directamente en la base de datos MariaDB (esperando confirmación)
         await saveSamplesToDatabase(samples, isCompleted);
@@ -370,7 +339,7 @@ export default function EnsacadoraSamplingModal({
             Swal.fire({
                 icon: "success",
                 title: "¡Muestreo Completado y Guardado!",
-                html: "Se han guardado las <b>40 muestras</b> en la base de datos con éxito.<br/><br/>Muestreo finalizado y certificado.",
+                html: "Se han guardado las <b>80 muestras</b> en la base de datos con éxito.<br/><br/>Muestreo finalizado y certificado.",
                 confirmButtonColor: "#16a34a",
                 confirmButtonText: "Aceptar",
             });
@@ -385,7 +354,7 @@ export default function EnsacadoraSamplingModal({
                 position: "top-end",
                 icon: "info",
                 title: "Avance guardado",
-                text: `${samples.length} de 40 muestras guardadas en la base de datos. Se sincronizarán en cualquier navegador.`,
+                text: `${samples.length} de 80 muestras guardadas en la base de datos. Se sincronizarán en cualquier navegador.`,
                 showConfirmButton: false,
                 timer: 3000,
             });
@@ -397,35 +366,94 @@ export default function EnsacadoraSamplingModal({
         handleSave();
     };
 
+    const handleClearAllSamples = () => {
+        Swal.fire({
+            title: "¿Reiniciar muestreo a 0?",
+            text: "Se eliminarán todas las muestras de esta orden y el conteo volverá a 0.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#ef4444",
+            cancelButtonColor: "#64748b",
+            confirmButtonText: "Sí, reiniciar a 0",
+            cancelButtonText: "Cancelar",
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                setSamples([]);
+                setIsSaved(false);
+                setSavedAt(null);
+                setLastAutosavedAt(null);
+                await saveSamplesToDatabase([], false);
+
+                const id = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
+                const candidateKeys = [
+                    getStorageKey(),
+                    id ? `ensacadora_sampling_order_${id}` : null,
+                    id ? `ensacadora_sampling_${id}` : null,
+                    id ? `envasadora_sampling_order_${id}` : null,
+                    id ? `envasadora_sampling_${id}` : null,
+                    order?.folio ? `ensacadora_sampling_order_${order.folio}` : null,
+                    order?.folio ? `ensacadora_sampling_${order.folio}` : null,
+                    order?.id ? `ensacadora_sampling_order_${order.id}` : null,
+                    "ensacadora_sampling_draft_temp",
+                    "envasadora_sampling_draft_temp",
+                ].filter(Boolean) as string[];
+                candidateKeys.forEach((k) => {
+                    try { localStorage.removeItem(k); } catch (e) {}
+                });
+
+                if (onSave) {
+                    await onSave([]);
+                }
+
+                Swal.fire({
+                    icon: "success",
+                    title: "Muestreo Reiniciado",
+                    text: "Se han eliminado todas las muestras. El conteo está en 0.",
+                    timer: 1800,
+                    showConfirmButton: false,
+                });
+            }
+        });
+    };
+
     const handleSelectEnsacadora = (env: 1 | 2) => {
         if (isLocked) return;
         const weightToSave = pendingWeight !== null ? pendingWeight : parseFloat(sampleInput);
         if (weightToSave && !isNaN(weightToSave) && weightToSave > 0) {
             const countForThisEnv = samples.filter((s) => (s.ensacadora || s.envasadora) === env).length;
-            if (countForThisEnv >= 20) {
+            if (countForThisEnv >= 40) {
                 Swal.fire({
                     icon: "warning",
                     title: `ENS-${env} completada`,
-                    text: `La ensacadora ENS-${env} ya cuenta con sus 20 muestras capturadas. Por favor seleccione la otra ensacadora.`,
+                    text: `La ensacadora ENS-${env} ya cuenta con sus 40 muestras capturadas. Por favor seleccione la otra ensacadora.`,
                     confirmButtonColor: "#4f46e5",
                 });
                 return;
             }
-            if (samples.length >= 40) {
+            if (samples.length >= 80) {
                 Swal.fire({
                     icon: "info",
-                    title: "40 muestras completadas",
-                    text: "Ya se completaron las 40 muestras requeridas en total. Por favor guarde el muestreo.",
+                    title: "80 muestras completadas",
+                    text: "Ya se completaron las 80 muestras requeridas en total. Por favor guarde el muestreo.",
                     confirmButtonColor: "#16a34a",
                 });
                 return;
             }
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString("es-MX", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: true,
+            });
             const newRecord: SampleRecord = {
                 id: Date.now() + Math.random(),
                 num: countForThisEnv + 1,
                 ensacadora: env,
                 envasadora: env,
                 weight: weightToSave,
+                time: timeStr,
+                captured_at: now.toISOString(),
             };
             const updated = [...samples, newRecord];
             setSamples(updated);
@@ -555,11 +583,11 @@ export default function EnsacadoraSamplingModal({
     const handleAddSample = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (isLocked) return;
-        if (samples.length >= 40) {
+        if (samples.length >= 80) {
             Swal.fire({
                 icon: "info",
-                title: "40 muestras completadas",
-                text: "Ya se ha capturado el total de 40 muestras requeridas. Haga clic en 'Guardar Muestreo' para finalizar y bloquear el registro.",
+                title: "80 muestras completadas",
+                text: "Ya se ha capturado el total de 80 muestras requeridas. Haga clic en 'Guardar Muestreo' para finalizar y bloquear el registro.",
                 confirmButtonColor: "#16a34a",
             });
             return;
@@ -587,7 +615,7 @@ export default function EnsacadoraSamplingModal({
         if (isNaN(val) || val <= 0) return;
         const updated = samples.map((s) => (s.id === id ? { ...s, weight: val } : s));
         setSamples(updated);
-        saveSamplesToDatabase(updated, isSaved && updated.length === 40);
+        saveSamplesToDatabase(updated, isSaved && updated.length === 80);
         setEditingId(null);
         setEditingValue("");
     };
@@ -611,7 +639,7 @@ export default function EnsacadoraSamplingModal({
     };
 
     // Chart dimensions
-    const chartTotalPoints = totalSamplesCount || 40;
+    const chartTotalPoints = totalSamplesCount || 80;
     const chartWidth = 920;
     const chartHeight = 330;
     const paddingLeft = 60;
@@ -742,7 +770,7 @@ export default function EnsacadoraSamplingModal({
                                                 {isLocked ? (
                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                                                         <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                        Guardado Finalizado (40/40 muestras)
+                                                        Guardado Finalizado (80/80 muestras)
                                                     </span>
                                                 ) : samples.length > 0 ? (
                                                     <span
@@ -750,11 +778,11 @@ export default function EnsacadoraSamplingModal({
                                                         title="Su avance se encuentra autoguardado en tiempo real"
                                                     >
                                                         <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
-                                                        Autoguardado activo ({samples.length}/40 muestras)
+                                                        Autoguardado activo ({samples.length}/80 muestras)
                                                     </span>
                                                 ) : (
                                                     <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200">
-                                                        40 muestras requeridas (20 por ENS)
+                                                        80 muestras requeridas (40 por ENS)
                                                     </span>
                                                 )}
                                             </div>
@@ -783,31 +811,31 @@ export default function EnsacadoraSamplingModal({
                                             type="button"
                                             onClick={handleSave}
                                             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black shadow-md transition transform active:scale-95 ${
-                                                samples.length === 40
+                                                samples.length === 80
                                                     ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
                                                     : isLocked
                                                     ? "bg-emerald-700 hover:bg-emerald-800 text-white"
                                                     : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30"
                                             }`}
                                             title={
-                                                samples.length === 40
-                                                    ? "Guardar y certificar 40 muestras (Muestreo Completo)"
+                                                samples.length === 80
+                                                    ? "Guardar y certificar 80 muestras (Muestreo Completo)"
                                                     : isLocked
                                                     ? "Muestreo finalizado y guardado - Salir"
-                                                    : `Guardar avance (${samples.length}/40 muestras) y salir`
+                                                    : `Guardar avance (${samples.length}/80 muestras) y salir`
                                             }
                                         >
-                                            {isLocked || samples.length === 40 ? (
+                                            {isLocked || samples.length === 80 ? (
                                                 <CheckCircle2 className="w-4 h-4 text-white" />
                                             ) : (
                                                 <Save className="w-4 h-4 text-white" />
                                             )}
                                             <span>
                                                 {isLocked
-                                                    ? "Guardado (40/40)"
-                                                    : samples.length === 40
-                                                    ? "Guardar (40/40)"
-                                                    : `Guardar (${samples.length}/40)`}
+                                                    ? "Guardado (80/80)"
+                                                    : samples.length === 80
+                                                    ? "Guardar (80/80)"
+                                                    : `Guardar (${samples.length}/80)`}
                                             </span>
                                         </button>
 
@@ -831,7 +859,7 @@ export default function EnsacadoraSamplingModal({
                                                 AVG ENS-1
                                             </span>
                                             <span className="text-[10px] font-semibold bg-indigo-100/80 px-2 py-0.5 rounded-md text-indigo-800">
-                                                {samplesEnv1.length} / 20 mstr.
+                                                {samplesEnv1.length} / 40 mstr.
                                             </span>
                                         </div>
                                         <div className="text-xl font-black text-gray-900 font-mono">
@@ -849,7 +877,7 @@ export default function EnsacadoraSamplingModal({
                                                 AVG ENS-2
                                             </span>
                                             <span className="text-[10px] font-semibold bg-emerald-100/80 px-2 py-0.5 rounded-md text-emerald-800">
-                                                {samplesEnv2.length} / 20 mstr.
+                                                {samplesEnv2.length} / 40 mstr.
                                             </span>
                                         </div>
                                         <div className="text-xl font-black text-gray-900 font-mono">
@@ -921,7 +949,7 @@ export default function EnsacadoraSamplingModal({
                                                 <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
                                                     Muestreo Guardado y Bloqueado
                                                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 font-bold">
-                                                        40 / 40 Muestras Completadas
+                                                        80 / 80 Muestras Completadas
                                                     </span>
                                                 </h4>
                                                 <p className="text-xs text-emerald-700 mt-0.5">
@@ -965,7 +993,7 @@ export default function EnsacadoraSamplingModal({
                                             </button>
                                         </div>
                                     </div>
-                                ) : samples.length >= 40 ? (
+                                ) : samples.length >= 80 ? (
                                     <div className="mt-4 bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-emerald-950 animate-fade-in">
                                         <div className="flex items-center gap-3">
                                             <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm shrink-0">
@@ -973,9 +1001,9 @@ export default function EnsacadoraSamplingModal({
                                             </div>
                                             <div>
                                                 <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
-                                                    ¡Las 40 muestras han sido completadas!
+                                                    ¡Las 80 muestras han sido completadas!
                                                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 font-bold">
-                                                        40 / 40 muestras (20 en ENS-1 y 20 en ENS-2)
+                                                        80 / 80 muestras (40 en ENS-1 y 40 en ENS-2)
                                                     </span>
                                                 </h4>
                                                 <p className="text-xs text-emerald-700 mt-0.5">
@@ -989,7 +1017,7 @@ export default function EnsacadoraSamplingModal({
                                             className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md shadow-emerald-600/30 transition transform active:scale-95 shrink-0 flex items-center gap-2"
                                         >
                                             <Save className="w-4 h-4" />
-                                            Guardar Muestreo (40/40)
+                                            Guardar Muestreo (80/80)
                                         </button>
                                     </div>
                                 ) : (
@@ -1000,7 +1028,7 @@ export default function EnsacadoraSamplingModal({
                                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                                             <div className="flex items-center gap-2 text-xs font-bold text-gray-700 whitespace-nowrap">
                                                 <Scale className="w-4 h-4 text-indigo-600" />
-                                                <span>Capturar muestra (#{samples.length + 1} de 40):</span>
+                                                <span>Capturar muestra (#{samples.length + 1} de 80):</span>
                                             </div>
 
                                             <div className="relative flex-1">
@@ -1059,7 +1087,7 @@ export default function EnsacadoraSamplingModal({
                                                 Últimos Muestreos ENS-1
                                             </span>
                                             <span className="text-[11px] font-semibold text-indigo-600 font-mono">
-                                                {samplesEnv1.length} / 20 muestras
+                                                {samplesEnv1.length} / 40 muestras
                                             </span>
                                         </div>
                                         <div className="overflow-x-auto max-h-40 overflow-y-auto">
@@ -1067,6 +1095,7 @@ export default function EnsacadoraSamplingModal({
                                                 <thead className="bg-slate-50 text-gray-700 font-bold border-b border-gray-100">
                                                     <tr>
                                                         <th className="py-2 px-3 w-16 text-center">N°</th>
+                                                        <th className="py-2 px-2.5 w-24 text-center">Hora</th>
                                                         <th className="py-2 px-3">Peso Registrado</th>
                                                         <th className="py-2 px-3 w-24 text-center">Acciones</th>
                                                     </tr>
@@ -1074,7 +1103,7 @@ export default function EnsacadoraSamplingModal({
                                                 <tbody className="divide-y divide-gray-100 bg-white">
                                                     {samplesEnv1.length === 0 ? (
                                                         <tr>
-                                                            <td colSpan={3} className="py-5 px-3 text-gray-400 italic text-center">
+                                                            <td colSpan={4} className="py-5 px-3 text-gray-400 italic text-center">
                                                                 Sin muestras capturadas en ENS-1
                                                             </td>
                                                         </tr>
@@ -1083,6 +1112,9 @@ export default function EnsacadoraSamplingModal({
                                                             <tr key={sample.id} className="hover:bg-indigo-50/30 transition">
                                                                 <td className="py-2 px-3 font-bold text-gray-600 text-center font-mono">
                                                                     #{idx + 1}
+                                                                </td>
+                                                                <td className="py-2 px-2.5 text-center font-mono text-[11px] text-gray-600 font-semibold whitespace-nowrap">
+                                                                    {sample.time || (sample.captured_at ? new Date(sample.captured_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }) : "--:--")}
                                                                 </td>
                                                                 <td className="py-2 px-3 font-mono">
                                                                     {editingId === sample.id ? (
@@ -1151,7 +1183,7 @@ export default function EnsacadoraSamplingModal({
                                                 Últimos Muestreos ENS-2
                                             </span>
                                             <span className="text-[11px] font-semibold text-emerald-600 font-mono">
-                                                {samplesEnv2.length} / 20 muestras
+                                                {samplesEnv2.length} / 40 muestras
                                             </span>
                                         </div>
                                         <div className="overflow-x-auto max-h-40 overflow-y-auto">
@@ -1159,6 +1191,7 @@ export default function EnsacadoraSamplingModal({
                                                 <thead className="bg-slate-50 text-gray-700 font-bold border-b border-gray-100">
                                                     <tr>
                                                         <th className="py-2 px-3 w-16 text-center">N°</th>
+                                                        <th className="py-2 px-2.5 w-24 text-center">Hora</th>
                                                         <th className="py-2 px-3">Peso Registrado</th>
                                                         <th className="py-2 px-3 w-24 text-center">Acciones</th>
                                                     </tr>
@@ -1166,7 +1199,7 @@ export default function EnsacadoraSamplingModal({
                                                 <tbody className="divide-y divide-gray-100 bg-white">
                                                     {samplesEnv2.length === 0 ? (
                                                         <tr>
-                                                            <td colSpan={3} className="py-5 px-3 text-gray-400 italic text-center">
+                                                            <td colSpan={4} className="py-5 px-3 text-gray-400 italic text-center">
                                                                 Sin muestras capturadas en ENS-2
                                                             </td>
                                                         </tr>
@@ -1175,6 +1208,9 @@ export default function EnsacadoraSamplingModal({
                                                             <tr key={sample.id} className="hover:bg-emerald-50/30 transition">
                                                                 <td className="py-2 px-3 font-bold text-gray-600 text-center font-mono">
                                                                     #{idx + 1}
+                                                                </td>
+                                                                <td className="py-2 px-2.5 text-center font-mono text-[11px] text-gray-600 font-semibold whitespace-nowrap">
+                                                                    {sample.time || (sample.captured_at ? new Date(sample.captured_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }) : "--:--")}
                                                                 </td>
                                                                 <td className="py-2 px-3 font-mono">
                                                                     {editingId === sample.id ? (
@@ -1516,7 +1552,7 @@ export default function EnsacadoraSamplingModal({
                                                         />
                                                         {/* Tooltip on hover */}
                                                         <title>
-                                                            {`Muestra #${sample.num} (${(sample.ensacadora || sample.envasadora) === 1 ? "ENS-1" : "ENS-2"}): ${sample.weight.toFixed(3)} kg`}
+                                                            {`Muestra #${sample.num} (${(sample.ensacadora || sample.envasadora) === 1 ? "ENS-1" : "ENS-2"}): ${sample.weight.toFixed(3)} kg${sample.time ? ` · ${sample.time}` : ""}`}
                                                         </title>
                                                     </g>
                                                 );
@@ -1647,13 +1683,13 @@ export default function EnsacadoraSamplingModal({
                                                     {/* Botón ENS-1 */}
                                                     <button
                                                         type="button"
-                                                        disabled={samplesEnv1.length >= 20}
+                                                        disabled={samplesEnv1.length >= 40}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             handleSelectEnsacadora(1);
                                                         }}
                                                         className={`group p-5 rounded-2xl border-2 transition-all duration-200 text-left flex flex-col justify-between ${
-                                                            samplesEnv1.length >= 20
+                                                            samplesEnv1.length >= 40
                                                                 ? "border-gray-200 bg-gray-50/70 opacity-60 cursor-not-allowed"
                                                                 : selectedEnsacadora === 1
                                                                 ? "border-indigo-600 bg-indigo-50/80 shadow-md shadow-indigo-100 ring-2 ring-indigo-500/30 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
@@ -1666,15 +1702,15 @@ export default function EnsacadoraSamplingModal({
                                                                     <span className="px-3 py-1 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-sm">ENS-1</span>
                                                                     <span
                                                                         className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                                                                            samplesEnv1.length >= 20
+                                                                            samplesEnv1.length >= 40
                                                                                 ? "bg-emerald-100 text-emerald-800"
                                                                                 : "bg-indigo-100/70 text-indigo-700"
                                                                         }`}
                                                                     >
-                                                                        {samplesEnv1.length} / 20 estibas {samplesEnv1.length >= 20 && "✓"}
+                                                                        {samplesEnv1.length} / 40 estibas {samplesEnv1.length >= 40 && "✓"}
                                                                     </span>
                                                                 </div>
-                                                                {selectedEnsacadora === 1 && samplesEnv1.length < 20 && (
+                                                                {selectedEnsacadora === 1 && samplesEnv1.length < 40 && (
                                                                     <CheckCircle2 className="w-5 h-5 text-indigo-600" />
                                                                 )}
                                                             </div>
@@ -1687,11 +1723,11 @@ export default function EnsacadoraSamplingModal({
                                                         </div>
                                                         <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-indigo-600">
                                                             <span>
-                                                                {samplesEnv1.length >= 20
-                                                                    ? "Límite de 20 completado"
+                                                                {samplesEnv1.length >= 40
+                                                                    ? "Límite de 40 completado"
                                                                     : "Guardar en ENS-1"}
                                                             </span>
-                                                            {samplesEnv1.length < 20 && (
+                                                            {samplesEnv1.length < 40 && (
                                                                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                                             )}
                                                         </div>
@@ -1700,13 +1736,13 @@ export default function EnsacadoraSamplingModal({
                                                     {/* Botón ENS-2 */}
                                                     <button
                                                         type="button"
-                                                        disabled={samplesEnv2.length >= 20}
+                                                        disabled={samplesEnv2.length >= 40}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             handleSelectEnsacadora(2);
                                                         }}
                                                         className={`group p-5 rounded-2xl border-2 transition-all duration-200 text-left flex flex-col justify-between ${
-                                                            samplesEnv2.length >= 20
+                                                            samplesEnv2.length >= 40
                                                                 ? "border-gray-200 bg-gray-50/70 opacity-60 cursor-not-allowed"
                                                                 : selectedEnsacadora === 2
                                                                 ? "border-emerald-600 bg-emerald-50/80 shadow-md shadow-emerald-100 ring-2 ring-emerald-500/30 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
@@ -1719,15 +1755,15 @@ export default function EnsacadoraSamplingModal({
                                                                     <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-600 text-white shadow-sm">ENS-2</span>
                                                                     <span
                                                                         className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                                                                            samplesEnv2.length >= 20
+                                                                            samplesEnv2.length >= 40
                                                                                 ? "bg-emerald-100 text-emerald-800"
                                                                                 : "bg-emerald-100/70 text-emerald-700"
                                                                         }`}
                                                                     >
-                                                                        {samplesEnv2.length} / 20 estibas {samplesEnv2.length >= 20 && "✓"}
+                                                                        {samplesEnv2.length} / 40 estibas {samplesEnv2.length >= 40 && "✓"}
                                                                     </span>
                                                                 </div>
-                                                                {selectedEnsacadora === 2 && samplesEnv2.length < 20 && (
+                                                                {selectedEnsacadora === 2 && samplesEnv2.length < 40 && (
                                                                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                                                                 )}
                                                             </div>
@@ -1740,11 +1776,11 @@ export default function EnsacadoraSamplingModal({
                                                         </div>
                                                         <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-emerald-600">
                                                             <span>
-                                                                {samplesEnv2.length >= 20
-                                                                    ? "Límite de 20 completado"
+                                                                {samplesEnv2.length >= 40
+                                                                    ? "Límite de 40 completado"
                                                                     : "Guardar en ENS-2"}
                                                             </span>
-                                                            {samplesEnv2.length < 20 && (
+                                                            {samplesEnv2.length < 40 && (
                                                                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                                             )}
                                                         </div>

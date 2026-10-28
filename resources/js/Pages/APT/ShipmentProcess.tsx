@@ -25,6 +25,9 @@ import {
     Layers,
     Scale,
     Sliders,
+    FileSpreadsheet,
+    Lock,
+    Unlock,
 } from "lucide-react";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -33,6 +36,7 @@ import LoadingAssistantDropdown from "@/Components/LoadingAssistantDropdown";
 import QrScannerModal from "@/Components/QrScannerModal";
 import EnsacadoraSamplingModal from "@/Components/EnsacadoraSamplingModal";
 import ShipmentDocumentsPrintModal from "@/Components/ShipmentDocumentsPrintModal";
+import StowagePlanModal from "@/Components/StowagePlanModal";
 
 interface Lot {
     id: number;
@@ -73,6 +77,10 @@ interface HistoryItem {
     sampling_completed_at?: string | null;
     sampling_status?: string | null;
     sampling_avg?: number | null;
+    stowage_plan?: any;
+    stowage_plan_status?: string | null;
+    stowage_plan_saved_at?: string | null;
+    stowage_plan_saved_by?: number | string | null;
 }
 
 interface Props {
@@ -353,53 +361,39 @@ const getOrderSamplingStatus = (row: HistoryItem): {
         return { isEnvasado: false, isCompleted: true, samplesCount: 0, savedAt: null };
     }
 
-    // 1. Check DB samples from shipment_process_histories
+    // La base de datos es la única fuente de verdad
     const dbSamples = Array.isArray(row.samples) ? row.samples : [];
     const dbCount = dbSamples.length;
-    const dbCompleted = dbCount >= 40 || Boolean(row.sampling_completed_at) || row.sampling_status === "completed";
+    const dbCompleted = dbCount >= 80 || Boolean(row.sampling_completed_at) || row.sampling_status === "completed";
     const dbSavedAt = row.sampling_completed_at || null;
 
-    // 2. Check localStorage for any newer offline draft
-    let localCount = -1;
-    let localSaved = false;
-    let localSavedAt: string | null = null;
-
-    try {
+    // Si la base de datos no tiene muestras, limpiar cualquier clave huérfana de localStorage
+    if (dbCount === 0 && typeof window !== "undefined") {
         const id = row.id || (row as any).order_number || row.folio;
-        const candidateKeys = [
+        const keysToClean = [
             `ensacadora_sampling_order_${id}`,
             `ensacadora_sampling_${id}`,
             `envasadora_sampling_order_${id}`,
             `envasadora_sampling_${id}`,
             row.folio ? `ensacadora_sampling_order_${row.folio}` : null,
+            row.folio ? `ensacadora_sampling_${row.folio}` : null,
+            row.folio ? `envasadora_sampling_order_${row.folio}` : null,
             row.folio ? `envasadora_sampling_${row.folio}` : null,
             row.id ? `ensacadora_sampling_order_${row.id}` : null,
-            row.id ? `envasadora_sampling_${row.id}` : null,
+            row.id ? `ensacadora_sampling_${row.id}` : null,
+            "ensacadora_sampling_draft_temp",
+            "envasadora_sampling_draft_temp",
         ].filter(Boolean) as string[];
-
-        for (const k of candidateKeys) {
-            try {
-                const raw = localStorage.getItem(k);
-                if (!raw) continue;
-                const parsed = JSON.parse(raw);
-                if (parsed && Array.isArray(parsed.samples) && parsed.samples.length > localCount) {
-                    localCount = parsed.samples.length;
-                    localSaved = Boolean(parsed.isSaved) && localCount === 40;
-                    localSavedAt = parsed.savedAt || parsed.updatedAt || null;
-                }
-            } catch {}
-        }
-    } catch {}
-
-    const maxCount = Math.max(dbCount, localCount >= 0 ? localCount : 0);
-    const isCompleted = dbCompleted || (localSaved && maxCount >= 40);
-    const savedAt = dbSavedAt || localSavedAt;
+        keysToClean.forEach((k) => {
+            try { localStorage.removeItem(k); } catch (e) {}
+        });
+    }
 
     return {
         isEnvasado: true,
-        isCompleted,
-        samplesCount: maxCount,
-        savedAt,
+        isCompleted: dbCompleted,
+        samplesCount: dbCount,
+        savedAt: dbSavedAt,
     };
 };
 
@@ -446,7 +440,7 @@ export default function ShipmentProcess({
     const [stowageCount, setStowageCount] = useState<string>("");
     const [isSaving, setIsSaving] = useState(false);
 
-    const totalSamples = "40";
+    const totalSamples = "80";
 
     const isEnvasado = useMemo(() => {
         if (!scannedOrder) return false;
@@ -460,21 +454,75 @@ export default function ShipmentProcess({
     const suggestedSamplesPerStowage = useMemo(() => {
         const estibas = parseFloat(stowageCount);
         if (!estibas || isNaN(estibas) || estibas <= 0) return "";
-        const result = 40 / estibas;
+        const result = 80 / estibas;
         if (Number.isInteger(result)) {
             return result.toString();
         }
         return parseFloat(result.toFixed(2)).toString();
     }, [stowageCount]);
 
-    // Success Modal & Sampling Modal & Print Documents Modal
+    // Success Modal & Sampling Modal & Print Documents Modal & Plan de Estiba
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [isSamplingModalOpen, setIsSamplingModalOpen] = useState(false);
     const [activeSamplingOrder, setActiveSamplingOrder] = useState<any>(null);
+    const [isStowageModalOpen, setIsStowageModalOpen] = useState(false);
+    const [activeStowageOrder, setActiveStowageOrder] = useState<any>(null);
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
     const [printOrderData, setPrintOrderData] = useState<any>(null);
     const [printSamplesData, setPrintSamplesData] = useState<any[]>([]);
     const [samplingRevision, setSamplingRevision] = useState(0);
+
+    const userRoles: any[] = auth?.user?.roles || [];
+    const isEstibadorUser = useMemo(() => {
+        return userRoles.some((r: any) => {
+            const name = (typeof r === "string" ? r : r.name || "").toLowerCase();
+            return name === "estibadores" || name === "estibador";
+        }) && !userRoles.some((r: any) => (typeof r === "string" ? r : r.name || "").toLowerCase() === "admin");
+    }, [userRoles]);
+
+    const isStowagePlanCompleted = (row: any): boolean => {
+        if (!row) return false;
+        return row.stowage_plan_status === "completed" || !!row.stowage_plan_saved_at;
+    };
+
+    const handleOpenStowagePlan = (order: any) => {
+        setActiveStowageOrder(order);
+        setIsStowageModalOpen(true);
+    };
+
+    const handleOpenSampling = (row: any) => {
+        const isRowEnvasado = (() => {
+            const pres = (row?.presentation || "").toString().toUpperCase();
+            if (pres.includes("ENVASADO")) return true;
+            if (pres.includes("GRANEL")) return false;
+            const text = `${row?.product || row?.product_text || ""}`.toUpperCase();
+            return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
+        })();
+
+        if (isRowEnvasado && !isStowagePlanCompleted(row)) {
+            Swal.fire({
+                icon: "warning",
+                title: "Candado Activo: Plan de Estiba Pendiente",
+                html: `<div class="text-left space-y-3">
+                    <p class="font-medium text-slate-800">
+                        No se pueden tomar las muestras de la orden <b>${row?.folio || ""}</b>.
+                    </p>
+                    <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
+                        <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
+                    </div>
+                    <p class="text-xs text-slate-600">
+                        Mientras el estibador no guarde la nota de estiba, la toma de muestras y la verificación de pesos permanecen estrictamente bloqueadas.
+                    </p>
+                </div>`,
+                confirmButtonColor: "#dc2626",
+                confirmButtonText: "Entendido",
+            });
+            return;
+        }
+
+        setActiveSamplingOrder(row);
+        setIsSamplingModalOpen(true);
+    };
 
     useEffect(() => {
         const handleStorageChange = () => setSamplingRevision((r) => r + 1);
@@ -592,50 +640,6 @@ export default function ShipmentProcess({
         }
     };
 
-    // Auto-sincronización de muestras locales hacia MariaDB al cargar la página
-    useEffect(() => {
-        if (!Array.isArray(history) || history.length === 0) return;
-
-        history.forEach((row) => {
-            if (!isRowEnvasado(row)) return;
-            const dbCount = Array.isArray(row.samples) ? row.samples.length : 0;
-            if (dbCount > 0) return;
-
-            const targetId = row.id || row.shipment_order_id || row.folio;
-            if (!targetId) return;
-
-            const candidateKeys = [
-                `ensacadora_sampling_order_${targetId}`,
-                `ensacadora_sampling_${targetId}`,
-                row.folio ? `ensacadora_sampling_order_${row.folio}` : null,
-                row.id ? `ensacadora_sampling_order_${row.id}` : null,
-            ].filter(Boolean) as string[];
-
-            for (const k of candidateKeys) {
-                try {
-                    const raw = localStorage.getItem(k);
-                    if (!raw) continue;
-                    const parsed = JSON.parse(raw);
-                    if (parsed && Array.isArray(parsed.samples) && parsed.samples.length > 0) {
-                        axios
-                            .post(route("documentation.shipment-orders.save-sampling", targetId), {
-                                samples: parsed.samples,
-                                stowage_count: row.stowage_count || null,
-                                is_completed: Boolean(parsed.isSaved) && parsed.samples.length === 40,
-                                shipment_order_id: row.id,
-                                folio: row.folio,
-                                history_id: row.history_id,
-                            })
-                            .then(() => {
-                                refreshHistory();
-                            })
-                            .catch(() => {});
-                        break;
-                    }
-                } catch (e) {}
-            }
-        });
-    }, []);
 
     const handleSearchOrder = async (query?: string) => {
         const q = (query !== undefined ? query : searchQr).trim();
@@ -664,6 +668,76 @@ export default function ShipmentProcess({
                 } else {
                     setWarehouse(`Almacen ${selectedWarehouseId}`);
                 }
+
+                const matchedHistory = history.find(
+                    (h) => String(h.id) === String(order.id) || h.folio === order.folio || String(h.shipment_order_id) === String(order.id)
+                );
+                const targetOrder = matchedHistory ? { ...order, ...matchedHistory } : order;
+
+                // 1. Si el usuario es Estibador, abrir directamente la Nota de Estiba (GLS-AP-FO-002)
+                if (isEstibadorUser) {
+                    handleOpenStowagePlan(targetOrder);
+                    setSearchQr("");
+                    setScannedOrder(null);
+                    return;
+                }
+
+                // 2. Si NO es Estibador (es la persona encargada / supervisor / verificador):
+                const isTargetEnvasado = (() => {
+                    const pres = (targetOrder?.presentation || "").toString().toUpperCase();
+                    if (pres.includes("ENVASADO")) return true;
+                    if (pres.includes("GRANEL")) return false;
+                    const text = `${targetOrder?.product || targetOrder?.product_text || ""}`.toUpperCase();
+                    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
+                })();
+
+                if (isTargetEnvasado) {
+                    // CANDADO DE ESTIBADOR:
+                    // "para los envasados, cuando el estibador guarde la persona encargada pordra tomar las muestras una vez escaneado el codigo siempre y cuando el estibador ya haya guardado, sino no lo dejara tomar las muestras"
+                    if (!isStowagePlanCompleted(targetOrder)) {
+                        Swal.fire({
+                            icon: "warning",
+                            title: "Candado Activo: Plan de Estiba Pendiente",
+                            html: `<div class="text-left space-y-3">
+                                <p class="font-medium text-slate-800">
+                                    No se pueden tomar las muestras de la orden <b>${targetOrder.folio || ""}</b>.
+                                </p>
+                                <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
+                                    <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
+                                </div>
+                                <p class="text-xs text-slate-600">
+                                    Mientras el estibador no guarde la nota de estiba, la persona encargada no puede tomar las muestras ni continuar con la verificación de pesos.
+                                </p>
+                            </div>`,
+                            confirmButtonColor: "#dc2626",
+                            confirmButtonText: "Entendido",
+                        });
+                        setSearchQr("");
+                        setScannedOrder(null);
+                        return;
+                    }
+
+                    // Si el estibador YA guardó la nota de estiba:
+                    // La persona encargada podrá tomar las muestras una vez escaneado el código
+                    handleOpenSampling(targetOrder);
+                    setSearchQr("");
+                    setScannedOrder(null);
+                    return;
+                }
+
+                // 3. Si NO es envasado (a Granel):
+                if (response.data?.is_registered) {
+                    Swal.fire({
+                        icon: "info",
+                        title: "Orden Registrada",
+                        text: `La orden de embarque ${targetOrder.folio} ya se encuentra registrada en el historial.`,
+                        confirmButtonColor: "#4f46e5",
+                    });
+                    setSearchQr("");
+                    setScannedOrder(null);
+                    return;
+                }
+
                 setCurrentStep(2);
             } else {
                 Swal.fire({
@@ -737,10 +811,28 @@ export default function ShipmentProcess({
             }
 
             if (isEnvasado) {
-                // Open the Sampling Modal (Estibas y gráfica)
-                setActiveSamplingOrder(savedOrder);
-                setPrintOrderData(savedOrder);
-                setIsSamplingModalOpen(true);
+                if (isStowagePlanCompleted(savedOrder)) {
+                    // Open the Sampling Modal (Estibas y gráfica)
+                    setActiveSamplingOrder(savedOrder);
+                    setPrintOrderData(savedOrder);
+                    setIsSamplingModalOpen(true);
+                } else {
+                    Swal.fire({
+                        icon: "warning",
+                        title: "Embarque Iniciado - Candado Activo",
+                        html: `<div class="text-left space-y-2">
+                            <p class="font-medium text-slate-800">La orden <b>${savedOrder.folio || ""}</b> se ha registrado correctamente.</p>
+                            <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
+                                <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
+                            </div>
+                            <p class="text-xs text-slate-600">
+                                Mientras el estibador no guarde la nota de estiba, no se pueden tomar las muestras de ensacadora. Una vez que el estibador guarde la nota de estiba, al escanear el código QR se habilitará automáticamente la toma de muestras.
+                            </p>
+                        </div>`,
+                        confirmButtonColor: "#059669",
+                        confirmButtonText: "Entendido",
+                    });
+                }
             } else {
                 setShowSuccessModal(true);
             }
@@ -775,7 +867,7 @@ export default function ShipmentProcess({
                 Swal.fire({
                     icon: "warning",
                     title: "Muestreo Incompleto",
-                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de ensacadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 40 muestras</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 40 muestras requeridas.`,
+                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de ensacadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 80 muestras</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 80 muestras requeridas.`,
                     confirmButtonColor: "#4f46e5",
                     confirmButtonText: "Entendido",
                 });
@@ -950,87 +1042,108 @@ export default function ShipmentProcess({
                     </button>
                 </div>
 
-                {/* Stepper Progress Bar */}
-                <div className="mb-6 bg-white rounded-2xl shadow-sm border border-gray-200/80 p-4">
-                    <div className="flex items-center justify-between max-w-2xl mx-auto">
-                        {/* Step 1 Indicator */}
-                        <button
-                            type="button"
-                            onClick={() => setCurrentStep(1)}
-                            className={`flex items-center gap-3 text-left transition-all ${
-                                currentStep === 1
-                                    ? "opacity-100"
-                                    : "opacity-75 hover:opacity-100 cursor-pointer"
-                            }`}
-                        >
-                            <div
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-all ${
-                                    currentStep === 1
-                                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-200 ring-4 ring-indigo-50"
-                                        : scannedOrder
-                                        ? "bg-emerald-600 text-white shadow-sm"
-                                        : "bg-gray-100 text-gray-500"
-                                }`}
-                            >
-                                {scannedOrder && currentStep === 2 ? (
-                                    <Check className="w-5 h-5 stroke-[3]" />
-                                ) : (
-                                    "1"
-                                )}
+                {/* Stepper Progress Bar (Hidden for Estibadores) */}
+                {isEstibadorUser ? (
+                    <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white shadow-md flex items-center justify-between">
+                        <div className="flex items-center gap-3.5">
+                            <div className="p-2.5 bg-white/10 rounded-xl border border-white/20 shadow-inner">
+                                <Layers className="w-6 h-6 text-emerald-300" />
                             </div>
                             <div>
-                                <span className="block text-xs uppercase font-bold text-gray-400">
-                                    Paso 1
-                                </span>
-                                <span
-                                    className={`text-sm font-bold ${
-                                        currentStep === 1 ? "text-indigo-950" : "text-gray-700"
-                                    }`}
-                                >
-                                    Escanear QR / Folio
-                                </span>
+                                <h2 className="text-base font-extrabold uppercase tracking-tight">
+                                    Módulo de Estibadores • Notas de Estiba (GLS-AP-FO-002)
+                                </h2>
+                                <p className="text-xs text-emerald-100">
+                                    Escanee el código QR de la Orden de Embarque con la pistola lectora o la cámara para abrir la Nota de Estiba a Camión.
+                                </p>
                             </div>
-                        </button>
-
-                        {/* Step Divider */}
-                        <div className="flex-1 mx-4 sm:mx-8 h-0.5 bg-gray-200 relative">
-                            <div
-                                className={`absolute inset-0 bg-indigo-600 transition-all duration-300 ${
-                                    currentStep === 2 ? "w-full" : "w-0"
-                                }`}
-                            />
                         </div>
-
-                        {/* Step 2 Indicator */}
-                        <div
-                            className={`flex items-center gap-3 text-left transition-all ${
-                                currentStep === 2 ? "opacity-100" : "opacity-50"
-                            }`}
-                        >
-                            <div
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-all ${
-                                    currentStep === 2
-                                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-200 ring-4 ring-indigo-50"
-                                        : "bg-gray-100 text-gray-400"
+                        <span className="text-xs font-bold bg-white/15 px-3 py-1.5 rounded-full border border-white/20 hidden md:inline">
+                            Rol: Estibadores
+                        </span>
+                    </div>
+                ) : (
+                    <div className="mb-6 bg-white rounded-2xl shadow-sm border border-gray-200/80 p-4">
+                        <div className="flex items-center justify-between max-w-2xl mx-auto">
+                            {/* Step 1 Indicator */}
+                            <button
+                                type="button"
+                                onClick={() => setCurrentStep(1)}
+                                className={`flex items-center gap-3 text-left transition-all ${
+                                    currentStep === 1
+                                        ? "opacity-100"
+                                        : "opacity-75 hover:opacity-100 cursor-pointer"
                                 }`}
                             >
-                                2
-                            </div>
-                            <div>
-                                <span className="block text-xs uppercase font-bold text-gray-400">
-                                    Paso 2
-                                </span>
-                                <span
-                                    className={`text-sm font-bold ${
-                                        currentStep === 2 ? "text-indigo-950" : "text-gray-500"
+                                <div
+                                    className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-all ${
+                                        currentStep === 1
+                                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-200 ring-4 ring-indigo-50"
+                                            : scannedOrder
+                                            ? "bg-emerald-600 text-white shadow-sm"
+                                            : "bg-gray-100 text-gray-500"
                                     }`}
                                 >
-                                    Asignación y Carga
-                                </span>
+                                    {scannedOrder && currentStep === 2 ? (
+                                        <Check className="w-5 h-5 stroke-[3]" />
+                                    ) : (
+                                        "1"
+                                    )}
+                                </div>
+                                <div>
+                                    <span className="block text-xs uppercase font-bold text-gray-400">
+                                        Paso 1
+                                    </span>
+                                    <span
+                                        className={`text-sm font-bold ${
+                                            currentStep === 1 ? "text-indigo-950" : "text-gray-700"
+                                        }`}
+                                    >
+                                        Escanear QR / Folio
+                                    </span>
+                                </div>
+                            </button>
+
+                            {/* Step Divider */}
+                            <div className="flex-1 mx-4 sm:mx-8 h-0.5 bg-gray-200 relative">
+                                <div
+                                    className={`absolute inset-0 bg-indigo-600 transition-all duration-300 ${
+                                        currentStep === 2 ? "w-full" : "w-0"
+                                    }`}
+                                />
+                            </div>
+
+                            {/* Step 2 Indicator */}
+                            <div
+                                className={`flex items-center gap-3 text-left transition-all ${
+                                    currentStep === 2 ? "opacity-100" : "opacity-50"
+                                }`}
+                            >
+                                <div
+                                    className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-all ${
+                                        currentStep === 2
+                                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-200 ring-4 ring-indigo-50"
+                                            : "bg-gray-100 text-gray-400"
+                                    }`}
+                                >
+                                    2
+                                </div>
+                                <div>
+                                    <span className="block text-xs uppercase font-bold text-gray-400">
+                                        Paso 2
+                                    </span>
+                                    <span
+                                        className={`text-sm font-bold ${
+                                            currentStep === 2 ? "text-indigo-950" : "text-gray-500"
+                                        }`}
+                                    >
+                                        Asignación y Carga
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Form Card */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 p-6 md:p-8 mb-8">
@@ -1042,10 +1155,12 @@ export default function ShipmentProcess({
                                     <QrCode className="w-8 h-8" />
                                 </div>
                                 <h3 className="text-xl font-extrabold text-gray-900">
-                                    Escanear Código QR de Orden de Embarque
+                                    {isEstibadorUser ? "Escanear QR para Editar Nota de Estiba" : "Escanear Código QR de Orden de Embarque"}
                                 </h3>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    Utilice el lector óptico, la cámara del dispositivo o escriba el folio para comenzar el proceso de carga.
+                                    {isEstibadorUser
+                                        ? "Pase la pistola lectora o use la cámara para escanear el código QR y abrir la Nota de Estiba a Camión (GLS-AP-FO-002)."
+                                        : "Utilice el lector óptico, la cámara del dispositivo o escriba el folio para comenzar el proceso de carga."}
                                 </p>
                             </div>
 
@@ -1336,7 +1451,7 @@ export default function ShipmentProcess({
                                                         </div>
                                                     </div>
                                                     <p className="text-[11px] text-gray-500 mt-1">
-                                                        Base fija de 40 sacos
+                                                        Base fija de 80 sacos
                                                     </p>
                                                 </div>
 
@@ -1435,41 +1550,41 @@ export default function ShipmentProcess({
                         </div>
                     </div>
 
-                    <div className="w-full overflow-x-auto">
-                        <table className="w-full min-w-[1150px] table-fixed divide-y divide-gray-200 text-xs">
+                    <div className="w-full overflow-hidden">
+                        <table className="w-full table-fixed divide-y divide-gray-200 text-xs">
                             <thead className="bg-[#1e1b4b] text-white">
                                 <tr>
-                                    <th className="w-[2.5%] px-1 py-3.5 text-center font-bold uppercase tracking-wider">
+                                    <th className="w-[2.5%] px-0.5 py-3.5 text-center font-bold uppercase tracking-wider">
                                         <Settings className="w-3.5 h-3.5 mx-auto text-indigo-300 opacity-60" />
                                     </th>
-                                    <th className="w-[7.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[7.5%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         FOLIO
                                     </th>
-                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[8.5%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         LOTE
                                     </th>
-                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[9%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         OPERADOR
                                     </th>
-                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
-                                        LÍDER DE CUADRILLA
+                                    <th className="w-[8.5%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                        LÍDER CUADRILLA
                                     </th>
-                                    <th className="w-[9.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[9%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         PRODUCTO
                                     </th>
-                                    <th className="w-[6.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[6%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
                                         PLACAS
                                     </th>
-                                    <th className="w-[7%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
-                                        HORA INICIAL
+                                    <th className="w-[6%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                        HORA INI.
                                     </th>
-                                    <th className="w-[6.5%] px-1.5 py-3.5 text-left font-bold uppercase tracking-wider truncate">
-                                        HORA FINAL
+                                    <th className="w-[6%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                        HORA FIN.
                                     </th>
-                                    <th className="w-[7.5%] px-1 py-3.5 text-center font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[6.5%] px-0.5 py-3.5 text-center font-bold uppercase tracking-wider truncate">
                                         CRONÓMETRO
                                     </th>
-                                    <th className="w-[24.5%] px-1.5 py-3.5 text-center font-bold uppercase tracking-wider truncate">
+                                    <th className="w-[31%] px-1 py-3.5 text-center font-bold uppercase tracking-wider truncate">
                                         ACCIÓN
                                     </th>
                                 </tr>
@@ -1526,23 +1641,38 @@ export default function ShipmentProcess({
                                                                 if (!rowIsEnvasado) return null;
 
                                                                 return (
-                                                                    <Menu.Item>
-                                                                        {({ active }) => (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setActiveSamplingOrder(row);
-                                                                                    setIsSamplingModalOpen(true);
-                                                                                }}
-                                                                                className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
-                                                                                    active ? "bg-indigo-600 text-white" : "text-gray-700"
-                                                                                }`}
-                                                                            >
-                                                                                <Settings className="w-3.5 h-3.5" />
-                                                                                Muestreo Ensacadora
-                                                                            </button>
+                                                                    <>
+                                                                        <Menu.Item>
+                                                                            {({ active }) => (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleOpenStowagePlan(row)}
+                                                                                    className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
+                                                                                        active ? "bg-indigo-600 text-white" : "text-gray-700"
+                                                                                    }`}
+                                                                                >
+                                                                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                                                                    Nota de Estiba (GLS-AP-FO-002)
+                                                                                </button>
+                                                                            )}
+                                                                        </Menu.Item>
+                                                                        {!isEstibadorUser && (
+                                                                            <Menu.Item>
+                                                                                {({ active }) => (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleOpenSampling(row)}
+                                                                                        className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
+                                                                                            active ? "bg-indigo-600 text-white" : "text-gray-700"
+                                                                                        }`}
+                                                                                    >
+                                                                                        <Scale className="w-3.5 h-3.5" />
+                                                                                        Muestreo Ensacadora {!isStowagePlanCompleted(row) ? "(Bloqueado)" : ""}
+                                                                                    </button>
+                                                                                )}
+                                                                            </Menu.Item>
                                                                         )}
-                                                                    </Menu.Item>
+                                                                    </>
                                                                 );
                                                             })()}
                                                         </Menu.Items>
@@ -1551,7 +1681,7 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Folio & Warehouse */}
-                                            <td className="w-[7.5%] px-1.5 py-2 font-bold text-indigo-700 uppercase truncate text-left">
+                                            <td className="w-[7.5%] px-1 py-2 font-bold text-indigo-700 uppercase truncate text-left">
                                                 <a
                                                     href={route("documentation.print-order", row.id)}
                                                     target="_blank"
@@ -1568,9 +1698,9 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Lote */}
-                                            <td className="w-[9.5%] px-1.5 py-2 text-left truncate" title={row.lot_folio || "Sin Lote"}>
+                                            <td className="w-[8.5%] px-1 py-2 text-left truncate" title={row.lot_folio || "Sin Lote"}>
                                                 {row.lot_folio ? (
-                                                    <span className="inline-block max-w-full truncate px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200">
+                                                    <span className="inline-block max-w-full truncate px-1.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200">
                                                         {row.lot_folio}
                                                     </span>
                                                 ) : (
@@ -1581,39 +1711,39 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Operador */}
-                                            <td className="w-[9.5%] px-1.5 py-2 font-semibold text-gray-800 uppercase truncate text-left text-[11px]" title={row.operator}>
+                                            <td className="w-[9%] px-1 py-2 font-semibold text-gray-800 uppercase truncate text-left text-[11px]" title={row.operator}>
                                                 {row.operator}
                                             </td>
 
                                             {/* Líder de Cuadrilla */}
-                                            <td className="w-[9.5%] px-1.5 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.squad_leader}>
+                                            <td className="w-[8.5%] px-1 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.squad_leader}>
                                                 {row.squad_leader}
                                             </td>
 
                                             {/* Producto */}
-                                            <td className="w-[9.5%] px-1.5 py-2 text-left text-[11px]" title={row.product}>
+                                            <td className="w-[9%] px-1 py-2 text-left text-[11px]" title={row.product}>
                                                 <div className="font-semibold text-gray-700 uppercase truncate">
                                                     {row.product}
                                                 </div>
                                                 {row.stowage_count ? (
                                                     <div className="text-[10px] text-indigo-600 font-bold">
-                                                        {row.stowage_count} muestras
+                                                        {row.stowage_count} estibas
                                                     </div>
                                                 ) : null}
                                             </td>
 
                                             {/* Placas */}
-                                            <td className="w-[6.5%] px-1.5 py-2 font-mono text-gray-600 uppercase text-[10px] truncate text-left" title={row.plates}>
+                                            <td className="w-[6%] px-1 py-2 font-mono text-gray-600 uppercase text-[10px] truncate text-left" title={row.plates}>
                                                 {row.plates}
                                             </td>
 
                                             {/* Hora Inicial */}
-                                            <td className="w-[7%] px-1.5 py-2 text-gray-700 text-[10px] leading-tight text-left" title={formatDateTime(row.started_at)}>
+                                            <td className="w-[6%] px-1 py-2 text-gray-700 text-[10px] leading-tight text-left" title={formatDateTime(row.started_at)}>
                                                 {formatDateTime(row.started_at)}
                                             </td>
 
                                             {/* Hora Final */}
-                                            <td className="w-[6.5%] px-1.5 py-2 text-[10px] leading-tight text-left" title={row.finished_at ? formatDateTime(row.finished_at) : "Pendiente"}>
+                                            <td className="w-[6%] px-1 py-2 text-[10px] leading-tight text-left" title={row.finished_at ? formatDateTime(row.finished_at) : "Pendiente"}>
                                                 {row.finished_at ? (
                                                     <span className="text-gray-700 font-medium">
                                                         {formatDateTime(row.finished_at)}
@@ -1626,7 +1756,7 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Cronómetro */}
-                                            <td className="w-[7.5%] px-1 py-2 text-center text-[11px]">
+                                            <td className="w-[6.5%] px-0.5 py-2 text-center text-[11px]">
                                                 <LiveStopwatch
                                                     startedAt={row.started_at}
                                                     finishedAt={row.finished_at}
@@ -1635,63 +1765,146 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Acción */}
-                                            <td className="w-[24.5%] px-1.5 py-2 text-center">
-                                                <div className="flex items-center justify-center gap-1.5 flex-nowrap">
-                                                    {samplingStatus.isEnvasado && (
-                                                        samplingStatus.isCompleted ? (
+                                            <td className="w-[31%] px-1 py-2 text-center">
+                                                <div className="flex items-center justify-center gap-1 flex-nowrap">
+                                                    {isEstibadorUser ? (
+                                                        <>
+                                                            {samplingStatus.isEnvasado && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenStowagePlan(row)}
+                                                                    className={`font-bold px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm whitespace-nowrap flex items-center gap-1.5 shrink-0 ${
+                                                                        isStowagePlanCompleted(row)
+                                                                            ? "bg-teal-700 hover:bg-teal-800 text-white"
+                                                                            : "bg-amber-600 hover:bg-amber-700 text-white animate-pulse"
+                                                                    }`}
+                                                                    title={
+                                                                        isStowagePlanCompleted(row)
+                                                                            ? "Editar Nota de Estiba (GLS-AP-FO-002) - Guardado"
+                                                                            : "Nota de Estiba Pendiente - Haga clic para tachar y guardar"
+                                                                    }
+                                                                >
+                                                                    {isStowagePlanCompleted(row) ? (
+                                                                        <>
+                                                                            <FileSpreadsheet className="w-3.5 h-3.5 text-teal-200" />
+                                                                            <span>Editar Nota Estiba</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Lock className="w-3.5 h-3.5 text-amber-200" />
+                                                                            <span>Tachar Nota Estiba</span>
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            )}
+
+                                                            {samplingStatus.isEnvasado && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenPrintModal(row.id)}
+                                                                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1.5 rounded-lg text-xs transition shadow-sm whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                    title="Imprimir Nota de Estiba (GLS-AP-FO-002)"
+                                                                >
+                                                                    <Printer className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            {samplingStatus.isEnvasado && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenStowagePlan(row)}
+                                                                    className={`font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 ${
+                                                                        isStowagePlanCompleted(row)
+                                                                            ? "bg-teal-700 hover:bg-teal-800 text-white"
+                                                                            : "bg-amber-600 hover:bg-amber-700 text-white animate-pulse"
+                                                                    }`}
+                                                                    title={
+                                                                        isStowagePlanCompleted(row)
+                                                                            ? "Editar Nota de Estiba (GLS-AP-FO-002) - Guardado"
+                                                                            : "Candado Activo: Plan de Estiba Pendiente - Haga clic para capturar y guardar"
+                                                                    }
+                                                                >
+                                                                    {isStowagePlanCompleted(row) ? (
+                                                                        <>
+                                                                            <FileSpreadsheet className="w-3 h-3 text-teal-200" />
+                                                                            <span>Estiba</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Lock className="w-3 h-3 text-amber-200" />
+                                                                            <span>Estiba</span>
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            )}
+
+                                                            {samplingStatus.isEnvasado && (
+                                                                !isStowagePlanCompleted(row) ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
+                                                                        title="Candado Activo: Requiere que el usuario Estibador guarde primero el Plan de Estiba"
+                                                                    >
+                                                                        <Lock className="w-3 h-3 text-amber-600" />
+                                                                        <span>Bloqueado</span>
+                                                                    </button>
+                                                                ) : samplingStatus.isCompleted ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled
+                                                                        className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-1.5 py-1 rounded-md text-[10px] cursor-not-allowed whitespace-nowrap flex items-center gap-1 opacity-80 shrink-0"
+                                                                        title="Muestreo finalizado (80/80)"
+                                                                    >
+                                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                        <span>80/80</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
+                                                                        title={`Muestreo (${samplingStatus.samplesCount} de 80 muestras). Haga clic para continuar.`}
+                                                                    >
+                                                                        <Scale className="w-3 h-3" />
+                                                                        <span>Muestreo ({samplingStatus.samplesCount}/80)</span>
+                                                                    </button>
+                                                                )
+                                                            )}
+
+                                                            {row.status === "loading" && !row.finished_at && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleFinish(row.id, row.folio)}
+                                                                    className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0"
+                                                                >
+                                                                    Finalizar
+                                                                </button>
+                                                            )}
+
+                                                            {samplingStatus.isEnvasado && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenPrintModal(row.id)}
+                                                                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                    title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
+                                                                >
+                                                                    <Printer className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            )}
+
                                                             <button
                                                                 type="button"
-                                                                disabled
-                                                                className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] cursor-not-allowed whitespace-nowrap flex items-center gap-1 opacity-80 shrink-0"
-                                                                title="Muestreo de ensacadora completado y finalizado (40/40 muestras)"
+                                                                onClick={() => handleDelete(row.id, row.folio)}
+                                                                className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                title="Eliminar orden del historial"
                                                             >
-                                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                <span>Muestreo OK</span>
+                                                                <Trash2 className="w-3.5 h-3.5" />
                                                             </button>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setActiveSamplingOrder(row);
-                                                                    setIsSamplingModalOpen(true);
-                                                                }}
-                                                                className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
-                                                                title={`Muestreo de ensacadora incompleto (${samplingStatus.samplesCount} de 40 muestras). Haga clic para continuar capturando.`}
-                                                            >
-                                                                <Scale className="w-3 h-3" />
-                                                                <span>Muestreo ({samplingStatus.samplesCount}/40)</span>
-                                                            </button>
-                                                        )
+                                                        </>
                                                     )}
-
-                                                    {row.status === "loading" && !row.finished_at && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleFinish(row.id, row.folio)}
-                                                            className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap shrink-0"
-                                                        >
-                                                            Finalizar
-                                                        </button>
-                                                    )}
-
-                                                    {samplingStatus.isEnvasado && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleOpenPrintModal(row.id)}
-                                                            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap flex items-center justify-center shrink-0"
-                                                            title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
-                                                        >
-                                                            <Printer className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    )}
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleDelete(row.id, row.folio)}
-                                                        className="bg-red-800 hover:bg-red-900 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-sm whitespace-nowrap shrink-0"
-                                                    >
-                                                        Eliminar
-                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -1814,12 +2027,28 @@ export default function ShipmentProcess({
                 }}
                 order={activeSamplingOrder}
                 stowageCount={activeSamplingOrder?.stowage_count || stowageCount}
-                totalSamplesCount={40}
+                totalSamplesCount={80}
                 onSave={async () => {
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
                 }}
                 onOpenPrintDocuments={handleOpenPrintModalFromSampling}
+            />
+
+            {/* Modal de Plan de Estiba (GLS-AP-FO-002) */}
+            <StowagePlanModal
+                isOpen={isStowageModalOpen}
+                onClose={async () => {
+                    setIsStowageModalOpen(false);
+                    await refreshHistory();
+                }}
+                order={activeStowageOrder}
+                onSaved={async (updated) => {
+                    await refreshHistory();
+                    if (updated) {
+                        setActiveStowageOrder(updated);
+                    }
+                }}
             />
 
             {/* Modal de Impresión de Documentos (GLS-AP-FO-003 y GLS-AP-FO-002) */}

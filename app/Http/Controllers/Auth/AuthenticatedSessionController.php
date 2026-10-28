@@ -39,6 +39,10 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('clients.index');
         }
 
+        if ($request->user() && ($request->user()->hasRole('Estibadores') || $request->user()->hasRole('Estibador')) && !$request->user()->hasRole('Admin')) {
+            return redirect()->route('apt.shipment-process');
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

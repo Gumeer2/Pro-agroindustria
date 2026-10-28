@@ -32,6 +32,10 @@ class CheckClientRoleAccess
                 'documentation.exit-operators.create',
                 'documentation.exit-operators.store',
                 'documentation.exit-operators.destroy',
+                'exit-operator-types.index',
+                'exit-operator-types.store',
+                'exit-operator-types.update',
+                'exit-operator-types.destroy',
                 'logout',
             ];
 
@@ -40,6 +44,8 @@ class CheckClientRoleAccess
                 $path === 'documentation/exit-operators' ||
                 $path === 'documentation/exit-operators/create' ||
                 str_starts_with($path, 'documentation/exit-operators/') ||
+                $path === 'exit-operator-types' ||
+                str_starts_with($path, 'exit-operator-types/') ||
                 $path === 'logout';
 
             $isAllowedRoute = in_array($routeName, $allowedRouteNames, true) || $isAllowedPath;
