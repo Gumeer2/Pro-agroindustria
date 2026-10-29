@@ -1909,7 +1909,7 @@ class SurveillanceController extends Controller
 
         $range = OperationalTimeHelper::getOperationalRange($startDate, $endDate);
 
-        // Fetch logs with exit_at in range or entry_at in range or created in that range
+        // Fetch only logs where exit was explicitly marked (exit_at IS NOT NULL) within the operational/date range
         $logs = AccessLog::with([
             'subject',
             'user',
@@ -1919,52 +1919,18 @@ class SurveillanceController extends Controller
             'shipmentOrders.loadingOrders.weight_ticket',
             'shipmentOrders.origin',
         ])
+            ->whereNotNull('exit_at')
             ->where(function ($q) use ($startDate, $endDate, $range) {
                 $q->whereBetween('exit_at', $range)
-                  ->orWhereBetween('entry_at', $range)
-                  ->orWhereBetween('created_at', $range)
-                  ->orWhere(function ($sq) use ($startDate, $endDate) {
-                      $sq->whereIn('status', ['in_plant', 'completed'])
-                         ->where(function ($w) use ($startDate, $endDate) {
-                             $w->whereDate('exit_at', '>=', $startDate)->whereDate('exit_at', '<=', $endDate)
-                               ->orWhere(function ($w2) use ($startDate, $endDate) {
-                                   $w2->whereDate('entry_at', '>=', $startDate)->whereDate('entry_at', '<=', $endDate);
-                               })
-                               ->orWhere(function ($w3) use ($startDate, $endDate) {
-                                   $w3->whereDate('created_at', '>=', $startDate)->whereDate('created_at', '<=', $endDate);
-                               });
-                         });
+                  ->orWhere(function ($w) use ($startDate, $endDate) {
+                      $w->whereDate('exit_at', '>=', $startDate)
+                        ->whereDate('exit_at', '<=', $endDate);
                   });
             })
             ->orderBy('exit_at', 'asc')
-            ->orderBy('entry_at', 'asc')
-            ->get();
-
-        // Also query any ShipmentOrders completed/loaded in range
-        $additionalOrders = ShipmentOrder::with([
-            'items.product',
-            'client',
-            'weight_ticket',
-            'loadingOrders.weight_ticket',
-            'origin',
-            'loadingOrders.exit_operator'
-        ])
-            ->where(function ($q) use ($startDate, $endDate, $range) {
-                $q->whereBetween('loaded_at', $range)
-                  ->orWhereBetween('loading_finished_at', $range)
-                  ->orWhereBetween('created_at', $range)
-                  ->orWhereHas('weight_ticket', function ($tq) use ($range, $startDate, $endDate) {
-                      $tq->whereBetween('weigh_out_at', $range)
-                         ->orWhere(function ($tq2) use ($startDate, $endDate) {
-                             $tq2->whereDate('weigh_out_at', '>=', $startDate)->whereDate('weigh_out_at', '<=', $endDate);
-                         });
-                  });
-            })
-            ->whereNotIn('status', ['cancelled'])
             ->get();
 
         $allRows = [];
-        $processedOrderIds = [];
 
         foreach ($logs as $log) {
             $subject = $log->subject;
@@ -1972,7 +1938,6 @@ class SurveillanceController extends Controller
 
             if ($orders && $orders->count() > 0) {
                 foreach ($orders as $order) {
-                    $processedOrderIds[] = $order->id;
                     $ticket = $this->resolveOrderTicket($order);
 
                     $tons = 0.0;
@@ -1984,7 +1949,7 @@ class SurveillanceController extends Controller
                         $tons = (float)($order->programmed_tons ?? 0);
                     }
 
-                    $exitDateTime = $log->exit_at ?? $ticket?->weigh_out_at ?? $log->entry_at ?? Carbon::parse($startDate);
+                    $exitDateTime = $log->exit_at;
                     $entryDateTime = $log->entry_at ?? $log->created_at ?? $ticket?->weigh_in_at;
 
                     $productName = $order->items->first()?->product?->name ?? $order->product_text ?? $order->product ?? 'UREA INDUSTRIAL SUPERSACO 1000 KG ENV';
@@ -2010,7 +1975,7 @@ class SurveillanceController extends Controller
                 }
             } else if ($subject) {
                 // AccessLog without explicit linked orders (fallback entry)
-                $exitDateTime = $log->exit_at ?? $log->entry_at ?? Carbon::parse($startDate);
+                $exitDateTime = $log->exit_at;
                 $entryDateTime = $log->entry_at ?? $log->created_at;
 
                 $allRows[] = [
@@ -2030,46 +1995,6 @@ class SurveillanceController extends Controller
                     'plates'          => $subject->tractor_plate ?? 'S/P',
                 ];
             }
-        }
-
-        // Add any additional shipment orders from that date range not already captured
-        foreach ($additionalOrders as $order) {
-            if (in_array($order->id, $processedOrderIds)) continue;
-
-            $ticket = $this->resolveOrderTicket($order);
-            $tons = 0.0;
-            if ($ticket && $ticket->net_weight > 0) {
-                $tons = $ticket->net_weight >= 100 ? ($ticket->net_weight / 1000) : (float)$ticket->net_weight;
-            } elseif ($order->items && $order->items->sum('quantity') > 0) {
-                $tons = (float)$order->items->sum('quantity');
-            } else {
-                $tons = (float)($order->programmed_tons ?? 0);
-            }
-
-            $exitDateTime = $ticket?->weigh_out_at ?? $order->loading_finished_at ?? $order->loaded_at ?? Carbon::parse($startDate);
-            $entryDateTime = $ticket?->weigh_in_at ?? $order->created_at;
-            $exitOperator = $order->loadingOrders->first()?->exit_operator;
-
-            $productName = $order->items->first()?->product?->name ?? $order->product_text ?? $order->product ?? 'UREA INDUSTRIAL SUPERSACO 1000 KG ENV';
-            $clientName = $order->client?->business_name ?? $order->client?->name ?? $order->client_name ?? 'N/A';
-            $consigneeName = $order->consigned_to ?? $order->consignee ?? $order->destination ?? $clientName;
-
-            $allRows[] = [
-                'order_id'        => $order->id,
-                'tons'            => number_format($tons, 3, '.', ''),
-                'tons_raw'        => $tons,
-                'order_folio'     => $order->folio ?? $order->id,
-                'ticket_folio'    => $ticket?->ticket_number ?? $ticket?->folio ?? 'S/T',
-                'exit_date'       => $exitDateTime ? Carbon::parse($exitDateTime)->format('d/m/Y') : Carbon::parse($startDate)->format('d/m/Y'),
-                'caseta_time'     => $entryDateTime ? Carbon::parse($entryDateTime)->format('h:i a') : 'N/A',
-                'product'         => $productName,
-                'operator_name'   => $order->operator_name ?? $exitOperator?->name ?? 'N/A',
-                'transport_line'  => $order->transport_company ?? $exitOperator?->transport_line ?? 'N/A',
-                'client'          => $clientName,
-                'consignee'       => $consigneeName,
-                'unit_type'       => $order->unit_type ?? $exitOperator?->unit_type ?? 'FULL PLATAFORMA',
-                'plates'          => $order->tractor_plate ?? $exitOperator?->tractor_plate ?? 'S/P',
-            ];
         }
 
         // Distinct list for programs/products

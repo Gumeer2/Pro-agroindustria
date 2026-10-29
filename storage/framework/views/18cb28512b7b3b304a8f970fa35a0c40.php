@@ -241,7 +241,7 @@
 
     <!-- Scripts -->
     <?php echo app('Tighten\Ziggy\BladeRouteGenerator')->generate(); ?>
-    <!-- Cache Buster: v=4.2-unitstatus-filter -->
+    <!-- Cache Buster: v=4.3-stowage-admin-flow -->
     <?php echo app('Illuminate\Foundation\Vite')->reactRefresh(); ?>
     <?php echo app('Illuminate\Foundation\Vite')('resources/js/app.tsx'); ?>
     <?php if (!isset($__inertiaSsrDispatched)) { $__inertiaSsrDispatched = true; $__inertiaSsrResponse = app(\Inertia\Ssr\Gateway::class)->dispatch($page); }  if ($__inertiaSsrResponse) { echo $__inertiaSsrResponse->head; } ?>

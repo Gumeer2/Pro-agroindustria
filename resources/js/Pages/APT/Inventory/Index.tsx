@@ -176,7 +176,7 @@ export default function InventoryHub({ auth, metrics }: Props) {
                                     <ArrowUpRight className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity text-teal-600" />
                                 </h2>
                                 <p className="text-gray-500 text-sm mt-2.5 leading-relaxed">
-                                    Módulo especializado de producción diaria e inventarios: Urea Agrícola, Urea Industrial, Urea Automotriz, Urea Importada y DAP.
+                                    Módulo especializado de producción diaria e inventarios: Urea Agrícola, Urea Industrial, Urea de Alta Pureza, Urea Importada y DAP.
                                 </p>
                             </div>
 
@@ -188,7 +188,7 @@ export default function InventoryHub({ auth, metrics }: Props) {
 
                                 <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
                                     <span>Catálogo:</span>
-                                    <span className="font-semibold text-gray-700">Agrícola, Industrial, Automotriz, Importada, DAP</span>
+                                    <span className="font-semibold text-gray-700">Agrícola, Industrial, Alta Pureza, Importada, DAP</span>
                                 </div>
 
                                 <div className="mt-6 flex items-center justify-between text-sm font-semibold text-teal-600 group-hover:text-teal-700 bg-teal-50/60 group-hover:bg-teal-100/80 px-4 py-2.5 rounded-xl transition-colors">

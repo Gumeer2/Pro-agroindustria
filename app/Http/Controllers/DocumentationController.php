@@ -730,7 +730,7 @@ class DocumentationController extends Controller
         $samplingAvg = $history?->sampling_avg ?? ($order->sampling_avg ?? null);
         $samplingCompletedAt = $history?->sampling_completed_at ?? ($order->sampling_completed_at ?? null);
 
-        return $order->toArray() + [
+        return array_merge($order->toArray(), [
             'product_code' => $productCode,
             'product_text' => $productText,
             'destination' => $order->destination ?: ($order->shipment_destination?->name ?: null),
@@ -745,7 +745,7 @@ class DocumentationController extends Controller
             'sampling_status' => $samplingStatus,
             'sampling_avg' => $samplingAvg,
             'sampling_completed_at' => $samplingCompletedAt ? \Carbon\Carbon::parse($samplingCompletedAt)->toIso8601String() : null,
-        ];
+        ]);
     }
 
     /**
@@ -1738,7 +1738,7 @@ class DocumentationController extends Controller
         return response()->json([
             'order' => $this->formatOrderForPrint($order),
             'history' => $history ? $this->formatProcessHistoryItem($history) : null,
-            'is_registered' => !empty($order->lot_id) || !empty($history),
+            'is_registered' => !empty($order->lot_id) || (!empty($history) && !empty($history->lot_id)),
         ]);
     }
 
@@ -1872,7 +1872,14 @@ class DocumentationController extends Controller
         $stowageDone = ($order?->stowage_plan_status === 'completed' || !empty($order?->stowage_plan_saved_at)) 
             || ($history && ($history->stowage_plan_status === 'completed' || !empty($history->stowage_plan_saved_at)));
 
-        if ($isEnvasado && !$stowageDone) {
+        $user = $request->user();
+        $isAdmin = $user && (
+            (method_exists($user, 'hasRole') && ($user->hasRole('admin') || $user->hasRole('super-admin'))) || 
+            str_contains(strtolower($user->name ?? ''), 'admin') || 
+            str_contains(strtolower($user->username ?? ''), 'admin')
+        );
+
+        if ($isEnvasado && !$stowageDone && !$isAdmin) {
             return response()->json([
                 'message' => 'Candado Activo: El usuario Estibador debe guardar la Nota de Estiba (GLS-AP-FO-002) antes de registrar las muestras de ensacadora.',
             ], 422);
@@ -2037,19 +2044,6 @@ class DocumentationController extends Controller
             }
         }
 
-        if (!$history && $order) {
-            $history = ShipmentProcessHistory::create([
-                'shipment_order_id' => $order->id,
-                'lot_id' => $order->lot_id,
-                'warehouse' => $order->warehouse,
-                'loading_administrator' => $order->loading_administrator ?? $request->user()?->name ?? 'Administrador',
-                'loading_squad_leader' => $order->loading_squad_leader,
-                'loading_assistant' => $order->loading_assistant,
-                'started_at' => $order->loaded_at ?? now(),
-                'status' => 'loading',
-            ]);
-        }
-
         if (!$history && !$order) {
             return response()->json(['message' => 'No se encontró la orden ni el registro de historial de embarque.'], 404);
         }
@@ -2154,45 +2148,65 @@ class DocumentationController extends Controller
 
     public function deleteLoading(string $id)
     {
+        $user = auth()->user();
+        $isAdmin = $user && (
+            (method_exists($user, 'hasRole') && ($user->hasRole('admin') || $user->hasRole('super-admin'))) || 
+            str_contains(strtolower($user->name ?? ''), 'admin') || 
+            str_contains(strtolower($user->username ?? ''), 'admin')
+        );
+        $isEstibador = $user && method_exists($user, 'hasRole') && ($user->hasRole('estibador') || $user->hasRole('estibadores')) && !$isAdmin;
+
         $order = ShipmentOrder::find($id);
+        $history = null;
         if ($order) {
-            ShipmentProcessHistory::where('shipment_order_id', $order->id)->delete();
-            $order->update([
-                'lot_id' => null,
-                'warehouse' => null,
-                'loading_administrator' => null,
-                'loading_squad_leader' => null,
-                'loading_assistant' => null,
-                'loaded_at' => null,
-                'loading_finished_at' => null,
-                'status' => 'created',
-            ]);
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
         } else {
             $history = ShipmentProcessHistory::find($id);
             if ($history) {
                 $order = $history->shipmentOrder;
-                $history->delete();
-                if ($order && !ShipmentProcessHistory::where('shipment_order_id', $order->id)->exists()) {
-                    $order->update([
-                        'lot_id' => null,
-                        'warehouse' => null,
-                        'loading_administrator' => null,
-                        'loading_squad_leader' => null,
-                        'loading_assistant' => null,
-                        'loaded_at' => null,
-                        'loading_finished_at' => null,
-                        'status' => 'created',
-                    ]);
-                }
             }
         }
 
-        return response()->json(['message' => 'Registro eliminado del historial.']);
+        // Si el usuario es estibador: solo puede eliminar si ya guardó la nota de estiba
+        if ($isEstibador) {
+            $hasStowage = ($order && $order->stowage_plan_status === 'completed') || ($history && $history->stowage_plan_status === 'completed');
+            if (!$hasStowage) {
+                return response()->json(['message' => 'Los usuarios con el rol de estibador solo pueden eliminar la nota de estiba que hayan guardado.'], 403);
+            }
+        }
+
+        $resetFields = [
+            'lot_id' => null,
+            'warehouse' => null,
+            'loading_administrator' => null,
+            'loading_squad_leader' => null,
+            'loading_assistant' => null,
+            'loaded_at' => null,
+            'loading_finished_at' => null,
+            'status' => 'created',
+            'stowage_plan' => null,
+            'stowage_plan_status' => 'pending',
+            'stowage_plan_saved_at' => null,
+            'stowage_plan_saved_by' => null,
+        ];
+
+        if ($order) {
+            ShipmentProcessHistory::where('shipment_order_id', $order->id)->delete();
+            $order->update($resetFields);
+        } else if ($history) {
+            $history->delete();
+            if ($order && !ShipmentProcessHistory::where('shipment_order_id', $order->id)->exists()) {
+                $order->update($resetFields);
+            }
+        }
+
+        return response()->json(['message' => 'Nota de estiba y orden eliminadas del historial correctamente.']);
     }
 
     private function getLoadingHistory(?string $lotId = null)
     {
-        $query = ShipmentProcessHistory::with(['shipmentOrder.items.product', 'lot']);
+        $query = ShipmentProcessHistory::with(['shipmentOrder.items.product', 'lot'])
+            ->whereNotNull('lot_id');
 
         if ($lotId) {
             $query->where('lot_id', $lotId);

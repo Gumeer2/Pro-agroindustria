@@ -343,12 +343,15 @@ function LiveStopwatch({
     );
 }
 
-const isRowEnvasado = (row: HistoryItem): boolean => {
+const isRowEnvasado = (row: any): boolean => {
+    if (!row) return false;
     const pres = (row.presentation || "").toString().toUpperCase();
     if (pres.includes("ENVASADO")) return true;
     if (pres.includes("GRANEL")) return false;
-    const text = `${row.product || ""}`.toUpperCase();
-    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
+    if (row.stowage_count && parseInt(row.stowage_count, 10) > 0) return true;
+    if (row.sacks_count && parseInt(row.sacks_count, 10) > 0) return true;
+    const text = `${row.product || row.product_text || ""}`.toUpperCase();
+    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG") || text.includes("25 KG") || text.includes("50 KG");
 };
 
 const getOrderSamplingStatus = (row: HistoryItem): {
@@ -473,16 +476,24 @@ export default function ShipmentProcess({
     const [samplingRevision, setSamplingRevision] = useState(0);
 
     const userRoles: any[] = auth?.user?.roles || [];
+    const isAdmin = useMemo(() => {
+        return userRoles.some((r: any) => {
+            const name = (typeof r === "string" ? r : r.name || "").toLowerCase();
+            return name === "admin" || name === "administrador" || name === "super-admin";
+        }) || Boolean(auth?.user?.is_admin) || (auth?.user?.name || "").toLowerCase().includes("admin");
+    }, [userRoles, auth?.user]);
+
     const isEstibadorUser = useMemo(() => {
         return userRoles.some((r: any) => {
             const name = (typeof r === "string" ? r : r.name || "").toLowerCase();
             return name === "estibadores" || name === "estibador";
-        }) && !userRoles.some((r: any) => (typeof r === "string" ? r : r.name || "").toLowerCase() === "admin");
-    }, [userRoles]);
+        }) && !isAdmin;
+    }, [userRoles, isAdmin]);
 
     const isStowagePlanCompleted = (row: any): boolean => {
         if (!row) return false;
-        return row.stowage_plan_status === "completed" || !!row.stowage_plan_saved_at;
+        if (!row.stowage_plan_status || row.stowage_plan_status === "pending") return false;
+        return row.stowage_plan_status === "completed";
     };
 
     const handleOpenStowagePlan = (order: any) => {
@@ -500,6 +511,31 @@ export default function ShipmentProcess({
         })();
 
         if (isRowEnvasado && !isStowagePlanCompleted(row)) {
+            if (isAdmin) {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Candado Activo: Plan de Estiba Pendiente",
+                    html: `<div class="text-left space-y-3">
+                        <p class="font-medium text-slate-800">
+                            No se pueden tomar las muestras de la orden <b>${row?.folio || ""}</b> porque la <b>Nota de Estiba (GLS-AP-FO-002)</b> está pendiente.
+                        </p>
+                        <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
+                            <b>Aviso de Administrador:</b> Como Administrador puedes realizar directamente la Nota de Estiba a continuación.
+                        </div>
+                    </div>`,
+                    showCancelButton: true,
+                    confirmButtonColor: "#059669",
+                    cancelButtonColor: "#64748b",
+                    confirmButtonText: "Realizar Nota de Estiba",
+                    cancelButtonText: "Cancelar",
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        handleOpenStowagePlan(row);
+                    }
+                });
+                return;
+            }
+
             Swal.fire({
                 icon: "warning",
                 title: "Candado Activo: Plan de Estiba Pendiente",
@@ -672,10 +708,29 @@ export default function ShipmentProcess({
                 const matchedHistory = history.find(
                     (h) => String(h.id) === String(order.id) || h.folio === order.folio || String(h.shipment_order_id) === String(order.id)
                 );
-                const targetOrder = matchedHistory ? { ...order, ...matchedHistory } : order;
+                const targetOrder = matchedHistory ? { ...matchedHistory, ...order } : order;
 
                 // 1. Si el usuario es Estibador, abrir directamente la Nota de Estiba (GLS-AP-FO-002)
                 if (isEstibadorUser) {
+                    if (isStowagePlanCompleted(targetOrder)) {
+                        Swal.fire({
+                            icon: "info",
+                            title: "Nota de Estiba Ya Guardada",
+                            html: `<div class="text-left space-y-2">
+                                <p class="font-medium text-slate-800">
+                                    La orden <b>${targetOrder.folio || ""}</b> ya tiene una Nota de Estiba guardada.
+                                </p>
+                                <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs">
+                                    Si te equivocaste y requieres realizar otra, primero debes <b>eliminar</b> la nota de estiba en el historial inferior.
+                                </div>
+                            </div>`,
+                            confirmButtonColor: "#059669",
+                            confirmButtonText: "Entendido",
+                        });
+                        setSearchQr("");
+                        setScannedOrder(null);
+                        return;
+                    }
                     handleOpenStowagePlan(targetOrder);
                     setSearchQr("");
                     setScannedOrder(null);
@@ -693,8 +748,38 @@ export default function ShipmentProcess({
 
                 if (isTargetEnvasado) {
                     // CANDADO DE ESTIBADOR:
-                    // "para los envasados, cuando el estibador guarde la persona encargada pordra tomar las muestras una vez escaneado el codigo siempre y cuando el estibador ya haya guardado, sino no lo dejara tomar las muestras"
+                    // Si el estibador no ha guardado la nota de estiba:
                     if (!isStowagePlanCompleted(targetOrder)) {
+                        if (isAdmin) {
+                            Swal.fire({
+                                icon: "warning",
+                                title: "Candado Activo: Plan de Estiba Pendiente",
+                                html: `<div class="text-left space-y-3">
+                                    <p class="font-medium text-slate-800">
+                                        No se pueden tomar las muestras de la orden <b>${targetOrder.folio || ""}</b>.
+                                    </p>
+                                    <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
+                                        <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
+                                    </div>
+                                    <p class="text-xs text-slate-600">
+                                        Como <b>Administrador</b> puedes realizar todas las operaciones. A continuación se abrirá la <b>Nota de Estiba</b> para realizarla.
+                                    </p>
+                                </div>`,
+                                showCancelButton: true,
+                                confirmButtonColor: "#059669",
+                                cancelButtonColor: "#64748b",
+                                confirmButtonText: "Realizar Nota de Estiba",
+                                cancelButtonText: "Cancelar",
+                            }).then((result) => {
+                                if (result.isConfirmed) {
+                                    handleOpenStowagePlan(targetOrder);
+                                }
+                                setSearchQr("");
+                                setScannedOrder(null);
+                            });
+                            return;
+                        }
+
                         Swal.fire({
                             icon: "warning",
                             title: "Candado Activo: Plan de Estiba Pendiente",
@@ -706,7 +791,7 @@ export default function ShipmentProcess({
                                     <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
                                 </div>
                                 <p class="text-xs text-slate-600">
-                                    Mientras el estibador no guarde la nota de estiba, la persona encargada no puede tomar las muestras ni continuar con la verificación de pesos.
+                                    Mientras el estibador no guarde la nota de estiba, la persona encargada no puede continuar con el formulario de carga ni con la verificación de pesos.
                                 </p>
                             </div>`,
                             confirmButtonColor: "#dc2626",
@@ -718,10 +803,25 @@ export default function ShipmentProcess({
                     }
 
                     // Si el estibador YA guardó la nota de estiba:
-                    // La persona encargada podrá tomar las muestras una vez escaneado el código
-                    handleOpenSampling(targetOrder);
-                    setSearchQr("");
-                    setScannedOrder(null);
+                    // Primero se le pide llenar el formulario de asignación y carga (Paso 2),
+                    // y una vez guardado el formulario se procede automáticamente al muestreo de 80 muestras.
+                    setScannedOrder(targetOrder);
+                    if (targetOrder.warehouse) {
+                        setWarehouse(targetOrder.warehouse);
+                    }
+                    if (targetOrder.lot_id) {
+                        setSelectedLotId(String(targetOrder.lot_id));
+                    }
+                    if (targetOrder.loading_squad_leader || targetOrder.squad_leader) {
+                        setSquadLeader(targetOrder.loading_squad_leader || targetOrder.squad_leader);
+                    }
+                    if (targetOrder.loading_assistant) {
+                        setLoadingAssistant(targetOrder.loading_assistant);
+                    }
+                    if (targetOrder.stowage_count) {
+                        setStowageCount(String(targetOrder.stowage_count));
+                    }
+                    setCurrentStep(2);
                     return;
                 }
 
@@ -766,6 +866,8 @@ export default function ShipmentProcess({
         setSearchQr("");
         setWarehouse(`Almacen ${selectedWarehouseId}`);
         setStowageCount("");
+        setSelectedLotId("");
+        setLoadingAssistant("");
         setCurrentStep(1);
     };
 
@@ -805,13 +907,14 @@ export default function ShipmentProcess({
                 stowage_count: stowageCount ? parseInt(stowageCount, 10) : null,
             });
 
-            const savedOrder = response.data?.order || scannedOrder;
-            if (stowageCount) {
-                savedOrder.stowage_count = parseInt(stowageCount, 10);
-            }
+            const savedOrder = {
+                ...scannedOrder,
+                ...(response.data?.order || {}),
+                stowage_count: stowageCount ? parseInt(stowageCount, 10) : (scannedOrder.stowage_count || null),
+            };
 
             if (isEnvasado) {
-                if (isStowagePlanCompleted(savedOrder)) {
+                if (isStowagePlanCompleted(savedOrder) || isAdmin) {
                     // Open the Sampling Modal (Estibas y gráfica)
                     setActiveSamplingOrder(savedOrder);
                     setPrintOrderData(savedOrder);
@@ -841,6 +944,8 @@ export default function ShipmentProcess({
             setScannedOrder(null);
             setSearchQr("");
             setStowageCount("");
+            setSelectedLotId("");
+            setLoadingAssistant("");
             setCurrentStep(1);
             await refreshHistory();
         } catch (error: any) {
@@ -909,9 +1014,14 @@ export default function ShipmentProcess({
     };
 
     const handleDelete = async (id: string, folio: string) => {
+        const titleText = isEstibadorUser ? "¿Eliminar Nota de Estiba?" : "¿Eliminar del historial?";
+        const bodyText = isEstibadorUser
+            ? `¿Estás seguro de eliminar la nota de estiba de la orden ${folio}? Esto te permitirá volver a escanearla y realizar una nueva nota si te equivocaste.`
+            : `¿Estás seguro de eliminar la orden ${folio} del historial de carga?`;
+
         const result = await Swal.fire({
-            title: "¿Eliminar del historial?",
-            text: `¿Estás seguro de eliminar la orden ${folio} del historial de carga?`,
+            title: titleText,
+            text: bodyText,
             icon: "warning",
             showCancelButton: true,
             confirmButtonColor: "#991b1b",
@@ -927,8 +1037,8 @@ export default function ShipmentProcess({
                 Swal.fire({
                     icon: "success",
                     title: "Eliminado",
-                    text: "El registro ha sido eliminado del historial.",
-                    timer: 1500,
+                    text: isEstibadorUser ? "Nota de estiba eliminada. Ya puedes volver a escanearla para realizar una nueva." : "El registro ha sido eliminado del historial.",
+                    timer: 2000,
                     showConfirmButton: false,
                 });
             } catch (error: any) {
@@ -943,6 +1053,11 @@ export default function ShipmentProcess({
     };
 
     const filteredHistory = history.filter((item) => {
+        // Los usuarios con el rol de estibador solo pueden visualizar los de envasador
+        if (isEstibadorUser && !isRowEnvasado(item)) {
+            return false;
+        }
+
         // Warehouse filter
         const itemWhNum = normalizeWarehouseNumber(item.warehouse);
         if (itemWhNum !== null && itemWhNum !== selectedWarehouseId) {
@@ -1378,112 +1493,6 @@ export default function ShipmentProcess({
                                             className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-700 font-medium shadow-sm cursor-not-allowed"
                                         />
                                     </div>
-
-                                    {/* Bloque Destacado: Configuración de Estibas y Muestreo (Solo para Envasado) */}
-                                    {isEnvasado && (
-                                        <div className="md:col-span-2 bg-gradient-to-br from-indigo-50/60 via-slate-50 to-emerald-50/40 rounded-2xl border border-indigo-100/90 p-5 md:p-6 shadow-sm">
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-indigo-100/70">
-                                                <div className="flex items-center gap-2.5">
-                                                    <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm">
-                                                        <Layers className="w-5 h-5" />
-                                                    </div>
-                                                    <div>
-                                                        <h4 className="text-sm font-bold text-gray-900">
-                                                            Control y Plan de Muestreo
-                                                        </h4>
-                                                        <p className="text-xs text-gray-500">
-                                                            Distribución y cálculo dinámico de muestras para control en ensacadoras
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <span className="self-start sm:self-auto inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-800">
-                                                    Muestreo Calidad
-                                                </span>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                {/* Número de Muestras */}
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                                                        Número de Muestras
-                                                    </label>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            step="1"
-                                                            value={stowageCount}
-                                                            onChange={(e) => setStowageCount(e.target.value)}
-                                                            placeholder="Ej. 20"
-                                                            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 pr-20 text-gray-900 font-semibold shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
-                                                        />
-                                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                            <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-1 rounded-md border border-gray-200">
-                                                                Muestras
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-[11px] text-gray-500 mt-1">
-                                                        Cantidad de muestras en la unidad
-                                                    </p>
-                                                </div>
-
-                                                {/* N. Muestras */}
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                        <span>N° Total Muestras</span>
-                                                        <span className="text-[10px] text-indigo-600 font-normal lowercase bg-indigo-50 px-1.5 py-0.5 rounded">
-                                                            fijo
-                                                        </span>
-                                                    </label>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            readOnly
-                                                            value={totalSamples}
-                                                            placeholder="40"
-                                                            className="w-full rounded-xl border border-indigo-100 bg-white/80 px-4 py-3 pr-20 text-indigo-900 font-bold shadow-sm cursor-not-allowed"
-                                                        />
-                                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-200">
-                                                                Sacos
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-[11px] text-gray-500 mt-1">
-                                                        Base fija de 80 sacos
-                                                    </p>
-                                                </div>
-
-                                                {/* Muestras Sugeridas Por Estiba */}
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                        <span>Muestras / Estiba</span>
-                                                        <span className="text-[10px] text-emerald-600 font-normal lowercase bg-emerald-50 px-1.5 py-0.5 rounded">
-                                                            sugerido
-                                                        </span>
-                                                    </label>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            readOnly
-                                                            value={suggestedSamplesPerStowage}
-                                                            placeholder="Calculando..."
-                                                            className="w-full rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 pr-24 text-emerald-900 font-bold shadow-sm cursor-not-allowed"
-                                                        />
-                                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
-                                                                Muestras/Est.
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-[11px] text-gray-500 mt-1">
-                                                        Total Muestras ÷ N° Estibas
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
 
                                 {/* Submit & Back Buttons */}
@@ -1500,7 +1509,11 @@ export default function ShipmentProcess({
                                         disabled={isSaving}
                                         className="inline-flex items-center justify-center px-8 py-3 rounded-xl shadow-md text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50"
                                     >
-                                        {isSaving ? "Guardando..." : "Guardar Embarque"}
+                                        {isSaving
+                                            ? "Guardando..."
+                                            : isEnvasado
+                                            ? "Guardar y Realizar Muestreo"
+                                            : "Guardar Embarque"}
                                     </button>
                                 </div>
                             </form>
@@ -1630,32 +1643,44 @@ export default function ShipmentProcess({
                                                                 )}
                                                             </Menu.Item>
                                                             {(() => {
-                                                                const rowIsEnvasado = (() => {
-                                                                    const pres = (row.presentation || "").toString().toUpperCase();
-                                                                    if (pres.includes("ENVASADO")) return true;
-                                                                    if (pres.includes("GRANEL")) return false;
-                                                                    const text = `${row.product || ""}`.toUpperCase();
-                                                                    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
-                                                                })();
+                                                                const rowIsEnvasado = isRowEnvasado(row);
 
                                                                 if (!rowIsEnvasado) return null;
 
                                                                 return (
                                                                     <>
-                                                                        <Menu.Item>
-                                                                            {({ active }) => (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleOpenStowagePlan(row)}
-                                                                                    className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
-                                                                                        active ? "bg-indigo-600 text-white" : "text-gray-700"
-                                                                                    }`}
-                                                                                >
-                                                                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                                                                                    Nota de Estiba (GLS-AP-FO-002)
-                                                                                </button>
-                                                                            )}
-                                                                        </Menu.Item>
+                                                                        {(!isEstibadorUser || !isStowagePlanCompleted(row)) && (
+                                                                            <Menu.Item>
+                                                                                {({ active }) => (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleOpenStowagePlan(row)}
+                                                                                        className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
+                                                                                            active ? "bg-indigo-600 text-white" : "text-gray-700"
+                                                                                        }`}
+                                                                                    >
+                                                                                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                                                                        Nota de Estiba (GLS-AP-FO-002)
+                                                                                    </button>
+                                                                                )}
+                                                                            </Menu.Item>
+                                                                        )}
+                                                                        {isEstibadorUser && isStowagePlanCompleted(row) && (
+                                                                            <Menu.Item>
+                                                                                {({ active }) => (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleDelete(row.id, row.folio)}
+                                                                                        className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left text-red-600 ${
+                                                                                            active ? "bg-red-50 text-red-700" : ""
+                                                                                        }`}
+                                                                                    >
+                                                                                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                                                                        Eliminar Nota de Estiba
+                                                                                    </button>
+                                                                                )}
+                                                                            </Menu.Item>
+                                                                        )}
                                                                         {!isEstibadorUser && (
                                                                             <Menu.Item>
                                                                                 {({ active }) => (
@@ -1772,137 +1797,95 @@ export default function ShipmentProcess({
                                                             {samplingStatus.isEnvasado && (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => handleOpenStowagePlan(row)}
-                                                                    className={`font-bold px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm whitespace-nowrap flex items-center gap-1.5 shrink-0 ${
-                                                                        isStowagePlanCompleted(row)
-                                                                            ? "bg-teal-700 hover:bg-teal-800 text-white"
-                                                                            : "bg-amber-600 hover:bg-amber-700 text-white animate-pulse"
-                                                                    }`}
-                                                                    title={
-                                                                        isStowagePlanCompleted(row)
-                                                                            ? "Editar Nota de Estiba (GLS-AP-FO-002) - Guardado"
-                                                                            : "Nota de Estiba Pendiente - Haga clic para tachar y guardar"
-                                                                    }
+                                                                    onClick={() => handleDelete(row.id, row.folio)}
+                                                                    className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                    title="Eliminar Nota de Estiba guardada para corregir o realizar otra"
                                                                 >
-                                                                    {isStowagePlanCompleted(row) ? (
-                                                                        <>
-                                                                            <FileSpreadsheet className="w-3.5 h-3.5 text-teal-200" />
-                                                                            <span>Editar Nota Estiba</span>
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <Lock className="w-3.5 h-3.5 text-amber-200" />
-                                                                            <span>Tachar Nota Estiba</span>
-                                                                        </>
-                                                                    )}
-                                                                </button>
-                                                            )}
-
-                                                            {samplingStatus.isEnvasado && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleOpenPrintModal(row.id)}
-                                                                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1.5 rounded-lg text-xs transition shadow-sm whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                    title="Imprimir Nota de Estiba (GLS-AP-FO-002)"
-                                                                >
-                                                                    <Printer className="w-3.5 h-3.5" />
+                                                                    <Trash2 className="w-3.5 h-3.5" />
                                                                 </button>
                                                             )}
                                                         </>
                                                     ) : (
                                                         <>
-                                                            {samplingStatus.isEnvasado && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleOpenStowagePlan(row)}
-                                                                    className={`font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 ${
-                                                                        isStowagePlanCompleted(row)
-                                                                            ? "bg-teal-700 hover:bg-teal-800 text-white"
-                                                                            : "bg-amber-600 hover:bg-amber-700 text-white animate-pulse"
-                                                                    }`}
-                                                                    title={
-                                                                        isStowagePlanCompleted(row)
-                                                                            ? "Editar Nota de Estiba (GLS-AP-FO-002) - Guardado"
-                                                                            : "Candado Activo: Plan de Estiba Pendiente - Haga clic para capturar y guardar"
-                                                                    }
-                                                                >
-                                                                    {isStowagePlanCompleted(row) ? (
-                                                                        <>
-                                                                            <FileSpreadsheet className="w-3 h-3 text-teal-200" />
-                                                                            <span>Estiba</span>
-                                                                        </>
+                                                            {samplingStatus.isEnvasado ? (
+                                                                <>
+                                                                    {/* Muestreo */}
+                                                                    {!isStowagePlanCompleted(row) ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSampling(row)}
+                                                                            className="bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
+                                                                            title="Candado Activo: Requiere que el usuario Estibador guarde primero el Plan de Estiba"
+                                                                        >
+                                                                            <Lock className="w-3 h-3 text-amber-600" />
+                                                                            <span>Bloqueado</span>
+                                                                        </button>
+                                                                    ) : samplingStatus.isCompleted ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSampling(row)}
+                                                                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
+                                                                            title="Muestreo finalizado (80/80). Haga clic para ver o editar."
+                                                                        >
+                                                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                            <span>80/80</span>
+                                                                        </button>
                                                                     ) : (
-                                                                        <>
-                                                                            <Lock className="w-3 h-3 text-amber-200" />
-                                                                            <span>Estiba</span>
-                                                                        </>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSampling(row)}
+                                                                            className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
+                                                                            title={`Muestreo (${samplingStatus.samplesCount} de 80 muestras). Haga clic para continuar.`}
+                                                                        >
+                                                                            <Scale className="w-3 h-3" />
+                                                                            <span>Muestreo ({samplingStatus.samplesCount}/80)</span>
+                                                                        </button>
                                                                     )}
-                                                                </button>
-                                                            )}
 
-                                                            {samplingStatus.isEnvasado && (
-                                                                !isStowagePlanCompleted(row) ? (
+                                                                    {/* Imprimir */}
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => handleOpenSampling(row)}
-                                                                        className="bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
-                                                                        title="Candado Activo: Requiere que el usuario Estibador guarde primero el Plan de Estiba"
+                                                                        onClick={() => handleOpenPrintModal(row.id)}
+                                                                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                        title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
                                                                     >
-                                                                        <Lock className="w-3 h-3 text-amber-600" />
-                                                                        <span>Bloqueado</span>
+                                                                        <Printer className="w-3.5 h-3.5" />
                                                                     </button>
-                                                                ) : samplingStatus.isCompleted ? (
+
+                                                                    {/* Eliminar */}
                                                                     <button
                                                                         type="button"
-                                                                        disabled
-                                                                        className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-1.5 py-1 rounded-md text-[10px] cursor-not-allowed whitespace-nowrap flex items-center gap-1 opacity-80 shrink-0"
-                                                                        title="Muestreo finalizado (80/80)"
+                                                                        onClick={() => handleDelete(row.id, row.folio)}
+                                                                        className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                        title="Eliminar orden del historial"
                                                                     >
-                                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                        <span>80/80</span>
+                                                                        <Trash2 className="w-3.5 h-3.5" />
                                                                     </button>
-                                                                ) : (
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    {/* Granel: Finalizar (mientras esté en carga) */}
+                                                                    {row.status === "loading" && !row.finished_at && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleFinish(row.id, row.folio)}
+                                                                            className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0"
+                                                                        >
+                                                                            Finalizar
+                                                                        </button>
+                                                                    )}
+
+                                                                    {/* Eliminar */}
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => handleOpenSampling(row)}
-                                                                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
-                                                                        title={`Muestreo (${samplingStatus.samplesCount} de 80 muestras). Haga clic para continuar.`}
+                                                                        onClick={() => handleDelete(row.id, row.folio)}
+                                                                        className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                        title="Eliminar orden del historial"
                                                                     >
-                                                                        <Scale className="w-3 h-3" />
-                                                                        <span>Muestreo ({samplingStatus.samplesCount}/80)</span>
+                                                                        <Trash2 className="w-3.5 h-3.5" />
                                                                     </button>
-                                                                )
+                                                                </>
                                                             )}
-
-                                                            {row.status === "loading" && !row.finished_at && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleFinish(row.id, row.folio)}
-                                                                    className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0"
-                                                                >
-                                                                    Finalizar
-                                                                </button>
-                                                            )}
-
-                                                            {samplingStatus.isEnvasado && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleOpenPrintModal(row.id)}
-                                                                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                    title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
-                                                                >
-                                                                    <Printer className="w-3.5 h-3.5" />
-                                                                </button>
-                                                            )}
-
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleDelete(row.id, row.folio)}
-                                                                className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                title="Eliminar orden del historial"
-                                                            >
-                                                                <Trash2 className="w-3.5 h-3.5" />
-                                                            </button>
                                                         </>
                                                     )}
                                                 </div>

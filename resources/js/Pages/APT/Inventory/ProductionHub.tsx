@@ -199,7 +199,7 @@ export default function ProductionHub({ auth, metrics }: Props) {
         },
         {
             id: "urea-automotriz",
-            name: "Urea Automotriz",
+            name: "Urea de Alta Pureza",
             badge: "Automotriz",
             badgeColor: "bg-indigo-100 text-indigo-800 border-indigo-200 group-hover:bg-indigo-900 group-hover:text-white",
             icon: Truck,
@@ -208,7 +208,7 @@ export default function ProductionHub({ auth, metrics }: Props) {
             glowColor: "from-indigo-50",
             accentColor: "text-indigo-600",
             buttonBg: "bg-indigo-50/60 group-hover:bg-indigo-100/80 text-indigo-600 group-hover:text-indigo-700",
-            description: "Control y seguimiento de producción diaria, balance de inventarios y especificaciones de Urea Automotriz.",
+            description: "Control y seguimiento de producción diaria, balance de inventarios y especificaciones de Urea de Alta Pureza.",
             specialModuleLabel: "Stock Disponible",
             specialModuleValue: metrics?.urea_automotriz_total !== undefined ? `${Number(metrics.urea_automotriz_total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TM` : "0.00 TM",
             secondaryLabel: "Plantas:",
@@ -268,8 +268,8 @@ export default function ProductionHub({ auth, metrics }: Props) {
         proagro: {
             id: "proagro",
             title: "Urea Proagro",
-            subtitle: "Consolidado global de Urea Agrícola, Urea Industrial y Urea Automotriz",
-            badge: "Agrícola · Industrial · Automotriz",
+            subtitle: "Consolidado global de Urea Agrícola, Urea Industrial y Urea de Alta Pureza",
+            badge: "Agrícola · Industrial · Alta Pureza",
             badgeColor: "bg-teal-100 text-teal-800 border-teal-200",
             tag: "Producción Nacional",
             tagColor: "text-teal-700 bg-white/90 border-teal-100",

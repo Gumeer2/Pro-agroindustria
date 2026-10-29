@@ -318,7 +318,7 @@ export default function UreaAutomotrizInventoryIndex({
                     Swal.fire({
                         icon: "success",
                         title: "Actualizado",
-                        text: "Producción diaria de Urea Automotriz actualizada correctamente",
+                        text: "Producción diaria de Urea de Alta Pureza actualizada correctamente",
                         timer: 2000,
                         showConfirmButton: false,
                     });
@@ -332,7 +332,7 @@ export default function UreaAutomotrizInventoryIndex({
                     Swal.fire({
                         icon: "success",
                         title: "Registrado",
-                        text: "Producción diaria de Urea Automotriz capturada exitosamente",
+                        text: "Producción diaria de Urea de Alta Pureza capturada exitosamente",
                         timer: 2000,
                         showConfirmButton: false,
                     });
@@ -489,10 +489,10 @@ export default function UreaAutomotrizInventoryIndex({
 
     const pageTitle =
         activeTab === "production"
-            ? "Urea Automotriz: Producción Diaria"
+            ? "Urea de Alta Pureza: Producción Diaria"
             : activeTab === "initial"
-            ? "Urea Automotriz: Inventario Inicial"
-            : "Urea Automotriz: Balance y Desglose";
+            ? "Urea de Alta Pureza: Inventario Inicial"
+            : "Urea de Alta Pureza: Balance y Desglose";
 
     return (
         <DashboardLayout user={auth.user} header={pageTitle}>
@@ -514,7 +514,7 @@ export default function UreaAutomotrizInventoryIndex({
                     <div className="flex items-center space-x-2">
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-xs">
                             <Truck className="w-3.5 h-3.5 mr-1" />
-                            Urea Automotriz
+                            Urea de Alta Pureza
                         </span>
                     </div>
                 </div>
@@ -560,10 +560,10 @@ export default function UreaAutomotrizInventoryIndex({
                                 }`}
                             >
                                 {activeTab === "production"
-                                    ? "Captura y seguimiento de la producción diaria por turno, planta y almacén de Urea Automotriz."
+                                    ? "Captura y seguimiento de la producción diaria por turno, planta y almacén de Urea de Alta Pureza."
                                     : activeTab === "initial"
-                                    ? "Captura y balance inicial de existencias base de Urea Automotriz."
-                                    : "Consolidado de stock total, inventario inicial y producción acumulada de Urea Automotriz."}
+                                    ? "Captura y balance inicial de existencias base de Urea de Alta Pureza."
+                                    : "Consolidado de stock total, inventario inicial y producción acumulada de Urea de Alta Pureza."}
                             </p>
                         </div>
                     </div>

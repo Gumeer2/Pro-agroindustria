@@ -125,7 +125,7 @@ export default function Shipments({ shipments, metrics, warehouses, filters }: P
 
     return (
         <DashboardLayout>
-            <Head title="Salidas y Embarques - Urea Automotriz" />
+            <Head title="Salidas y Embarques - Urea de Alta Pureza" />
 
             <div className="max-w-7xl mx-auto space-y-6 pb-12 px-2 sm:px-4">
                 {/* Header Section */}
@@ -134,17 +134,17 @@ export default function Shipments({ shipments, metrics, warehouses, filters }: P
                         <Link
                             href={route("apt.inventory.urea-automotriz.index", { tab: "summary" })}
                             className="p-2.5 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl shadow-xs transition-all flex items-center justify-center group"
-                            title="Volver a Balance y Existencias de Urea Automotriz"
+                            title="Volver a Balance y Existencias de Urea de Alta Pureza"
                         >
                             <ArrowLeft className="w-5 h-5 text-gray-500 group-hover:-translate-x-0.5 group-hover:text-indigo-700 transition-transform" />
                         </Link>
                         <div>
                             <div className="flex items-center gap-2 flex-wrap">
                                 <h1 className="text-2xl font-black text-gray-900 tracking-tight">
-                                    Salidas y Embarques de Urea Automotriz
+                                    Salidas y Embarques de Urea de Alta Pureza
                                 </h1>
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                                    Urea Automotriz
+                                    Urea de Alta Pureza
                                 </span>
                             </div>
                             <p className="text-sm text-gray-500 mt-0.5">

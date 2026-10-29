@@ -93,7 +93,7 @@ class SupplyInventoryController extends Controller
         $mainModules = [
             [
                 'id' => 'products',
-                'name' => 'Productos',
+                'name' => 'Insumos',
                 'slug' => 'products',
                 'description' => 'Catálogo general de insumos clasificados en 4 submódulos (Refaccionamiento, Maquinaria, Herramientas y Consumibles) con altas, bajas y control de existencias.',
                 'icon' => 'Boxes',
@@ -103,7 +103,7 @@ class SupplyInventoryController extends Controller
                 'accent' => 'blue',
                 'href' => route('apt.inventory.products.index'),
                 'badge' => '4 Submódulos',
-                'stats_label' => 'Total Productos',
+                'stats_label' => 'Total Insumos',
                 'stats_value' => $totalProducts,
                 'secondary_label' => 'Stock total:',
                 'secondary_value' => number_format($totalStock, 0) . ' unidades',
