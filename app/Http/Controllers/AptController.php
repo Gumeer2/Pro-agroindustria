@@ -481,6 +481,16 @@ class AptController extends Controller
             abort(404, 'El lote no pertenece a esta asignación.');
         }
 
+        DB::table('production_shift_start_lot as assignment')
+            ->join('production_shift_starts as shift_start', 'shift_start.id', '=', 'assignment.production_shift_start_id')
+            ->where('shift_start.user_id', $registration->user_id)
+            ->where('assignment.lot_id', $lot)
+            ->update([
+                'assignment.status' => 'open',
+                'assignment.closed_at' => null,
+                'assignment.closed_by' => null,
+            ]);
+
         DB::table('production_shift_start_lot')
             ->where('production_shift_start_id', $registration->id)
             ->where('lot_id', $lot)
@@ -792,12 +802,7 @@ class AptController extends Controller
                     ->unique('lot_id')
                     ->values();
 
-                $sortedLots = $latestByLot->sort(function ($a, $b) {
-                    if ($a->status !== $b->status) {
-                        return $a->status === 'open' ? -1 : 1;
-                    }
-                    return strcmp((string) $b->started_at, (string) $a->started_at);
-                })->values();
+                $sortedLots = $latestByLot->sortByDesc('started_at')->values();
 
                 return [
                     'user_name' => $userName,
@@ -806,9 +811,6 @@ class AptController extends Controller
                 ];
             })
             ->sort(function ($a, $b) {
-                if ($a['has_open'] !== $b['has_open']) {
-                    return $a['has_open'] ? -1 : 1;
-                }
                 $aTime = $a['lots']->first()?->started_at ?? '';
                 $bTime = $b['lots']->first()?->started_at ?? '';
                 return strcmp((string) $bTime, (string) $aTime);

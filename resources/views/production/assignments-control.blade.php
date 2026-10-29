@@ -950,7 +950,7 @@
                                 $firstClosed = ($firstStatus === 'closed');
                                 $userInitial = mb_substr($assignment['user_name'] ?? 'U', 0, 1);
                             @endphp
-                            <tr data-assignment-row>
+                            <tr data-assignment-row data-user-name="{{ $assignment['user_name'] }}">
                                 <td>
                                     <div class="user-cell">
                                         <div class="user-avatar-small">{{ $userInitial }}</div>
@@ -1026,7 +1026,7 @@
                                 <td>
                                     <div class="actions-group">
                                         <button type="button" class="action-btn close" data-close-btn style="{{ $firstClosed ? 'display:none;' : '' }}">
-                                            <i class="fa-solid fa-lock"></i> Cerrar lote
+                                            <i class="fa-solid fa-lock"></i> Cerrar Turno
                                         </button>
                                         <button type="button" class="action-btn reopen" data-reopen-btn style="{{ $firstClosed ? '' : 'display:none;' }}">
                                             <i class="fa-solid fa-lock-open"></i> Abrir lote
@@ -1077,6 +1077,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('[data-assignment-row]').forEach((row) => {
+        const userName = row.dataset.userName || '';
+        const storageKey = userName ? `apt_assignment_selected_${userName}` : null;
         const select = row.querySelector('[data-lot-select]');
         const singleLot = row.querySelector('[data-single-lot]');
         const shiftText = row.querySelector('[data-shift-text]');
@@ -1085,6 +1087,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const closedMeta = row.querySelector('[data-closed-meta]');
         const closeBtn = row.querySelector('[data-close-btn]');
         const reopenBtn = row.querySelector('[data-reopen-btn]');
+
+        if (select && storageKey) {
+            const savedLot = localStorage.getItem(storageKey);
+            if (savedLot) {
+                const hasOption = Array.from(select.options).some(opt => opt.value === savedLot);
+                if (hasOption) {
+                    select.value = savedLot;
+                }
+            }
+        }
 
         const getActiveData = () => {
             if (select && select.selectedIndex >= 0) {
@@ -1149,7 +1161,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 reopenBtn.style.display = isClosed ? 'inline-flex' : 'none';
                 closeBtn.disabled = false;
                 reopenBtn.disabled = false;
-                closeBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Cerrar lote';
+                closeBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Cerrar Turno';
                 reopenBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Abrir lote';
             }
         };
@@ -1202,6 +1214,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const warehouseStr = active.warehouse ? ` · ${active.warehouse}` : '';
                     const statusStr = newStatus === 'closed' ? ' (Cerrado)' : ' (Abierto)';
                     active.element.textContent = `${active.folio}${warehouseStr}${statusStr}`;
+                    if (storageKey && select) {
+                        localStorage.setItem(storageKey, select.value);
+                    }
                 }
 
                 updateRowView();
@@ -1210,7 +1225,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 if (closeBtn) {
                     closeBtn.disabled = false;
-                    closeBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Cerrar lote';
+                    closeBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Cerrar Turno';
                 }
                 if (reopenBtn) {
                     reopenBtn.disabled = false;
@@ -1220,7 +1235,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        select?.addEventListener('change', updateRowView);
+        select?.addEventListener('change', () => {
+            if (storageKey && select) {
+                localStorage.setItem(storageKey, select.value);
+            }
+            updateRowView();
+        });
         closeBtn?.addEventListener('click', () => handleStatusChange('close'));
         reopenBtn?.addEventListener('click', () => handleStatusChange('reopen'));
 
