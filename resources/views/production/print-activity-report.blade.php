@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Reporte de Incidencias y Relevancias - Proagroindustria</title>
-    <link rel="icon" type="image/png" href="{{ asset('Proagro.png') }}">
+    <link rel="icon" type="image/png" href="{{ '/Proagro.png' }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -319,7 +319,7 @@
     <div class="paper">
         <header class="report-header">
             <div class="header-brand">
-                <img src="{{ asset('Proagro.png') }}" alt="Proagroindustria">
+                <img src="{{ '/Proagro.png' }}" alt="Proagroindustria">
                 <div>
                     <h1>PROAGROINDUSTRIA</h1>
                     <p>Módulo Operativo · APT | Control de Producción</p>

@@ -11,8 +11,19 @@
     <meta http-equiv="Expires" content="0">
 
     <title inertia>{{ config('app.name', 'Laravel') }}</title>
-    <link rel="icon" type="image/png"
-        href="{{ config('app.tenant.favicon') ? asset(config('app.tenant.favicon')) : asset('Proagro.png') }}">
+    @php
+        $configuredPath = rtrim((string) (parse_url((string) config('app.url'), PHP_URL_PATH) ?: ''), '/');
+        $configuredHost = parse_url(config('app.url'), PHP_URL_HOST);
+        $requestHost = request()->getHost();
+        $bladeBasePath = ($requestHost !== 'localhost' && $requestHost !== '127.0.0.1' && $configuredHost === 'localhost') ? '' : $configuredPath;
+        $faviconPath = ($bladeBasePath ? $bladeBasePath . '/' : '/') . 'favicon.ico?v=4';
+        $faviconPng = ($bladeBasePath ? $bladeBasePath . '/' : '/') . 'Proagro.png?v=5';
+        $faviconB64 = file_exists(public_path('Proagro.png')) ? 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('Proagro.png'))) : $faviconPng;
+    @endphp
+    <link rel="icon" type="image/png" href="{{ $faviconB64 }}">
+    <link rel="icon" type="image/x-icon" href="{{ $faviconPath }}">
+    <link rel="shortcut icon" type="image/png" href="{{ $faviconB64 }}">
+    <link rel="apple-touch-icon" href="{{ $faviconB64 }}">
 
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#1e1b4b">

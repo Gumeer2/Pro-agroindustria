@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Gestión de la Producción</title>
-    <link rel="icon" type="image/png" href="{{ asset('Proagro.png') }}">
-    <link rel="shortcut icon" type="image/png" href="{{ asset('Proagro.png') }}">
-    <link rel="apple-touch-icon" href="{{ asset('Proagro.png') }}">
+    <link rel="icon" type="image/png" href="{{ '/Proagro.png' }}">
+    <link rel="shortcut icon" type="image/png" href="{{ '/Proagro.png' }}">
+    <link rel="apple-touch-icon" href="{{ '/Proagro.png' }}">
     <!-- Fonts & Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -1125,7 +1125,7 @@
     <div class="shell">
     <header class="hero">
         <div class="hero-brand">
-            <img src="{{ asset('Proagro.png') }}" alt="Proagroindustria">
+            <img src="{{ '/Proagro.png' }}" alt="Proagroindustria">
             <div>
                 <p class="hero-kicker">Módulo operativo · APT</p>
                 <h1>Gestión de la producción</h1>

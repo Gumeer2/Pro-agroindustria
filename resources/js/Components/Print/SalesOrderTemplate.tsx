@@ -1,5 +1,6 @@
 import React from "react";
 import { usePage } from "@inertiajs/react";
+import { PROAGRO_LOGO_BASE64, FIRMA_COMERCIALIZACION_BASE64 } from "./salesOrderAssets";
 
 interface SalesOrderTemplateProps {
     order: any;
@@ -44,12 +45,9 @@ export default function SalesOrderTemplate({ order }: SalesOrderTemplateProps) {
                         {/* Left side: Logo & Company Red Box */}
                         <div className="w-[53%]">
                             <img
-                                src={tenant?.logo || "/images/Proagro2.png"}
-                                alt={tenant?.name || "Logo"}
+                                src={PROAGRO_LOGO_BASE64}
+                                alt="Logo Proagroindustria"
                                 className="h-[74px] w-auto object-contain mb-2"
-                                onError={(e) => {
-                                    e.currentTarget.src = "/img/Proagro2.png";
-                                }}
                             />
                             <div className="bg-[#e50019] text-white px-3 py-2 text-[11px] leading-snug font-sans rounded-none shadow-none w-full box-border">
                                 <p className="font-bold tracking-tight">PRO-AGROINDUSTRIA PRO140101QY9</p>
@@ -179,12 +177,9 @@ export default function SalesOrderTemplate({ order }: SalesOrderTemplateProps) {
                             {/* Firma de Comercialización */}
                             <div className="h-16 w-44 flex items-end justify-center mb-[-12px] relative z-10 pointer-events-none">
                                 <img
-                                    src="/images/firma_comercializacion.png"
+                                    src={FIRMA_COMERCIALIZACION_BASE64}
                                     alt="Firma Comercialización"
                                     className="max-h-20 max-w-full object-contain"
-                                    onError={(e) => {
-                                        e.currentTarget.src = "/img/firma_comercializacion.png";
-                                    }}
                                 />
                             </div>
                             <div className="border-b border-black w-full mb-1.5 relative z-0"></div>
@@ -249,12 +244,9 @@ export default function SalesOrderTemplate({ order }: SalesOrderTemplateProps) {
                         </div>
                         <div className="flex flex-col items-end">
                             <img
-                                src={tenant?.logo || "/images/Proagro2.png"}
+                                src={PROAGRO_LOGO_BASE64}
                                 alt="Logo"
                                 className="h-6 object-contain mb-0.5"
-                                onError={(e) => {
-                                    e.currentTarget.src = "/img/Proagro2.png";
-                                }}
                             />
                             <span className="font-bold tracking-wider text-xs">DCM-FO-001</span>
                         </div>
