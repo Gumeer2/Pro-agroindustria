@@ -1,6 +1,7 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link, usePage } from "@inertiajs/react";
-import { ArrowLeft, Printer, ChevronRight } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
+import SalesOrderTemplate from "@/Components/Print/SalesOrderTemplate";
 
 export default function Show({
     auth,
@@ -34,16 +35,11 @@ export default function Show({
                 ? "Volver al reporte de ventas"
                 : "Volver al listado";
 
-    const formatter = new Intl.NumberFormat("en-US", {
-        maximumFractionDigits: 3,
-        minimumFractionDigits: 0,
-    });
-
     return (
         <DashboardLayout user={auth.user} header={`Orden: ${order.folio}`}>
             <Head title={`Orden ${order.folio} - ${tenant?.name || 'VECODE'}`} />
 
-            <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8 print:p-0 print:m-0 print:max-w-none print:w-full">
                 {/* Navigation Header */}
                 <div className="mb-6 flex justify-between items-center print:hidden">
                     <Link
@@ -53,11 +49,26 @@ export default function Show({
                         <ArrowLeft className="w-4 h-4 mr-1" />
                         {backLabel}
                     </Link>
-                    <div className="flex gap-3">
+                    <div className="flex items-center gap-4">
+                        <span
+                            className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                                order.status === "created"
+                                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                                    : order.status === "closed"
+                                        ? "bg-red-50 text-red-700 border-red-200"
+                                        : "bg-green-50 text-green-700 border-green-200"
+                            }`}
+                        >
+                            {order.status === "created"
+                                ? "ABIERTA"
+                                : order.status === "closed"
+                                    ? "CERRADA"
+                                    : order.status}
+                        </span>
                         <button
                             onClick={() => window.print()}
-                            style={{ backgroundColor: tenant?.primary_color || '#4f46e5' }}
-                            className="inline-flex items-center px-6 py-2.5 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white hover:opacity-90 transition-all font-sans uppercase tracking-widest"
+                            style={{ backgroundColor: tenant?.primary_color || '#15803d' }}
+                            className="inline-flex items-center px-6 py-2.5 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white hover:opacity-90 transition-all font-sans uppercase tracking-widest cursor-pointer"
                         >
                             <Printer className="w-4 h-4 mr-2" />
                             Imprimir OV
@@ -65,330 +76,89 @@ export default function Show({
                     </div>
                 </div>
 
-                {/* Print Preview Container */}
-                <div className="bg-white shadow-2xl rounded-sm border border-gray-300 overflow-hidden max-w-[21.5cm] mx-auto overflow-x-auto mb-10 print:mb-0 print:border-none print:shadow-none">
-                    <div className="p-8 md:p-10 print:p-4 text-black font-sans min-w-[19cm] print:w-full print:min-w-0">
-                        {/* Header Section */}
-                        <div className="flex justify-between items-start mb-6 print:mb-4">
-                            <div className="flex flex-col">
-                                <img
-                                    src={tenant?.logo || "/images/Proagro2.png"}
-                                    alt={tenant?.name || "Logo"}
-                                    className="h-16 w-auto object-contain mb-2 self-start"
-                                    onError={(e) => {
-                                        e.currentTarget.src = "/img/Proagro2.png";
-                                    }}
-                                />
-                                <div className="text-[11px] leading-tight text-gray-800 uppercase font-medium">
-                                    <p className="font-bold text-gray-900 text-[12px] mb-0.5">
-                                        {!tenant || tenant?.slug === 'proagro' ? 'PROAGROINDUSTRIA, SA DE CV' : tenant?.name}
-                                    </p>
-                                    <p>
-                                        {!tenant || tenant?.slug === 'proagro' ? 'CARR. COATZACOALCOS-VILLAHERMOSA KM 5 INTERIOR' : 'SISTEMA DE GESTIÓN LOGÍSTICA'}
-                                    </p>
-                                    <p>
-                                        {!tenant || tenant?.slug === 'proagro' ? 'COMPLEJO PETROQUIMICO PAJARITOS' : (tenant?.domain || 'VECODE.COM')}
-                                    </p>
-                                    <p>{!tenant || tenant?.slug === 'proagro' ? 'COATZACOALCOS, VERACRUZ' : ''}</p>
-                                </div>
-                            </div>
-
-                            <div className="w-72">
-                                <div className="bg-[#284d25] text-white text-center py-1 font-bold text-xs uppercase tracking-wider">
-                                    ORDEN DE VENTA
-                                </div>
-                                <table className="w-full border-collapse border border-black text-xs">
-                                    <tbody>
-                                        <tr>
-                                            <td className="border border-black px-2 py-1 font-bold w-2/5">
-                                                FOLIO:
-                                            </td>
-                                            <td className="border border-black px-2 py-1 font-bold text-xs text-center">
-                                                {order.folio}
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black px-2 py-1 font-bold">
-                                                FECHA:
-                                            </td>
-                                            <td className="border border-black px-2 py-1 text-xs text-center text-gray-800 font-medium">
-                                                {new Date(
-                                                    order.created_at,
-                                                ).toLocaleDateString("es-MX")}
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black px-2 py-1 font-bold">
-                                                No. DE CLIENTE:
-                                            </td>
-                                            <td className="border border-black px-2 py-1 font-bold text-xs text-center">
-                                                {order.client?.id}
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black px-2 py-1 font-bold">
-                                                ORDEN DE COMPRA:
-                                            </td>
-                                            <td className="border border-black px-2 py-1 font-bold text-xs text-center uppercase">
-                                                {order.sale_order || ""}
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                <div className="mt-2 text-right print:hidden">
-                                    <span
-                                        className={`text-[10px] font-bold px-2 py-0.5 rounded border ${order.status === "created"
-                                            ? "bg-blue-50 text-blue-700 border-blue-200"
-                                            : order.status === "closed"
-                                                ? "bg-red-50 text-red-700 border-red-200"
-                                                : "bg-green-50 text-green-700 border-green-200"
-                                            }`}
-                                    >
-                                        {order.status === "created"
-                                            ? "ABIERTA"
-                                            : order.status === "closed"
-                                                ? "CERRADA"
-                                                : order.status}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Datos del Cliente Section */}
-                        <div className="mb-3 print:mb-2">
-                            <div className="bg-[#284d25] text-white text-center py-1 font-bold text-xs uppercase tracking-wider mb-0.5">
-                                DATOS DEL CLIENTE
-                            </div>
-                            <table className="w-full border-collapse border border-black text-xs">
-                                <tbody>
-                                    <tr>
-                                        <td className="w-1/4 px-3 py-1.5 border border-black font-bold uppercase text-[11px]">
-                                            NOMBRE:
-                                        </td>
-                                        <td className="w-3/4 px-3 py-1.5 border border-black text-xs font-semibold uppercase">
-                                            {order.client?.business_name || ""}
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-3 py-1 border border-black font-bold uppercase text-[11px]">
-                                            RFC:
-                                        </td>
-                                        <td className="px-3 py-1 border border-black text-xs font-medium uppercase">
-                                            {order.client?.rfc || ""}
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-3 py-1 border border-black font-bold uppercase text-[11px]">
-                                            DIRECCION:
-                                        </td>
-                                        <td className="px-3 py-1 border border-black text-[11px] font-medium uppercase leading-tight">
-                                            {order.client?.address || ""}
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td className="px-3 py-1 border border-black font-bold uppercase text-[11px]">
-                                            CONTACTO:
-                                        </td>
-                                        <td className="px-3 py-1 border border-black text-xs font-medium uppercase">
-                                            {order.client?.contact_info || ""}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-
-                            <div className="mt-2">
-                                <table className="w-full border-collapse border border-black text-xs">
-                                    <tbody>
-                                        <tr>
-                                            <td className="w-[55%] px-3 py-1.5 border border-black font-bold uppercase text-[11px]">
-                                                CONDICIONES DE ENTREGA:
-                                            </td>
-                                            <td className="w-[45%] px-3 py-1.5 border border-black text-xs font-semibold uppercase">
-                                                {order.delivery_conditions || "GRANEL/ENVASADO"}
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td className="px-3 py-1.5 border border-black font-bold uppercase text-[11px]">
-                                                VIGENCIA:
-                                            </td>
-                                            <td className="px-3 py-1.5 border border-black text-xs font-medium uppercase">
-                                                {order.vigencia || order.validity || ""}
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        {/* Product Table */}
-                        <div className="mb-3 print:mb-2">
-                            <table className="w-full border-collapse border border-black text-xs">
-                                <thead className="bg-[#284d25] text-white text-center">
-                                    <tr>
-                                        <th className="border border-black py-1 w-[55%] font-bold uppercase text-xs tracking-wider">
-                                            DESCRIPCION
-                                        </th>
-                                        <th className="border border-black py-1 w-[20%] font-bold uppercase text-xs tracking-wider">
-                                            UNIDAD
-                                        </th>
-                                        <th className="border border-black py-1 w-[25%] font-bold uppercase text-xs tracking-wider">
-                                            CANTIDAD
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr className="h-10 text-center">
-                                        <td className="border border-black px-3 py-1 text-xs font-medium text-left uppercase">
-                                            {order.product?.code
-                                                ? `${order.product.code} - ${order.product.name}`
-                                                : order.product?.name || ""}
-                                        </td>
-                                        <td className="border border-black py-1 font-medium text-xs uppercase">
-                                            TONELADAS
-                                        </td>
-                                        <td className="border border-black px-3 py-1 font-bold text-xs text-center">
-                                            {formatter.format(
-                                                Number(order.total_quantity || 0),
-                                            )}
-                                        </td>
-                                    </tr>
-                                    <tr className="h-8">
-                                        <td className="border border-black"></td>
-                                        <td className="border border-black text-center font-bold text-xs uppercase">
-                                            TOTAL
-                                        </td>
-                                        <td className="border border-black text-center font-bold text-xs">
-                                            {formatter.format(
-                                                Number(order.total_quantity || 0),
-                                            )}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Políticas de entrega */}
-                        <div className="my-3 print:my-2 text-center">
-                            <p className="text-[11px] text-gray-800 font-normal mb-1">
-                                Políticas de entrega :
-                            </p>
-                            <div className="text-[9.5px] leading-tight text-gray-700 text-left space-y-1 px-1">
-                                <p>
-                                    * El cliente es responsable de notificar en tiempo y forma de las unidades autorizadas para el retiro al departamento de logística y suministros, asi mismo de notificar cualquier cambio en las mismas.
-                                </p>
-                                <p>
-                                    * Los operadores y unidades autorizadas para el retiro deberan cumplir con todos los requisitos de seguridad e higiene que marca el reglamento., asi tambien con todos los requisitos documentales necesarios para la carga.
-                                </p>
-                                <p>
-                                    * Ante el no ingreso a carga de alguna unidad por inclumplimiento de algun requisito de seguridad o documental no es responsabilidad de Pro-agroindustria.
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Observations Section */}
-                        <div className="mb-6 print:mb-4">
-                            <div className="bg-[#284d25] text-white text-center py-1 font-bold text-xs uppercase tracking-wider mb-0.5">
-                                OBSERVACIONES
-                            </div>
-                            <div className="border border-black min-h-[4.5rem] p-2 text-xs font-normal whitespace-pre-line text-left">
-                                {order.destination || order.observations || ""}
-                            </div>
-                        </div>
-
-                        {/* Signatures & Footer Section */}
-                        <div className="mt-8 print:mt-4">
-                            <div className="flex flex-col items-center mb-6 print:mb-4">
-                                <div className="w-72 border-b-2 border-black mb-1"></div>
-                                <p className="text-xs font-semibold text-black">
-                                    Oscar Méndez Torres
-                                </p>
-                                <p className="text-[11px] font-bold text-gray-800 tracking-wider uppercase">
-                                    COMERCIALIZACIÓN
-                                </p>
-                            </div>
-
-                            <div className="w-full border-t-2 border-[#284d25] mb-2"></div>
-
-                            <div className="text-center mb-2">
-                                <a
-                                    href="https://www.proagroindustria.com"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-xs font-semibold text-gray-900 hover:text-black underline tracking-wide"
-                                >
-                                    www.proagroindustria.com
-                                </a>
-                            </div>
-
-                            <div className="flex justify-between items-end text-[11px] text-gray-800 pt-1">
-                                <div className="space-y-0.5 text-left">
-                                    <div>
-                                        <span className="font-semibold text-black">
-                                            Venta y Cobranza:
-                                        </span>{" "}
-                                        <a
-                                            href="mailto:oscar.mendez@proagroindustria.com"
-                                            className="text-blue-700 underline ml-1"
-                                        >
-                                            oscar.mendez@proagroindustria.com
-                                        </a>
-                                    </div>
-                                    <div>
-                                        <span className="font-semibold text-black">
-                                            Administrativo:
-                                        </span>{" "}
-                                        <a
-                                            href="mailto:jorge.robles@proagroindustria.com"
-                                            className="text-blue-700 underline ml-1"
-                                        >
-                                            jorge.robles@proagroindustria.com
-                                        </a>
-                                    </div>
-                                </div>
-                                <div className="flex flex-col items-end">
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                        <img
-                                            src={tenant?.logo || "/images/Proagro2.png"}
-                                            alt="Logo"
-                                            className="h-7 object-contain"
-                                            onError={(e) => {
-                                                e.currentTarget.src = "/img/Proagro2.png";
-                                            }}
-                                        />
-                                    </div>
-                                    <p className="text-xs font-bold text-gray-800 tracking-wider">
-                                        DCM-FO-003
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* History Section removed as requested */}
+                {/* Document Print/Preview Template */}
+                <SalesOrderTemplate order={order} />
             </div>
 
             <style>{`
                 @media print {
                     @page { 
-                        margin: 0.6cm; 
-                        size: portrait;
+                        size: letter portrait;
+                        margin: 8mm 10mm 8mm 10mm;
                     }
-                    body { background: white !important; }
-                    nav, header, footer, .print\\:hidden { display: none !important; }
-                    main { padding: 0 !important; margin: 0 !important; }
-                    .max-w-\\[21\\.5cm\\] { 
-                        box-shadow: none !important; 
-                        border: none !important;
+                    html, body { 
+                        background: white !important; 
+                        color: black !important;
+                        margin: 0 !important; 
+                        padding: 0 !important; 
                         width: 100% !important;
+                        -webkit-print-color-adjust: exact !important; 
+                        print-color-adjust: exact !important;
+                    }
+                    nav, header, footer, aside, .print\\:hidden, #sidebar, .sidebar { 
+                        display: none !important; 
+                    }
+                    main, .min-h-screen, .flex-1 { 
+                        display: block !important;
+                        padding: 0 !important; 
+                        margin: 0 !important; 
+                        width: 100% !important;
+                        min-height: auto !important;
                         max-width: none !important;
+                        overflow: visible !important;
+                    }
+                    .sales-order-document {
+                        width: 100% !important;
+                        max-width: 100% !important;
                         margin: 0 !important;
                         padding: 0 !important;
                     }
-                    .bg-\\[\\#284d25\\] { 
-                        background-color: #284d25 !important; 
-                        -webkit-print-color-adjust: exact; 
-                        print-color-adjust: exact;
+                    .print-sheet-front { 
+                        width: 100% !important; 
+                        max-width: 100% !important; 
+                        min-width: 0 !important;
+                        min-height: 252mm !important;
+                        box-shadow: none !important; 
+                        border: none !important; 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        display: flex !important;
+                        flex-direction: column !important;
+                        justify-content: space-between !important;
+                        page-break-after: always !important; 
+                        break-after: page !important;
+                        box-sizing: border-box !important;
+                    }
+                    .print-sheet-back { 
+                        width: 100% !important; 
+                        max-width: 100% !important; 
+                        min-width: 0 !important;
+                        min-height: 252mm !important;
+                        box-shadow: none !important; 
+                        border: none !important; 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        display: flex !important;
+                        flex-direction: column !important;
+                        justify-content: space-between !important;
+                        page-break-before: always !important; 
+                        break-before: page !important;
+                        box-sizing: border-box !important;
+                    }
+                    .bg-\\[\\#e50019\\] { 
+                        background-color: #e50019 !important; 
+                        -webkit-print-color-adjust: exact !important; 
+                        print-color-adjust: exact !important;
+                    }
+                    .bg-\\[\\#b3b3b3\\] { 
+                        background-color: #b3b3b3 !important; 
+                        -webkit-print-color-adjust: exact !important; 
+                        print-color-adjust: exact !important;
+                    }
+                    .text-\\[\\#1b6e3b\\] { 
+                        color: #1b6e3b !important; 
+                        -webkit-print-color-adjust: exact !important; 
+                        print-color-adjust: exact !important;
                     }
                 }
             `}</style>

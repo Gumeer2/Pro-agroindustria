@@ -307,19 +307,19 @@ class UreaImportadaInventoryController extends Controller
         $plant = $request->input('plant_origin');
 
         if (!$plant || trim($plant) === '') {
-            $production = UreaDailyProduction::find($id);
+            $production = UreaDailyProduction::importada()->find($id);
             if ($production) {
                 $plant = $production->plant_origin;
             }
         }
 
         if ($plant && trim($plant) !== '') {
-            UreaDailyProduction::where(function ($q) use ($plant) {
+            UreaDailyProduction::importada()->where(function ($q) use ($plant) {
                 $q->where('plant_origin', $plant)
                   ->orWhere('plant_origin', trim($plant));
             })->delete();
         } else {
-            UreaDailyProduction::where('id', $id)->delete();
+            UreaDailyProduction::importada()->where('id', $id)->delete();
         }
 
         return redirect()->back()->with('success', 'Registro(s) de recepción del buque eliminados correctamente.');
