@@ -341,7 +341,9 @@ class WeightTicketController extends Controller
             });
         }
 
-        $query->orderBy('created_at', 'desc');
+        $query->orderByRaw('LENGTH(ticket_number) DESC')
+            ->orderBy('ticket_number', 'desc')
+            ->orderBy('created_at', 'desc');
 
         if ($request->filled('search')) {
             $search = $request->search;
