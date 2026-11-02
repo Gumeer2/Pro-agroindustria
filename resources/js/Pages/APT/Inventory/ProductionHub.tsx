@@ -14,6 +14,7 @@ import {
     Sparkles,
     Truck,
     Layers,
+    AlertTriangle,
 } from "lucide-react";
 import Swal from "sweetalert2";
 
@@ -63,11 +64,18 @@ interface Props {
         dap_shipped?: number;
         dap_today?: number;
     };
+    stockAlerts?: Array<{
+        warehouse: string;
+        warehouse_name: string;
+        product_label: string;
+        stock: number;
+        message: string;
+    }>;
 }
 
 type GlobalScope = "proagro" | "importada" | "dap" | "all";
 
-export default function ProductionHub({ auth, metrics }: Props) {
+export default function ProductionHub({ auth, metrics, stockAlerts = [] }: Props) {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedScope, setSelectedScope] = useState<GlobalScope>("proagro");
     const fromParam = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null;
@@ -317,9 +325,9 @@ export default function ProductionHub({ auth, metrics }: Props) {
                     <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                         Stock Neto Disponible
                     </p>
-                    <h3 className="text-2xl font-black text-emerald-700">
+                    <h3 className={`text-2xl font-black ${(panelMetrics.stock_total ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                         {formatNumber(panelMetrics.stock_total, 2)}{" "}
-                        <span className="text-sm font-semibold text-emerald-600">TM</span>
+                        <span className={`text-sm font-semibold ${(panelMetrics.stock_total ?? 0) < 0 ? 'text-red-500' : 'text-emerald-600'}`}>TM</span>
                     </h3>
                     <p className="text-xs text-gray-400 mt-1">
                         Disponible en almacenes
@@ -471,6 +479,25 @@ export default function ProductionHub({ auth, metrics }: Props) {
                         </div>
                     </div>
                 </div>
+
+                {/* Stock Insufficiency Alerts */}
+                {stockAlerts && stockAlerts.length > 0 && (
+                    <div className="mb-8 space-y-3">
+                        {stockAlerts.map((alert, idx) => (
+                            <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-red-50/90 border-l-4 border-red-500 rounded-2xl shadow-xs text-red-900 gap-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
+                                        <AlertTriangle className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <span className="font-bold text-sm block">{alert.message}</span>
+                                        <span className="text-xs text-red-600">Balance negativo en {alert.warehouse_name}. Se recomienda regularizar las existencias en el submódulo de {alert.product_label}.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {/* GLOBAL METRIC PANEL (Placed above the 5 module cards) */}
                 <div className="bg-white/80 backdrop-blur-xs rounded-3xl border border-gray-200 p-6 shadow-sm mb-10">

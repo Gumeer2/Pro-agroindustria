@@ -409,12 +409,32 @@ class UreaStockService
 
         // 6. Breakdown by Warehouse (Almacen 1 to 5)
         $byWarehouse = [];
+        $stockAlerts = [];
+        $productLabel = match ($type) {
+            'agricola' => 'Urea Agrícola',
+            'industrial' => 'Urea Industrial',
+            'automotriz' => 'Urea de Alta Pureza',
+            'importada' => 'Urea Importada',
+            'dap' => 'DAP (Fosfato Diamónico)',
+            default => 'Fertilizante',
+        };
+
         for ($i = 1; $i <= 5; $i++) {
             $whKey = "Almacen {$i}";
             $initTons = (float) UreaInitialInventory::where('product_type', $type)->where('warehouse', $whKey)->sum('quantity_tons');
             $prodTons = (float) UreaDailyProduction::where('product_type', $type)->where('warehouse', $whKey)->sum('quantity_tons');
             $shipped = $exits['by_warehouse'][$whKey] ?? 0.0;
             $stock = ($initTons + $prodTons) - $shipped;
+
+            if ($stock < 0) {
+                $stockAlerts[] = [
+                    'warehouse' => $whKey,
+                    'warehouse_name' => "Almacén {$i}",
+                    'product_label' => $productLabel,
+                    'stock' => round($stock, 2),
+                    'message' => "ALERTA: Stock insuficiente en {$whKey} para {$productLabel}. Stock disponible: " . number_format($stock, 2) . " TM.",
+                ];
+            }
 
             $byWarehouse[$whKey] = [
                 'name' => "Almacén {$i}",
@@ -424,6 +444,7 @@ class UreaStockService
                 'total_inflow_tons' => round($initTons + $prodTons, 2),
                 'total_tons' => round($stock, 2), // Net available stock in warehouse
                 'available_tons' => round($stock, 2),
+                'has_insufficient_stock' => $stock < 0,
             ];
         }
 
@@ -440,6 +461,7 @@ class UreaStockService
             'totalStockSacks' => $totalStockSacks,
             'byPlant' => $byPlant,
             'byWarehouse' => $byWarehouse,
+            'stockAlerts' => $stockAlerts,
         ];
     }
 

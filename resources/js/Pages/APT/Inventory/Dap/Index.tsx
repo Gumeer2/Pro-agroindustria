@@ -24,6 +24,7 @@ import {
     Truck,
     CheckCircle2,
     AlertCircle,
+    AlertTriangle,
     Loader2,
     Ship,
 } from "lucide-react";
@@ -96,8 +97,16 @@ interface Metrics {
             total_inflow_tons?: number;
             total_tons: number;
             available_tons?: number;
+            has_insufficient_stock?: boolean;
         };
     };
+    stockAlerts?: Array<{
+        warehouse: string;
+        warehouse_name: string;
+        product_label: string;
+        stock: number;
+        message: string;
+    }>;
 }
 
 interface LotOption {
@@ -882,9 +891,9 @@ export default function DapInventoryIndex({
                             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                                 Stock Neto Disponible
                             </p>
-                            <h3 className="text-2xl font-black text-amber-700">
+                            <h3 className={`text-2xl font-black ${(metrics?.totalStockTons ?? 0) < 0 ? 'text-red-600' : 'text-amber-700'}`}>
                                 {formatNumber(metrics?.totalStockTons ?? 0, 2)}{" "}
-                                <span className="text-sm font-semibold text-amber-600">TM</span>
+                                <span className={`text-sm font-semibold ${(metrics?.totalStockTons ?? 0) < 0 ? 'text-red-500' : 'text-amber-600'}`}>TM</span>
                             </h3>
                             <p className="text-xs text-gray-400 mt-1">
                                 {(metrics?.totalStockSacks ?? 0) > 0 ? `${formatNumber(metrics.totalStockSacks, 0)} sacos aprox.` : "Disponible en almacenes"}
@@ -953,6 +962,25 @@ export default function DapInventoryIndex({
                         </div>
                     </div>
                 </div>
+
+                {/* Stock Insufficiency Alerts */}
+                {metrics?.stockAlerts && metrics.stockAlerts.length > 0 && (
+                    <div className="mb-6 space-y-3">
+                        {metrics.stockAlerts.map((alert, idx) => (
+                            <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-red-50/90 border-l-4 border-red-500 rounded-2xl shadow-xs text-red-900 gap-3">
+                                <div className="flex items-center space-x-3">
+                                    <div className="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
+                                        <AlertTriangle className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <span className="font-bold text-sm block">{alert.message}</span>
+                                        <span className="text-xs text-red-600">Balance negativo en {alert.warehouse_name}. Se recomienda registrar producción diaria o inventario inicial en este almacén para regularizar el inventario.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {/* Submodule Tab Selector */}
                 <div className="flex border-b border-gray-200 mb-6 bg-white rounded-xl shadow-xs px-2 pt-2">
@@ -1450,7 +1478,7 @@ export default function DapInventoryIndex({
                                             const totalStock = metrics?.totalStockTons ?? 0;
                                             const pct = totalStock > 0 ? (wh.total_tons / totalStock) * 100 : 0;
                                             return (
-                                                <tr key={key} className="hover:bg-gray-50 transition-colors">
+                                                <tr key={key} className={`transition-colors ${wh.total_tons < 0 ? 'bg-red-50/40 hover:bg-red-50/70' : 'hover:bg-gray-50'}`}>
                                                     <td className="px-5 py-4 whitespace-nowrap text-sm font-bold text-gray-900 flex items-center">
                                                         <Database className="w-4 h-4 mr-2 text-gray-400" />
                                                         {wh.name}
@@ -1464,7 +1492,12 @@ export default function DapInventoryIndex({
                                                     <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-bold text-rose-600">
                                                         {formatNumber(wh.shipped_tons ?? 0, 3)} TM
                                                     </td>
-                                                    <td className="px-5 py-4 whitespace-nowrap text-right text-sm font-black text-amber-700 bg-amber-50/40">
+                                                    <td className={`px-5 py-4 whitespace-nowrap text-right text-sm font-black ${wh.total_tons < 0 ? 'text-red-600 bg-red-50/80' : 'text-amber-700 bg-amber-50/40'}`}>
+                                                        {wh.total_tons < 0 && (
+                                                            <span className="inline-block mr-1.5 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold border border-red-200">
+                                                                Stock insuficiente
+                                                            </span>
+                                                        )}
                                                         {formatNumber(wh.total_tons, 3)} TM
                                                     </td>
                                                     <td className="px-5 py-4 whitespace-nowrap text-right text-xs font-bold text-gray-600">

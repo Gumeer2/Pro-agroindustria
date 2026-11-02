@@ -1334,11 +1334,6 @@ class WeightTicketController extends Controller
                     $finalWarehouse = $validated['warehouse'];
                 }
 
-                // VALIDATION: Check that the origin warehouse has sufficient stock available
-                if ($order->shipment_order_id || empty($order->vessel_id)) {
-                    \App\Services\UreaStockService::validateAvailableStock($order, $finalWarehouse, $netTons);
-                }
-
                 $ticketUpdate = [
                     'gross_weight' => $secondWeight,
                     'net_weight' => $net,

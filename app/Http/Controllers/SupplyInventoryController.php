@@ -263,6 +263,13 @@ class SupplyInventoryController extends Controller
                 'dap_shipped' => $dapMetrics['totalShippedTons'],
                 'dap_today' => $dapMetrics['todayProductionTons'] ?? 0,
             ],
+            'stockAlerts' => array_merge(
+                $agricolaMetrics['stockAlerts'] ?? [],
+                $industrialMetrics['stockAlerts'] ?? [],
+                $automotrizMetrics['stockAlerts'] ?? [],
+                $importadaMetrics['stockAlerts'] ?? [],
+                $dapMetrics['stockAlerts'] ?? []
+            ),
         ]);
     }
 
