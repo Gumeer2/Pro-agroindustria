@@ -287,48 +287,15 @@ export default function ShipmentDocumentsPrintModal({
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
-                                            {/* Print Sheet 1 Button */}
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintWeight1}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-indigo-700 rounded-xl text-xs font-bold shadow-sm transition"
-                                                title="Imprimir solo la Hoja 1: Verificación de Peso (Muestras 1 a 40)"
-                                            >
-                                                <Scale className="w-3.5 h-3.5" />
-                                                <span>Hoja 1 (1-40)</span>
-                                            </button>
-
-                                            {/* Print Sheet 2 Button */}
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintWeight2}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-indigo-700 rounded-xl text-xs font-bold shadow-sm transition"
-                                                title="Imprimir solo la Hoja 2: Verificación de Peso (Muestras 41 a 80)"
-                                            >
-                                                <Scale className="w-3.5 h-3.5" />
-                                                <span>Hoja 2 (41-80)</span>
-                                            </button>
-
-                                            {/* Print Stowage Button */}
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintStowage}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-emerald-700 rounded-xl text-xs font-bold shadow-sm transition"
-                                                title="Imprimir solo la Nota de Estiba a Camión (Horizontal)"
-                                            >
-                                                <Layers className="w-3.5 h-3.5" />
-                                                <span>Hoja 3 (Estiba)</span>
-                                            </button>
-
                                             {/* Print All Button */}
                                             <button
                                                 type="button"
                                                 onClick={handlePrintAll}
                                                 className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition transform active:scale-95"
-                                                title="Imprimir las 3 hojas por separado en sus formatos oficiales"
+                                                title="Imprimir todo en sus formatos oficiales"
                                             >
                                                 <Printer className="w-3.5 h-3.5" />
-                                                <span>Imprimir Todo (3 Hojas)</span>
+                                                <span>Imprimir Todo</span>
                                             </button>
 
                                             {/* Close Button */}
@@ -414,44 +381,14 @@ export default function ShipmentDocumentsPrintModal({
                                     </div>
 
                                     {/* Modal Footer */}
-                                    <div className="p-4 bg-white border-t border-gray-200 rounded-b-3xl flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-                                        <div className="text-xs text-gray-500">
-                                            Impresión en hojas tamaño Carta separadas: Hojas 1 y 2 en vertical (40 muestras c/u) y Hoja 3 en horizontal.
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                                    <div className="p-4 bg-white border-t border-gray-200 rounded-b-3xl flex items-center justify-end gap-3 shrink-0">
+                                        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
                                             <button
                                                 type="button"
                                                 onClick={onClose}
                                                 className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 transition shadow-sm"
                                             >
                                                 Cerrar
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintWeight1}
-                                                className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-                                                title="Imprimir solo Hoja 1 (Muestras 1 a 40)"
-                                            >
-                                                <Scale className="w-3.5 h-3.5" />
-                                                Hoja 1 (1-40)
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintWeight2}
-                                                className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-                                                title="Imprimir solo Hoja 2 (Muestras 41 a 80)"
-                                            >
-                                                <Scale className="w-3.5 h-3.5" />
-                                                Hoja 2 (41-80)
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintWeightAll}
-                                                className="px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-100/60 hover:bg-indigo-200/70 text-indigo-800 text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-                                                title="Imprimir ambas hojas de peso (80 muestras en 2 hojas)"
-                                            >
-                                                <Scale className="w-3.5 h-3.5" />
-                                                Peso (Hojas 1 y 2)
                                             </button>
                                             <button
                                                 type="button"
@@ -466,10 +403,10 @@ export default function ShipmentDocumentsPrintModal({
                                                 type="button"
                                                 onClick={handlePrintAll}
                                                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition flex items-center justify-center gap-1.5"
-                                                title="Imprimir las 3 hojas completas en hojas separadas"
+                                                title="Imprimir todo en sus formatos oficiales"
                                             >
                                                 <Printer className="w-3.5 h-3.5" />
-                                                Imprimir Todo (3 Hojas)
+                                                Imprimir Todo
                                             </button>
                                         </div>
                                     </div>

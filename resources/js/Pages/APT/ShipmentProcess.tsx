@@ -28,6 +28,12 @@ import {
     FileSpreadsheet,
     Lock,
     Unlock,
+    AlertTriangle,
+    ChevronDown,
+    ChevronUp,
+    UserCheck,
+    RotateCcw,
+    ShieldAlert,
 } from "lucide-react";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -81,6 +87,9 @@ interface HistoryItem {
     stowage_plan_status?: string | null;
     stowage_plan_saved_at?: string | null;
     stowage_plan_saved_by?: number | string | null;
+    loading_assistant?: string | null;
+    is_sampling_blocked?: boolean;
+    sampling_unlock_count?: number;
 }
 
 interface Props {
@@ -89,6 +98,7 @@ interface Props {
     squad_leaders: string[];
     assistants: Assistant[];
     initial_history: HistoryItem[];
+    initial_incidents?: any[];
 }
 
 function normalizeWarehouseNumber(w?: string | null): number | null {
@@ -364,11 +374,11 @@ const getOrderSamplingStatus = (row: HistoryItem): {
         return { isEnvasado: false, isCompleted: true, samplesCount: 0, savedAt: null };
     }
 
-    // La base de datos es la única fuente de verdad
+    // La base de datos es la única fuente de verdad (estrictamente 80 muestras para estar completado)
     const dbSamples = Array.isArray(row.samples) ? row.samples : [];
     const dbCount = dbSamples.length;
-    const dbCompleted = dbCount >= 80 || Boolean(row.sampling_completed_at) || row.sampling_status === "completed";
-    const dbSavedAt = row.sampling_completed_at || null;
+    const dbCompleted = dbCount >= 80;
+    const dbSavedAt = dbCompleted ? (row.sampling_completed_at || null) : null;
 
     // Si la base de datos no tiene muestras, limpiar cualquier clave huérfana de localStorage
     if (dbCount === 0 && typeof window !== "undefined") {
@@ -406,13 +416,41 @@ export default function ShipmentProcess({
     squad_leaders = [],
     assistants = [],
     initial_history = [],
+    initial_incidents = [],
 }: Props) {
     const [currentStep, setCurrentStep] = useState<1 | 2>(1);
     const [history, setHistory] = useState<HistoryItem[]>(initial_history);
+    const [incidents, setIncidents] = useState<any[]>(initial_incidents || []);
+    const [isIncidentsOpen, setIsIncidentsOpen] = useState(false);
+    const [incidentsSearch, setIncidentsSearch] = useState("");
     const [searchQr, setSearchQr] = useState("");
     const [isSearchingQr, setIsSearchingQr] = useState(false);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [scannedOrder, setScannedOrder] = useState<any>(null);
+
+    const refreshIncidents = async () => {
+        try {
+            const res = await axios.get(route("documentation.shipment-orders.sampling-incidents"));
+            if (res.data?.incidents) {
+                setIncidents(res.data.incidents);
+            }
+        } catch (e) {
+            console.error("Error al refrescar incidencias:", e);
+        }
+    };
+
+    const filteredIncidents = useMemo(() => {
+        if (!incidentsSearch.trim()) return incidents;
+        const q = incidentsSearch.toLowerCase().trim();
+        return incidents.filter((inc) => {
+            const folio = (inc.order_folio || "").toLowerCase();
+            const user = (inc.unlocked_by_name || "").toLowerCase();
+            const assistant = (inc.assistant_name || "").toLowerCase();
+            const wh = (inc.warehouse || "").toLowerCase();
+            const reason = (inc.reason || "").toLowerCase();
+            return folio.includes(q) || user.includes(q) || assistant.includes(q) || wh.includes(q) || reason.includes(q);
+        });
+    }, [incidents, incidentsSearch]);
 
     // Active Warehouse & Cubicle Selection
     const [selectedWarehouseId, setSelectedWarehouseId] = useState<number>(() => {
@@ -510,7 +548,11 @@ export default function ShipmentProcess({
             return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
         })();
 
-        if (isRowEnvasado && !isStowagePlanCompleted(row)) {
+        const isSamplingStarted = (Array.isArray(row?.samples) && row.samples.length > 0) || 
+            (row?.sampling_status && row.sampling_status !== "pending") ||
+            (typeof row?.samples_count === "number" && row.samples_count > 0);
+
+        if (isRowEnvasado && !isStowagePlanCompleted(row) && !isSamplingStarted) {
             if (isAdmin) {
                 Swal.fire({
                     icon: "warning",
@@ -748,8 +790,12 @@ export default function ShipmentProcess({
 
                 if (isTargetEnvasado) {
                     // CANDADO DE ESTIBADOR:
-                    // Si el estibador no ha guardado la nota de estiba:
-                    if (!isStowagePlanCompleted(targetOrder)) {
+                    // Si el estibador no ha guardado la nota de estiba y aún no hay muestras:
+                    const isTargetSamplingStarted = (Array.isArray(targetOrder?.samples) && targetOrder.samples.length > 0) || 
+                        (targetOrder?.sampling_status && targetOrder.sampling_status !== "pending") ||
+                        (typeof targetOrder?.samples_count === "number" && targetOrder.samples_count > 0);
+
+                    if (!isStowagePlanCompleted(targetOrder) && !isTargetSamplingStarted) {
                         if (isAdmin) {
                             Swal.fire({
                                 icon: "warning",
@@ -1544,6 +1590,29 @@ export default function ShipmentProcess({
                                     )}
                                     <Settings className="w-3 h-3 ml-0.5 text-indigo-400" />
                                 </button>
+
+                                {/* Botón Desplegable de Incidencias en el espacio en blanco */}
+                                <button
+                                    type="button"
+                                    onClick={() => setIsIncidentsOpen(!isIncidentsOpen)}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border shadow-xs transition-all cursor-pointer ${
+                                        isIncidentsOpen
+                                            ? "bg-amber-600 text-white border-amber-600 ring-2 ring-amber-300"
+                                            : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200 hover:border-amber-300"
+                                    }`}
+                                    title="Ver tabla de incidencias de desbloqueo de muestreo"
+                                >
+                                    <AlertTriangle className={`w-3.5 h-3.5 ${isIncidentsOpen ? "text-white" : "text-amber-600"}`} />
+                                    <span>Incidencias</span>
+                                    {incidents.length > 0 && (
+                                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                                            isIncidentsOpen ? "bg-amber-800 text-white" : "bg-amber-200 text-amber-900"
+                                        }`}>
+                                            {incidents.length}
+                                        </span>
+                                    )}
+                                    <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isIncidentsOpen ? "rotate-180 text-white" : "text-amber-600"}`} />
+                                </button>
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
                                 Consulta de órdenes en proceso de carga y finalizadas asignadas a este almacén.
@@ -1562,6 +1631,137 @@ export default function ShipmentProcess({
                             />
                         </div>
                     </div>
+
+                    {/* Tabla Desplegable de Incidencias */}
+                    {isIncidentsOpen && (
+                        <div className="bg-gradient-to-b from-amber-50/80 via-orange-50/40 to-white border-b border-amber-200 p-4 md:p-6 transition-all duration-300 animate-fade-in">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-sm">
+                                        <AlertTriangle className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-base font-black text-amber-950 flex items-center gap-2">
+                                            <span>Registro de Incidencias de Muestreo</span>
+                                            <span className="text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full font-bold">
+                                                {filteredIncidents.length} {filteredIncidents.length === 1 ? "registro" : "registros"}
+                                            </span>
+                                        </h4>
+                                        <p className="text-xs text-amber-800">
+                                            Historial de desbloqueos autorizados por el Jefe de Almacén tras registrar 3 pesos consecutivos fuera de tolerancia.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 w-full sm:w-auto">
+                                    <div className="relative flex-1 sm:w-64">
+                                        <Search className="w-4 h-4 text-amber-600 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input
+                                            type="text"
+                                            value={incidentsSearch}
+                                            onChange={(e) => setIncidentsSearch(e.target.value)}
+                                            placeholder="Filtrar por orden, jefe o auxiliar..."
+                                            className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-amber-200 bg-white text-xs font-medium focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={refreshIncidents}
+                                        className="p-1.5 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl transition shadow-2xs cursor-pointer"
+                                        title="Actualizar tabla de incidencias"
+                                    >
+                                        <RotateCcw className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsIncidentsOpen(false)}
+                                        className="p-1.5 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl transition shadow-2xs cursor-pointer"
+                                        title="Cerrar tabla desplegable"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Tabla de Incidencias */}
+                            <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white shadow-sm">
+                                <table className="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr className="bg-amber-100/80 border-b border-amber-200 text-amber-950 font-bold uppercase tracking-wider text-[11px]">
+                                            <th className="py-2.5 px-3">Folio Orden</th>
+                                            <th className="py-2.5 px-3">Almacén</th>
+                                            <th className="py-2.5 px-3">Quién Desbloqueó</th>
+                                            <th className="py-2.5 px-3">Fecha y Hora</th>
+                                            <th className="py-2.5 px-3 text-center">Veces Desbloqueado</th>
+                                            <th className="py-2.5 px-3">Auxiliar de Muestras</th>
+                                            <th className="py-2.5 px-3">Motivo / Detalle</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-amber-100 font-medium text-slate-700">
+                                        {filteredIncidents.length > 0 ? (
+                                            filteredIncidents.map((inc: any) => (
+                                                <tr key={inc.id} className="hover:bg-amber-50/50 transition-colors">
+                                                    <td className="py-2.5 px-3 font-mono font-bold text-indigo-950 whitespace-nowrap">
+                                                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-md">
+                                                            {inc.order_folio || "N/A"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                                        <span className="font-semibold text-slate-800">
+                                                            {inc.warehouse || "Almacén"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                                                            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                                            <span>{inc.unlocked_by_name || "Jefe de Almacén"}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 whitespace-nowrap font-mono text-slate-600">
+                                                        <div className="flex items-center gap-1">
+                                                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                                            <span>
+                                                                {inc.unlocked_at_formatted ||
+                                                                    (inc.unlocked_at
+                                                                        ? new Date(inc.unlocked_at).toLocaleString("es-MX")
+                                                                        : "N/A")}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                                                            {inc.unlock_count || 1} {Number(inc.unlock_count) === 1 ? "vez" : "veces"} (Desbloqueo #{inc.unlock_count || 1})
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1.5 font-semibold text-indigo-900">
+                                                            <User className="w-3.5 h-3.5 text-indigo-500" />
+                                                            <span>{inc.assistant_name || "No asignado"}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-slate-600 max-w-xs truncate" title={inc.reason}>
+                                                        {inc.reason || "3 pesos consecutivos fuera de tolerancia"}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        ) : (
+                                            <tr>
+                                                <td colSpan={7} className="py-8 px-4 text-center text-slate-400">
+                                                    <AlertTriangle className="w-8 h-8 mx-auto text-amber-300 mb-1" />
+                                                    <p className="font-medium text-slate-600">
+                                                        No hay incidencias registradas {incidentsSearch ? "con ese criterio" : "en este momento"}.
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-400 mt-0.5">
+                                                        Las incidencias se generan automáticamente cuando el Jefe de Almacén autoriza y desbloquea la toma de muestras.
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="w-full overflow-hidden">
                         <table className="w-full table-fixed divide-y divide-gray-200 text-xs">
@@ -1692,7 +1892,7 @@ export default function ShipmentProcess({
                                                                                         }`}
                                                                                     >
                                                                                         <Scale className="w-3.5 h-3.5" />
-                                                                                        Muestreo Ensacadora {!isStowagePlanCompleted(row) ? "(Bloqueado)" : ""}
+                                                                                        Muestreo Ensacadora {!isStowagePlanCompleted(row) && samplingStatus.samplesCount === 0 ? "(Bloqueado)" : ""}
                                                                                     </button>
                                                                                 )}
                                                                             </Menu.Item>
@@ -1810,7 +2010,7 @@ export default function ShipmentProcess({
                                                             {samplingStatus.isEnvasado ? (
                                                                 <>
                                                                     {/* Muestreo */}
-                                                                    {!isStowagePlanCompleted(row) ? (
+                                                                    {!isStowagePlanCompleted(row) && samplingStatus.samplesCount === 0 ? (
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleOpenSampling(row)}
@@ -1829,6 +2029,16 @@ export default function ShipmentProcess({
                                                                         >
                                                                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                                                             <span>80/80</span>
+                                                                        </button>
+                                                                    ) : row.is_sampling_blocked ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSampling(row)}
+                                                                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                            title="Muestreo bloqueado por 3 alertas de tolerancia. Haga clic para desbloquear con el Jefe de Almacén."
+                                                                        >
+                                                                            <Lock className="w-3 h-3" />
+                                                                            <span>Bloqueado ({samplingStatus.samplesCount}/80)</span>
                                                                         </button>
                                                                     ) : (
                                                                         <button
@@ -2007,6 +2217,7 @@ export default function ShipmentProcess({
                     setIsSamplingModalOpen(false);
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
+                    await refreshIncidents();
                 }}
                 order={activeSamplingOrder}
                 stowageCount={activeSamplingOrder?.stowage_count || stowageCount}
@@ -2014,6 +2225,29 @@ export default function ShipmentProcess({
                 onSave={async () => {
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
+                }}
+                onUnlockSuccess={async (newIncident) => {
+                    setSamplingRevision((r) => r + 1);
+                    await refreshHistory();
+                    await refreshIncidents();
+                    if (newIncident) {
+                        setIncidents((prev) => [newIncident, ...prev.filter((i) => i.id !== newIncident.id)]);
+                    }
+                    setActiveSamplingOrder((prev: any) =>
+                        prev
+                            ? {
+                                  ...prev,
+                                  is_sampling_blocked: false,
+                                  sampling_status:
+                                      (Array.isArray(prev.samples) ? prev.samples.length : 0) >= 80
+                                          ? "completed"
+                                          : "in_progress",
+                                  sampling_completed_at: null,
+                                  sampling_unlock_count:
+                                      newIncident?.unlock_count ?? ((prev.sampling_unlock_count || 0) + 1),
+                              }
+                            : prev
+                    );
                 }}
                 onOpenPrintDocuments={handleOpenPrintModalFromSampling}
             />

@@ -15,12 +15,14 @@ use App\Models\ShipmentOrigin;
 use App\Models\AptAttendance;
 use App\Models\LoadingAssistant;
 use App\Models\ShipmentProcessHistory;
+use App\Models\ShipmentSamplingIncident;
 use App\Models\User;
 use App\Models\WeightTicket;
 use App\Models\ClientOperatorAssignment;
 use Illuminate\Http\Request;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use App\Helpers\OperationalTimeHelper;
@@ -1866,7 +1868,16 @@ class DocumentationController extends Controller
             return response()->json(['message' => 'No se encontró el registro de proceso de embarque.'], 404);
         }
 
-        // Candado estricto para envasados: el estibador debe guardar la nota de estiba primero
+        $samples = $request->input('samples', []);
+        if (is_string($samples)) {
+            $samples = json_decode($samples, true) ?: [];
+        }
+        $stowageCount = $request->input('stowage_count');
+        $sampleCount = count($samples);
+        $isCompleted = $sampleCount >= 80;
+        $existingSampleCount = count($history?->samples ?? $order?->samples ?? []);
+
+        // Candado estricto para envasados: el estibador debe guardar la nota de estiba primero solo si NO se ha iniciado aún el muestreo
         $productText = mb_strtoupper(($order?->product ?? '') . ' ' . ($order?->presentation ?? ''));
         $isEnvasado = str_contains($productText, 'ENVASADO') || str_contains($productText, 'SACO') || str_contains($productText, '25KG') || str_contains($productText, '50KG');
         $stowageDone = ($order?->stowage_plan_status === 'completed' || !empty($order?->stowage_plan_saved_at)) 
@@ -1879,21 +1890,14 @@ class DocumentationController extends Controller
             str_contains(strtolower($user->username ?? ''), 'admin')
         );
 
-        if ($isEnvasado && !$stowageDone && !$isAdmin) {
+        if ($isEnvasado && !$stowageDone && !$isAdmin && $existingSampleCount === 0 && $sampleCount === 0) {
             return response()->json([
                 'message' => 'Candado Activo: El usuario Estibador debe guardar la Nota de Estiba (GLS-AP-FO-002) antes de registrar las muestras de ensacadora.',
             ], 422);
         }
 
-        $samples = $request->input('samples', []);
-        if (is_string($samples)) {
-            $samples = json_decode($samples, true) ?: [];
-        }
-        $stowageCount = $request->input('stowage_count');
-        $isCompleted = count($samples) >= 80 || $request->boolean('is_completed');
-
         $avg = null;
-        if (count($samples) > 0) {
+        if ($sampleCount > 0) {
             $weights = collect($samples)->pluck('weight')->map(fn ($w) => (float)$w)->filter(fn ($w) => $w > 0);
             if ($weights->count() > 0) {
                 $avg = round($weights->avg(), 3);
@@ -1903,31 +1907,32 @@ class DocumentationController extends Controller
         $updateData = [
             'samples' => $samples,
             'sampling_avg' => $avg,
-            'sampling_status' => $isCompleted ? 'completed' : (count($samples) > 0 ? 'in_progress' : 'pending'),
+            'sampling_status' => $isCompleted ? 'completed' : ($sampleCount > 0 ? 'in_progress' : 'pending'),
+            'sampling_completed_at' => $isCompleted ? ($history->sampling_completed_at ?? now()) : null,
             'updated_by' => auth()->id(),
         ];
+
+        if ($request->has('is_blocked')) {
+            $updateData['is_sampling_blocked'] = $request->boolean('is_blocked');
+        }
 
         if ($stowageCount !== null && $stowageCount !== '') {
             $updateData['stowage_count'] = (int)$stowageCount;
         }
 
-        if ($isCompleted) {
-            $updateData['sampling_completed_at'] = $history->sampling_completed_at ?? now();
-        } else {
-            if (count($samples) < 80) {
-                $updateData['sampling_completed_at'] = null;
-            }
-        }
-
         $history->update($updateData);
 
         if ($order) {
-            $order->update([
+            $orderUpdate = [
                 'samples' => $samples,
                 'sampling_avg' => $avg,
                 'sampling_status' => $updateData['sampling_status'],
-                'sampling_completed_at' => $updateData['sampling_completed_at'] ?? null,
-            ]);
+                'sampling_completed_at' => $updateData['sampling_completed_at'],
+            ];
+            if ($request->has('is_blocked')) {
+                $orderUpdate['is_sampling_blocked'] = $request->boolean('is_blocked');
+            }
+            $order->update($orderUpdate);
         }
 
         return response()->json([
@@ -1967,12 +1972,172 @@ class DocumentationController extends Controller
             ]);
         }
 
+        $sampleCount = count($history->samples ?? []);
         return response()->json([
             'samples' => $history->samples ?? [],
             'stowage_count' => $history->stowage_count,
-            'sampling_completed_at' => $history->sampling_completed_at?->toIso8601String(),
-            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 80 ? 'completed' : 'pending'),
+            'sampling_completed_at' => $sampleCount >= 80 ? $history->sampling_completed_at?->toIso8601String() : null,
+            'sampling_status' => $sampleCount >= 80 ? ($history->sampling_status ?? 'completed') : ($sampleCount > 0 ? 'in_progress' : 'pending'),
             'sampling_avg' => $history->sampling_avg,
+            'is_sampling_blocked' => (bool) ($history->is_sampling_blocked ?? $order?->is_sampling_blocked ?? false),
+            'sampling_unlock_count' => (int) ($history->sampling_unlock_count ?? $order?->sampling_unlock_count ?? 0),
+        ]);
+    }
+
+    public function unlockSampling(Request $request, string $id)
+    {
+        $this->ensureSamplingIncidentsTable();
+
+        $validated = $request->validate([
+            'username_or_email' => 'required|string',
+            'password' => 'required|string',
+            'assistant_name' => 'nullable|string',
+            'notes' => 'nullable|string',
+        ]);
+
+        $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
+        if (!$order && $request->filled('shipment_order_id')) {
+            $order = ShipmentOrder::where('id', $request->input('shipment_order_id'))->orWhere('folio', $request->input('shipment_order_id'))->first();
+        }
+
+        $history = null;
+        if ($order) {
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        }
+        if (!$history) {
+            $history = ShipmentProcessHistory::find($id);
+            if ($history && !$order) {
+                $order = $history->shipmentOrder;
+            }
+        }
+
+        if (!$order && !$history) {
+            return response()->json(['message' => 'No se encontró la orden de embarque para desbloquear.'], 404);
+        }
+
+        $identifier = trim($validated['username_or_email']);
+        $user = User::where('email', $identifier)
+            ->orWhere('name', $identifier)
+            ->first();
+
+        if (!$user && Schema::hasColumn('users', 'username')) {
+            $user = User::where('username', $identifier)->first();
+        }
+
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
+            return response()->json([
+                'message' => 'Credenciales inválidas. Verifique el usuario y la contraseña del Jefe de Almacén.',
+            ], 422);
+        }
+
+        // Verificar rol de Jefe de Almacén o Administrador
+        $isJefe = (method_exists($user, 'hasRole') && ($user->hasRole('Jefe de Almacen') || $user->hasRole('Jefe de Almacén') || $user->hasRole('Admin') || $user->hasRole('admin') || $user->hasRole('super-admin')))
+            || ($user->is_admin ?? false)
+            || str_contains(mb_strtolower($user->position ?? ''), 'jefe')
+            || str_contains(mb_strtolower($user->level ?? ''), 'jefe')
+            || str_contains(mb_strtolower($user->position ?? ''), 'almac')
+            || str_contains(mb_strtolower($user->name ?? ''), 'admin');
+
+        if (!$isJefe) {
+            return response()->json([
+                'message' => 'El usuario ingresado no cuenta con perfil de Jefe de Almacén ni Administrador.',
+            ], 403);
+        }
+
+        $orderId = $order?->id ?? $history?->shipment_order_id;
+        $orderFolio = $order?->folio ?? $history?->shipmentOrder?->folio ?? 'N/A';
+        $warehouse = $order?->warehouse ?: ($history?->warehouse ?: 'Almacén');
+        $assistant = $validated['assistant_name'] ?: ($history?->loading_assistant ?: ($order?->loading_assistant ?: 'Auxiliar no asignado'));
+
+        // Un solo registro por orden: buscar si ya existe para hacer el conteo acumulado
+        $incident = ShipmentSamplingIncident::where(function ($q) use ($orderId, $orderFolio) {
+            if ($orderId) {
+                $q->where('shipment_order_id', $orderId);
+            }
+            if ($orderFolio && $orderFolio !== 'N/A') {
+                $q->orWhere('order_folio', $orderFolio);
+            }
+        })->first();
+
+        if ($incident) {
+            $currentUnlockCount = ((int) $incident->unlock_count) + 1;
+            $incident->update([
+                'shipment_order_id' => $orderId,
+                'order_folio' => $orderFolio,
+                'warehouse' => $warehouse,
+                'unlocked_by_user_id' => $user->id,
+                'unlocked_by_name' => $user->name,
+                'assistant_name' => $assistant,
+                'unlock_count' => $currentUnlockCount,
+                'reason' => $validated['notes'] ?: 'Desbloqueo autorizado tras 3 alertas por pesos fuera de tolerancia',
+                'unlocked_at' => now(),
+            ]);
+        } else {
+            $currentUnlockCount = 1;
+            $incident = ShipmentSamplingIncident::create([
+                'shipment_order_id' => $orderId,
+                'order_folio' => $orderFolio,
+                'warehouse' => $warehouse,
+                'unlocked_by_user_id' => $user->id,
+                'unlocked_by_name' => $user->name,
+                'assistant_name' => $assistant,
+                'unlock_count' => 1,
+                'reason' => $validated['notes'] ?: 'Desbloqueo autorizado tras 3 alertas por pesos fuera de tolerancia',
+                'unlocked_at' => now(),
+            ]);
+        }
+
+        $samples = $history?->samples ?? $order?->samples ?? [];
+        $sampleCount = count($samples);
+        $statusAfterUnlock = $sampleCount >= 80 ? 'completed' : ($sampleCount > 0 ? 'in_progress' : 'pending');
+        $completedAtAfterUnlock = $sampleCount >= 80 ? $history?->sampling_completed_at : null;
+
+        if ($history) {
+            $history->update([
+                'is_sampling_blocked' => false,
+                'sampling_unlock_count' => $currentUnlockCount,
+                'sampling_status' => $statusAfterUnlock,
+                'sampling_completed_at' => $completedAtAfterUnlock,
+            ]);
+        }
+        if ($order) {
+            $order->update([
+                'is_sampling_blocked' => false,
+                'sampling_unlock_count' => $currentUnlockCount,
+                'sampling_status' => $statusAfterUnlock,
+                'sampling_completed_at' => $completedAtAfterUnlock,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Toma de muestras desbloqueada exitosamente por {$user->name}. (Desbloqueo #{$currentUnlockCount})",
+            'incident' => $this->formatIncidentItem($incident),
+            'unlock_count' => $currentUnlockCount,
+        ]);
+    }
+
+    public function getSamplingIncidents(Request $request)
+    {
+        $this->ensureSamplingIncidentsTable();
+        $this->cleanDuplicateIncidents();
+
+        $warehouse = $request->input('warehouse');
+        $folio = $request->input('folio');
+
+        $query = ShipmentSamplingIncident::with(['shipmentOrder', 'user'])->latest('unlocked_at');
+
+        if ($warehouse) {
+            $query->where('warehouse', 'like', "%{$warehouse}%");
+        }
+        if ($folio) {
+            $query->where('order_folio', 'like', "%{$folio}%");
+        }
+
+        $incidents = $query->limit(100)->get()->map(fn ($inc) => $this->formatIncidentItem($inc));
+
+        return response()->json([
+            'incidents' => $incidents,
         ]);
     }
 
@@ -2245,13 +2410,16 @@ class DocumentationController extends Controller
             'status' => $history->status ?? $order?->status ?? 'loading',
             'stowage_count' => $history->stowage_count,
             'samples' => $history->samples ?? [],
-            'sampling_completed_at' => $history->sampling_completed_at?->toIso8601String(),
-            'sampling_status' => $history->sampling_status ?? (count($history->samples ?? []) >= 80 ? 'completed' : (count($history->samples ?? []) > 0 ? 'in_progress' : 'pending')),
+            'sampling_completed_at' => count($history->samples ?? []) >= 80 ? $history->sampling_completed_at?->toIso8601String() : null,
+            'sampling_status' => count($history->samples ?? []) >= 80 ? ($history->sampling_status ?? 'completed') : (count($history->samples ?? []) > 0 ? 'in_progress' : 'pending'),
             'sampling_avg' => $history->sampling_avg,
             'stowage_plan' => $history->stowage_plan ?? $order?->stowage_plan,
             'stowage_plan_status' => $history->stowage_plan_status ?? $order?->stowage_plan_status ?? 'pending',
             'stowage_plan_saved_at' => ($history->stowage_plan_saved_at ?? $order?->stowage_plan_saved_at)?->toIso8601String(),
             'stowage_plan_saved_by' => $history->stowage_plan_saved_by ?? $order?->stowage_plan_saved_by,
+            'loading_assistant' => $history->loading_assistant ?? $order?->loading_assistant ?? 'N/A',
+            'is_sampling_blocked' => (bool) ($history->is_sampling_blocked ?? $order?->is_sampling_blocked ?? false),
+            'sampling_unlock_count' => (int) ($history->sampling_unlock_count ?? $order?->sampling_unlock_count ?? 0),
         ];
     }
 
@@ -2282,30 +2450,36 @@ class DocumentationController extends Controller
             'status' => $order->status,
             'stowage_count' => $history?->stowage_count,
             'samples' => $history?->samples ?? [],
-            'sampling_completed_at' => $history?->sampling_completed_at?->toIso8601String(),
-            'sampling_status' => $history?->sampling_status ?? (count($history?->samples ?? []) >= 80 ? 'completed' : (count($history?->samples ?? []) > 0 ? 'in_progress' : 'pending')),
+            'sampling_completed_at' => count($history?->samples ?? []) >= 80 ? $history?->sampling_completed_at?->toIso8601String() : null,
+            'sampling_status' => count($history?->samples ?? []) >= 80 ? ($history?->sampling_status ?? 'completed') : (count($history?->samples ?? []) > 0 ? 'in_progress' : 'pending'),
             'sampling_avg' => $history?->sampling_avg,
             'stowage_plan' => $history?->stowage_plan ?? $order->stowage_plan,
             'stowage_plan_status' => $history?->stowage_plan_status ?? $order->stowage_plan_status ?? 'pending',
             'stowage_plan_saved_at' => ($history?->stowage_plan_saved_at ?? $order->stowage_plan_saved_at)?->toIso8601String(),
             'stowage_plan_saved_by' => $history?->stowage_plan_saved_by ?? $order->stowage_plan_saved_by,
+            'loading_assistant' => $history?->loading_assistant ?? $order->loading_assistant ?? 'N/A',
+            'is_sampling_blocked' => (bool) ($history?->is_sampling_blocked ?? $order->is_sampling_blocked ?? false),
+            'sampling_unlock_count' => (int) ($history?->sampling_unlock_count ?? $order->sampling_unlock_count ?? 0),
         ];
     }
 
     public function shipmentProcessIndex(Request $request)
     {
         $this->ensureLoadingAssistantTables();
+        $this->ensureSamplingIncidentsTable();
 
         $lots = Lot::orderBy('created_at', 'desc')->get(['id', 'folio', 'plant_origin', 'warehouse', 'cubicle']);
         $squadLeaders = $this->personalAgroindustrySquadLeaders();
         $assistants = LoadingAssistant::orderBy('name')->get(['id', 'name']);
         $history = $this->getLoadingHistory();
+        $incidents = $this->getSamplingIncidentsList();
 
         return Inertia::render('APT/ShipmentProcess', [
             'lots' => $lots,
             'squad_leaders' => $squadLeaders,
             'assistants' => $assistants,
             'initial_history' => $history,
+            'initial_incidents' => $incidents,
         ]);
     }
 
@@ -2369,5 +2543,107 @@ class DocumentationController extends Controller
             
             ShipmentDestination::firstOrCreate(['name' => $normalized]);
         }
+    }
+
+    private function ensureSamplingIncidentsTable(): void
+    {
+        if (!Schema::hasTable('shipment_sampling_incidents')) {
+            Schema::create('shipment_sampling_incidents', function (Blueprint $table) {
+                $table->id();
+                $table->foreignUuid('shipment_order_id')->nullable()->constrained('shipment_orders')->nullOnDelete();
+                $table->string('order_folio')->nullable();
+                $table->string('warehouse')->nullable();
+                $table->foreignId('unlocked_by_user_id')->nullable()->constrained('users')->nullOnDelete();
+                $table->string('unlocked_by_name')->nullable();
+                $table->string('assistant_name')->nullable();
+                $table->integer('unlock_count')->default(1);
+                $table->text('reason')->nullable();
+                $table->timestamp('unlocked_at')->nullable();
+                $table->timestamps();
+
+                $table->index('shipment_order_id');
+                $table->index('order_folio');
+                $table->index('unlocked_at');
+            });
+        }
+
+        if (!Schema::hasColumn('shipment_process_histories', 'is_sampling_blocked')) {
+            Schema::table('shipment_process_histories', function (Blueprint $table) {
+                $table->boolean('is_sampling_blocked')->default(false)->after('sampling_status');
+                $table->integer('sampling_unlock_count')->default(0)->after('is_sampling_blocked');
+            });
+        }
+
+        if (!Schema::hasColumn('shipment_orders', 'is_sampling_blocked')) {
+            Schema::table('shipment_orders', function (Blueprint $table) {
+                $table->boolean('is_sampling_blocked')->default(false)->after('sampling_status');
+                $table->integer('sampling_unlock_count')->default(0)->after('is_sampling_blocked');
+            });
+        }
+    }
+
+    private function formatIncidentItem(ShipmentSamplingIncident $incident): array
+    {
+        return [
+            'id' => $incident->id,
+            'shipment_order_id' => $incident->shipment_order_id,
+            'order_folio' => $incident->order_folio ?? $incident->shipmentOrder?->folio ?? 'N/A',
+            'warehouse' => $incident->warehouse ?? $incident->shipmentOrder?->warehouse ?? 'N/A',
+            'unlocked_by_user_id' => $incident->unlocked_by_user_id,
+            'unlocked_by_name' => $incident->unlocked_by_name ?? $incident->user?->name ?? 'Jefe de Almacén',
+            'assistant_name' => $incident->assistant_name ?? 'N/A',
+            'unlock_count' => (int) $incident->unlock_count,
+            'reason' => $incident->reason,
+            'unlocked_at' => $incident->unlocked_at?->toIso8601String(),
+            'unlocked_at_formatted' => $incident->unlocked_at ? $incident->unlocked_at->timezone('America/Mexico_City')->format('d/m/Y h:i:s a') : 'N/A',
+        ];
+    }
+
+    private function cleanDuplicateIncidents(): void
+    {
+        try {
+            $all = ShipmentSamplingIncident::orderByDesc('unlocked_at')->get();
+            $grouped = [];
+            foreach ($all as $inc) {
+                $folioKey = !empty($inc->order_folio) && $inc->order_folio !== 'N/A' ? trim($inc->order_folio) : null;
+                $orderIdKey = !empty($inc->shipment_order_id) ? (string)$inc->shipment_order_id : null;
+                $key = $folioKey ?: ($orderIdKey ?: ('id_' . $inc->id));
+                $grouped[$key][] = $inc;
+            }
+
+            foreach ($grouped as $key => $records) {
+                if (count($records) > 1) {
+                    $primary = $records[0];
+                    $maxUnlock = 0;
+                    foreach ($records as $r) {
+                        $c = (int) ($r->unlock_count ?? 1);
+                        if ($c > $maxUnlock) {
+                            $maxUnlock = $c;
+                        }
+                    }
+                    $finalCount = max($maxUnlock, count($records));
+                    $primary->update(['unlock_count' => $finalCount]);
+
+                    for ($i = 1; $i < count($records); $i++) {
+                        $records[$i]->delete();
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::error('Error en cleanDuplicateIncidents: ' . $e->getMessage());
+        }
+    }
+
+    private function getSamplingIncidentsList(): array
+    {
+        $this->ensureSamplingIncidentsTable();
+        $this->cleanDuplicateIncidents();
+
+        return ShipmentSamplingIncident::with(['shipmentOrder', 'user'])
+            ->latest('unlocked_at')
+            ->limit(100)
+            ->get()
+            ->map(fn ($inc) => $this->formatIncidentItem($inc))
+            ->toArray();
     }
 }

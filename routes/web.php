@@ -345,6 +345,8 @@ Route::middleware('auth')->group(function () {
                 Route::get('/documentation/shipment-orders/loading-history', 'loadingHistory')->name('documentation.shipment-orders.loading-history');
                 Route::post('/documentation/shipment-orders/{id}/save-sampling', 'saveSampling')->name('documentation.shipment-orders.save-sampling');
                 Route::get('/documentation/shipment-orders/{id}/sampling', 'getSampling')->name('documentation.shipment-orders.get-sampling');
+                Route::post('/documentation/shipment-orders/{id}/unlock-sampling', 'unlockSampling')->name('documentation.shipment-orders.unlock-sampling');
+                Route::get('/documentation/shipment-sampling-incidents', 'getSamplingIncidents')->name('documentation.shipment-orders.sampling-incidents');
                 Route::post('/documentation/shipment-orders/{id}/save-stowage-plan', 'saveStowagePlan')->name('documentation.shipment-orders.save-stowage-plan');
                 Route::get('/documentation/shipment-orders/{id}/stowage-plan', 'getStowagePlan')->name('documentation.shipment-orders.get-stowage-plan');
                 Route::patch('/documentation/shipment-orders/{id}/finish-loading', 'finishLoading')->name('documentation.shipment-orders.finish-loading');

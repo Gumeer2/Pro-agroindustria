@@ -1,0 +1,1435 @@
+diff --git a/resources/js/Components/EnsacadoraSamplingModal.tsx b/resources/js/Components/EnsacadoraSamplingModal.tsx
+index 2049ab06..503b6d6e 100644
+--- a/resources/js/Components/EnsacadoraSamplingModal.tsx
++++ b/resources/js/Components/EnsacadoraSamplingModal.tsx
+@@ -22,8 +22,14 @@ import {
+     FileText,
+     ArrowRight,
+     Lock,
++    Unlock,
+     Cloud,
+     RotateCcw,
++    ShieldAlert,
++    KeyRound,
++    FileSpreadsheet,
++    ChevronDown,
++    ChevronUp,
+ } from "lucide-react";
+ 
+ interface SampleRecord {
+@@ -36,6 +42,78 @@ interface SampleRecord {
+     captured_at?: string;
+ }
+ 
++interface ToleranceRow {
++    programmedTons: number;
++    pesoIdealKg: number;
++    pesoLimiteInferiorKg: number;
++    pesoLimiteSuperiorKg: number;
++    redondeadoInferiorKg: number;
++    redondeadoSuperiorKg: number;
++}
++
++// GUIA PARA TOLERANCIA DE PESOS DE SACOS DE 25 KG (Oficial Almacenes de Producto Terminado)
++const TOLERANCE_TABLE_25KG: Record<number, ToleranceRow> = {
++    20: { programmedTons: 20, pesoIdealKg: 20064, pesoLimiteInferiorKg: 20044, pesoLimiteSuperiorKg: 20084, redondeadoInferiorKg: 20040, redondeadoSuperiorKg: 20080 },
++    21: { programmedTons: 21, pesoIdealKg: 21067, pesoLimiteInferiorKg: 21047, pesoLimiteSuperiorKg: 21087, redondeadoInferiorKg: 21050, redondeadoSuperiorKg: 21090 },
++    22: { programmedTons: 22, pesoIdealKg: 22070, pesoLimiteInferiorKg: 22050, pesoLimiteSuperiorKg: 22090, redondeadoInferiorKg: 22050, redondeadoSuperiorKg: 22090 },
++    23: { programmedTons: 23, pesoIdealKg: 23074, pesoLimiteInferiorKg: 23054, pesoLimiteSuperiorKg: 23094, redondeadoInferiorKg: 23050, redondeadoSuperiorKg: 23090 },
++    24: { programmedTons: 24, pesoIdealKg: 24077, pesoLimiteInferiorKg: 24057, pesoLimiteSuperiorKg: 24097, redondeadoInferiorKg: 24060, redondeadoSuperiorKg: 24100 },
++    25: { programmedTons: 25, pesoIdealKg: 25080, pesoLimiteInferiorKg: 25060, pesoLimiteSuperiorKg: 25100, redondeadoInferiorKg: 25060, redondeadoSuperiorKg: 25100 },
++    26: { programmedTons: 26, pesoIdealKg: 26083, pesoLimiteInferiorKg: 26063, pesoLimiteSuperiorKg: 26103, redondeadoInferiorKg: 26060, redondeadoSuperiorKg: 26100 },
++    27: { programmedTons: 27, pesoIdealKg: 27086, pesoLimiteInferiorKg: 27066, pesoLimiteSuperiorKg: 27106, redondeadoInferiorKg: 27070, redondeadoSuperiorKg: 27110 },
++    28: { programmedTons: 28, pesoIdealKg: 28090, pesoLimiteInferiorKg: 28070, pesoLimiteSuperiorKg: 28110, redondeadoInferiorKg: 28070, redondeadoSuperiorKg: 28110 },
++    29: { programmedTons: 29, pesoIdealKg: 29093, pesoLimiteInferiorKg: 29073, pesoLimiteSuperiorKg: 29113, redondeadoInferiorKg: 29070, redondeadoSuperiorKg: 29110 },
++    30: { programmedTons: 30, pesoIdealKg: 30096, pesoLimiteInferiorKg: 30076, pesoLimiteSuperiorKg: 30116, redondeadoInferiorKg: 30080, redondeadoSuperiorKg: 30120 },
++    31: { programmedTons: 31, pesoIdealKg: 31099, pesoLimiteInferiorKg: 31079, pesoLimiteSuperiorKg: 31119, redondeadoInferiorKg: 31080, redondeadoSuperiorKg: 31120 },
++    32: { programmedTons: 32, pesoIdealKg: 32102, pesoLimiteInferiorKg: 32082, pesoLimiteSuperiorKg: 32122, redondeadoInferiorKg: 32080, redondeadoSuperiorKg: 32120 },
++    33: { programmedTons: 33, pesoIdealKg: 33106, pesoLimiteInferiorKg: 33086, pesoLimiteSuperiorKg: 33126, redondeadoInferiorKg: 33090, redondeadoSuperiorKg: 33130 },
++    34: { programmedTons: 34, pesoIdealKg: 34109, pesoLimiteInferiorKg: 34089, pesoLimiteSuperiorKg: 34129, redondeadoInferiorKg: 34090, redondeadoSuperiorKg: 34130 },
++    35: { programmedTons: 35, pesoIdealKg: 35112, pesoLimiteInferiorKg: 35092, pesoLimiteSuperiorKg: 35132, redondeadoInferiorKg: 35090, redondeadoSuperiorKg: 35130 },
++    36: { programmedTons: 36, pesoIdealKg: 36115, pesoLimiteInferiorKg: 36095, pesoLimiteSuperiorKg: 36135, redondeadoInferiorKg: 36100, redondeadoSuperiorKg: 36140 },
++};
++
++// GUIA PARA TOLERANCIA DE PESOS DE SACOS DE 50 KG (Oficial Almacenes de Producto Terminado)
++const TOLERANCE_TABLE_50KG: Record<number, ToleranceRow> = {
++    20: { programmedTons: 20, pesoIdealKg: 20048, pesoLimiteInferiorKg: 20028, pesoLimiteSuperiorKg: 20068, redondeadoInferiorKg: 20030, redondeadoSuperiorKg: 20070 },
++    21: { programmedTons: 21, pesoIdealKg: 21050, pesoLimiteInferiorKg: 21030, pesoLimiteSuperiorKg: 21070, redondeadoInferiorKg: 21030, redondeadoSuperiorKg: 21070 },
++    22: { programmedTons: 22, pesoIdealKg: 22053, pesoLimiteInferiorKg: 22033, pesoLimiteSuperiorKg: 22073, redondeadoInferiorKg: 22030, redondeadoSuperiorKg: 22070 },
++    23: { programmedTons: 23, pesoIdealKg: 23055, pesoLimiteInferiorKg: 23035, pesoLimiteSuperiorKg: 23075, redondeadoInferiorKg: 23040, redondeadoSuperiorKg: 23080 },
++    24: { programmedTons: 24, pesoIdealKg: 24058, pesoLimiteInferiorKg: 24038, pesoLimiteSuperiorKg: 24078, redondeadoInferiorKg: 24040, redondeadoSuperiorKg: 24080 },
++    25: { programmedTons: 25, pesoIdealKg: 25060, pesoLimiteInferiorKg: 25040, pesoLimiteSuperiorKg: 25080, redondeadoInferiorKg: 25040, redondeadoSuperiorKg: 25080 },
++    26: { programmedTons: 26, pesoIdealKg: 26062, pesoLimiteInferiorKg: 26042, pesoLimiteSuperiorKg: 26082, redondeadoInferiorKg: 26040, redondeadoSuperiorKg: 26080 },
++    27: { programmedTons: 27, pesoIdealKg: 27065, pesoLimiteInferiorKg: 27045, pesoLimiteSuperiorKg: 27085, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
++    28: { programmedTons: 28, pesoIdealKg: 28067, pesoLimiteInferiorKg: 28047, pesoLimiteSuperiorKg: 28087, redondeadoInferiorKg: 28050, redondeadoSuperiorKg: 28090 },
++    29: { programmedTons: 29, pesoIdealKg: 29070, pesoLimiteInferiorKg: 29050, pesoLimiteSuperiorKg: 29090, redondeadoInferiorKg: 29050, redondeadoSuperiorKg: 29090 },
++    30: { programmedTons: 30, pesoIdealKg: 30072, pesoLimiteInferiorKg: 30052, pesoLimiteSuperiorKg: 30092, redondeadoInferiorKg: 30050, redondeadoSuperiorKg: 30090 },
++    31: { programmedTons: 31, pesoIdealKg: 31074, pesoLimiteInferiorKg: 31054, pesoLimiteSuperiorKg: 31094, redondeadoInferiorKg: 31050, redondeadoSuperiorKg: 31090 },
++    32: { programmedTons: 32, pesoIdealKg: 32077, pesoLimiteInferiorKg: 32057, pesoLimiteSuperiorKg: 32097, redondeadoInferiorKg: 32060, redondeadoSuperiorKg: 32100 },
++    33: { programmedTons: 33, pesoIdealKg: 33079, pesoLimiteInferiorKg: 33059, pesoLimiteSuperiorKg: 33099, redondeadoInferiorKg: 33060, redondeadoSuperiorKg: 33100 },
++    34: { programmedTons: 34, pesoIdealKg: 34082, pesoLimiteInferiorKg: 34062, pesoLimiteSuperiorKg: 34102, redondeadoInferiorKg: 34060, redondeadoSuperiorKg: 34100 },
++    35: { programmedTons: 35, pesoIdealKg: 35084, pesoLimiteInferiorKg: 35064, pesoLimiteSuperiorKg: 35104, redondeadoInferiorKg: 35060, redondeadoSuperiorKg: 35100 },
++    36: { programmedTons: 36, pesoIdealKg: 36086, pesoLimiteInferiorKg: 36066, pesoLimiteSuperiorKg: 36106, redondeadoInferiorKg: 36070, redondeadoSuperiorKg: 36110 },
++};
++
++// GUIA PARA TOLERANCIA DE PESOS DE SACOS DE 1000 KG (Oficial Almacenes de Producto Terminado)
++const TOLERANCE_TABLE_1000KG: Record<number, ToleranceRow> = {
++    20: { programmedTons: 20, pesoIdealKg: 20050, pesoLimiteInferiorKg: 20030, pesoLimiteSuperiorKg: 20070, redondeadoInferiorKg: 20030, redondeadoSuperiorKg: 20070 },
++    21: { programmedTons: 21, pesoIdealKg: 21053, pesoLimiteInferiorKg: 21033, pesoLimiteSuperiorKg: 21073, redondeadoInferiorKg: 21030, redondeadoSuperiorKg: 21070 },
++    22: { programmedTons: 22, pesoIdealKg: 22055, pesoLimiteInferiorKg: 22035, pesoLimiteSuperiorKg: 22075, redondeadoInferiorKg: 22040, redondeadoSuperiorKg: 22080 },
++    23: { programmedTons: 23, pesoIdealKg: 23058, pesoLimiteInferiorKg: 23038, pesoLimiteSuperiorKg: 23078, redondeadoInferiorKg: 23040, redondeadoSuperiorKg: 23080 },
++    24: { programmedTons: 24, pesoIdealKg: 24060, pesoLimiteInferiorKg: 24040, pesoLimiteSuperiorKg: 24080, redondeadoInferiorKg: 24040, redondeadoSuperiorKg: 24080 },
++    25: { programmedTons: 25, pesoIdealKg: 25063, pesoLimiteInferiorKg: 25043, pesoLimiteSuperiorKg: 25083, redondeadoInferiorKg: 25040, redondeadoSuperiorKg: 25080 },
++    26: { programmedTons: 26, pesoIdealKg: 26065, pesoLimiteInferiorKg: 26045, pesoLimiteSuperiorKg: 26085, redondeadoInferiorKg: 26050, redondeadoSuperiorKg: 26080 },
++    27: { programmedTons: 27, pesoIdealKg: 27068, pesoLimiteInferiorKg: 27048, pesoLimiteSuperiorKg: 27088, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
++    28: { programmedTons: 28, pesoIdealKg: 28070, pesoLimiteInferiorKg: 28050, pesoLimiteSuperiorKg: 28090, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
++    29: { programmedTons: 29, pesoIdealKg: 29073, pesoLimiteInferiorKg: 29053, pesoLimiteSuperiorKg: 29093, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
++    30: { programmedTons: 30, pesoIdealKg: 30075, pesoLimiteInferiorKg: 30055, pesoLimiteSuperiorKg: 30095, redondeadoInferiorKg: 30060, redondeadoSuperiorKg: 30100 },
++    31: { programmedTons: 31, pesoIdealKg: 31078, pesoLimiteInferiorKg: 31058, pesoLimiteSuperiorKg: 31098, redondeadoInferiorKg: 31060, redondeadoSuperiorKg: 31100 },
++    32: { programmedTons: 32, pesoIdealKg: 32080, pesoLimiteInferiorKg: 32060, pesoLimiteSuperiorKg: 32100, redondeadoInferiorKg: 32060, redondeadoSuperiorKg: 32100 },
++    33: { programmedTons: 33, pesoIdealKg: 33083, pesoLimiteInferiorKg: 33063, pesoLimiteSuperiorKg: 33103, redondeadoInferiorKg: 33060, redondeadoSuperiorKg: 33100 },
++    34: { programmedTons: 34, pesoIdealKg: 34085, pesoLimiteInferiorKg: 34065, pesoLimiteSuperiorKg: 34105, redondeadoInferiorKg: 34070, redondeadoSuperiorKg: 34110 },
++    35: { programmedTons: 35, pesoIdealKg: 35088, pesoLimiteInferiorKg: 35068, pesoLimiteSuperiorKg: 35108, redondeadoInferiorKg: 35070, redondeadoSuperiorKg: 35110 },
++    36: { programmedTons: 36, pesoIdealKg: 36090, pesoLimiteInferiorKg: 36070, pesoLimiteSuperiorKg: 36110, redondeadoInferiorKg: 36070, redondeadoSuperiorKg: 36110 },
++};
++
+ interface Props {
+     isOpen: boolean;
+     onClose: () => void;
+@@ -44,6 +122,7 @@ interface Props {
+     totalSamplesCount?: number;
+     onOpenPrintDocuments?: (samples: SampleRecord[]) => void;
+     onSave?: (samples: SampleRecord[]) => void;
++    onUnlockSuccess?: (incident: any) => void;
+ }
+ 
+ export default function EnsacadoraSamplingModal({
+@@ -54,6 +133,7 @@ export default function EnsacadoraSamplingModal({
+     totalSamplesCount = 80,
+     onOpenPrintDocuments,
+     onSave,
++    onUnlockSuccess,
+ }: Props) {
+     const [selectedEnsacadora, setSelectedEnsacadora] = useState<1 | 2>(1);
+     const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
+@@ -67,6 +147,21 @@ export default function EnsacadoraSamplingModal({
+     const sampleInputRef = useRef<HTMLInputElement>(null);
+     const isLoadedRef = useRef<boolean>(false);
+ 
++    // Block & Unlock states
++    const [isBlocked, setIsBlocked] = useState<boolean>(false);
++    const [consecutiveOutCount, setConsecutiveOutCount] = useState<number>(0);
++    const [unlockCount, setUnlockCount] = useState<number>(0);
++    const [isUnlockModalOpen, setIsUnlockModalOpen] = useState<boolean>(false);
++    const [unlockUser, setUnlockUser] = useState<string>("");
++    const [unlockPassword, setUnlockPassword] = useState<string>("");
++    const [unlockNotes, setUnlockNotes] = useState<string>("");
++    const [unlockError, setUnlockError] = useState<string>("");
++    const [isSubmittingUnlock, setIsSubmittingUnlock] = useState<boolean>(false);
++
++    // Presentation selection & Tolerance Guide modal
++    const [selectedPresentation, setSelectedPresentation] = useState<25 | 50 | 1000 | null>(null);
++    const [showToleranceGuideModal, setShowToleranceGuideModal] = useState<boolean>(false);
++
+     // Enriched order state with sacks and tons
+     const [detailedOrder, setDetailedOrder] = useState<any>(order);
+ 
+@@ -101,49 +196,153 @@ export default function EnsacadoraSamplingModal({
+     };
+ 
+     // Determine target weight based on order presentation / product
+-    const targetBaseWeight = useMemo(() => {
++    const detectedBaseWeight = useMemo(() => {
+         const o = detailedOrder || order;
+         if (!o) return 25;
+         const text = `${o.product || ""} ${o.product_text || ""} ${o.presentation || ""} ${o.sacks_count || ""}`.toUpperCase();
++        if (text.includes("1000") || text.includes("1 TON") || text.includes("BIG") || text.includes("SUPERSACO") || text.includes("SUPER SACO")) {
++            return 1000;
++        }
+         if (text.includes("50KG") || text.includes("50 KG") || text.includes("50")) {
+             return 50;
+         }
+         return 25;
+     }, [detailedOrder, order]);
+ 
+-    // Tolerance limits based on base weight
+-    const limits = useMemo(() => {
+-        if (targetBaseWeight === 50) {
+-            return {
+-                superior: 50.10,
+-                ideal: 50.10,
+-                inferior: 50.00,
+-                minChart: 49.95,
+-                maxChart: 50.35,
+-            };
++    const targetBaseWeight = selectedPresentation || detectedBaseWeight;
++
++    // Cantidad total de sacos programados en la orden de embarque
++    const totalSacks = useMemo(() => {
++        const o = detailedOrder || order;
++        if (!o) return 0;
++
++        // 1. Conteo directo si ya viene como propiedad numérica
++        if (o.total_sacks && Number(o.total_sacks) > 0) return Number(o.total_sacks);
++        if (o.sacks_quantity && Number(o.sacks_quantity) > 0) return Number(o.sacks_quantity);
++
++        const rawSacks = String(o.sacks_count || "").trim();
++
++        // 2. Si sacks_count contiene el conteo directo (ej. "1440 SACOS", "1440", "1200 sacos")
++        const directMatch = rawSacks.match(/^(\d+)\s*(sacos?|sck)?$/i);
++        if (directMatch && !rawSacks.toUpperCase().includes("KG")) {
++            const val = parseInt(directMatch[1], 10);
++            if (!isNaN(val) && val > 0) return val;
+         }
+-        // 25kg standard
++
++        // 3. Determinar el peso del saco (25 kg o 50 kg)
++        let bagSize = targetBaseWeight || 25;
++        const sizeFromSacks = rawSacks.match(/(\d+)\s*kg/i);
++        if (sizeFromSacks) {
++            bagSize = parseInt(sizeFromSacks[1], 10) || bagSize;
++        } else {
++            const pText = String(o.product_text || o.product || o.presentation || "");
++            const matchP = pText.match(/(\d+)\s*kg/i);
++            if (matchP) {
++                bagSize = parseInt(matchP[1], 10) || bagSize;
++            }
++        }
++
++        // 4. Calcular a partir de toneladas programadas (ej. 36.00 ton / 25 kg = 1440 sacos)
++        const tons = parseFloat(String(o.programmed_tons || "0"));
++        if (tons > 0 && bagSize > 0) {
++            return Math.round((tons * 1000) / bagSize);
++        }
++
++        // 5. Calcular a partir de peso programado en kg
++        const weightKg = parseFloat(String(o.programmed_weight || "0"));
++        if (weightKg > 0 && bagSize > 0) {
++            return Math.round(weightKg / bagSize);
++        }
++
++        // 6. Respaldo: si sacks_count tiene dígitos mayores a 50 (ej. "1080")
++        const digits = rawSacks.replace(/\D/g, "");
++        if (digits && parseInt(digits, 10) > 50) {
++            return parseInt(digits, 10);
++        }
++
++        return 0;
++    }, [detailedOrder, order, targetBaseWeight]);
++
++    // Toneladas programadas de la orden
++    const orderTons = useMemo(() => {
++        const o = detailedOrder || order;
++        if (!o) return 36;
++        const pt = parseFloat(String(o.programmed_tons || "0"));
++        if (pt > 0) return pt;
++        const pw = parseFloat(String(o.programmed_weight || "0"));
++        if (pw > 0) return pw > 1000 ? pw / 1000 : pw;
++        if (totalSacks > 0 && targetBaseWeight > 0) {
++            return (totalSacks * targetBaseWeight) / 1000;
++        }
++        return 36;
++    }, [detailedOrder, order, totalSacks, targetBaseWeight]);
++
++    // Límites de Tolerancia Oficiales basados estrictamente en la GUIA PARA TOLERANCIA DE PESOS
++    // Almacenes de Producto Terminado (considerando incertidumbre de báscula camionera +-20 kg y redondeo)
++    const limits = useMemo(() => {
++        const presentation = (targetBaseWeight === 1000 ? 1000 : (targetBaseWeight === 50 ? 50 : 25)) as 25 | 50 | 1000;
++        const tons = Math.max(1, Math.round(orderTons || 36));
++        const sacks = totalSacks > 0 ? totalSacks : Math.round((tons * 1000) / presentation);
++
++        const sackWeight = presentation === 1000 ? 2.5 : (presentation === 50 ? 0.12 : 0.08);
++        const idealSack = presentation + sackWeight;
++
++        // Búsqueda en la tabla oficial de la guía
++        const table = presentation === 1000 ? TOLERANCE_TABLE_1000KG : (presentation === 50 ? TOLERANCE_TABLE_50KG : TOLERANCE_TABLE_25KG);
++        const row = table[tons];
++
++        const totalIdealKg = row ? row.pesoIdealKg : (sacks * idealSack);
++        const totalInferiorKg = row ? row.pesoLimiteInferiorKg : (totalIdealKg - 20);
++        const totalSuperiorKg = row ? row.pesoLimiteSuperiorKg : (totalIdealKg + 20);
++
++        // Límites Redondeados Oficiales (Columnas Verdes de la Guía Excel)
++        const roundedInfKg = row ? row.redondeadoInferiorKg : (Math.floor(totalInferiorKg / 10) * 10);
++        const roundedSupKg = row ? row.redondeadoSuperiorKg : (Math.ceil(totalSuperiorKg / 10) * 10);
++
++        // Límites por saco calculados estrictamente con las columnas redondeadas de color verde
++        const inferiorPerSack = sacks > 0 ? roundedInfKg / sacks : (idealSack - 0.02);
++        const superiorPerSack = sacks > 0 ? roundedSupKg / sacks : (idealSack + 0.02);
++
+         return {
+-            superior: 25.25,
+-            ideal: 25.08,
+-            inferior: 24.90,
+-            minChart: 24.80,
+-            maxChart: 25.35,
++            productWeight: presentation,
++            sackWeight,
++            ideal: idealSack,
++            inferior: inferiorPerSack, // Límite inferior redondeado por saco (ej. 25.069 kg)
++            superior: superiorPerSack, // Límite superior redondeado por saco (ej. 25.097 kg)
++            totalIdealTons: totalIdealKg / 1000,
++            totalInferiorTons: roundedInfKg / 1000, // Redondeado color verde (ej. 36.100 ton)
++            totalSuperiorTons: roundedSupKg / 1000, // Redondeado color verde (ej. 36.140 ton)
++            roundedInferiorTons: roundedInfKg / 1000,
++            roundedSuperiorTons: roundedSupKg / 1000,
++            unroundedInferiorTons: totalInferiorKg / 1000,
++            unroundedSuperiorTons: totalSuperiorKg / 1000,
++            totalIdealKg,
++            totalInferiorKg: roundedInfKg,
++            totalSuperiorKg: roundedSupKg,
++            roundedInfKg,
++            roundedSupKg,
++            sacks,
++            tons,
++            minChart: inferiorPerSack - (superiorPerSack - inferiorPerSack) * 2,
++            maxChart: superiorPerSack + (superiorPerSack - inferiorPerSack) * 2,
+         };
+-    }, [targetBaseWeight]);
++    }, [targetBaseWeight, orderTons, totalSacks]);
+ 
+     // Load samples or restore draft when modal opens
+     useEffect(() => {
+         if (isOpen && order) {
+             isLoadedRef.current = false;
+ 
+-            // 1. Inicializar estrictamente desde los datos de la orden en DB
++            // 1. Inicializar estrictamente desde los datos de la orden en DB (solo completado si tiene 80 muestras)
+             const initialSamples = Array.isArray(order.samples) ? order.samples : [];
+-            const initialSaved = initialSamples.length >= 80 || order.sampling_status === "completed";
++            const initialSaved = initialSamples.length >= 80;
+             setSamples(initialSamples);
+             setIsSaved(initialSaved);
+-            setSavedAt(order.sampling_completed_at || null);
++            setSavedAt(initialSaved ? (order.sampling_completed_at || null) : null);
+             setLastAutosavedAt(null);
++            setIsBlocked(Boolean(order.is_sampling_blocked));
++            setUnlockCount(order.sampling_unlock_count || 0);
++            setConsecutiveOutCount(0);
+ 
+             // 2. Claves de almacenamiento de esta orden
+             const primaryKey = getStorageKey();
+@@ -169,9 +368,12 @@ export default function EnsacadoraSamplingModal({
+                         const dbSamples = Array.isArray(res.data?.samples) ? res.data.samples : [];
+                         if (dbSamples.length > 0) {
+                             setSamples(dbSamples);
+-                            if (dbSamples.length >= 80 || res.data.sampling_completed_at) {
++                            if (dbSamples.length >= 80) {
+                                 setIsSaved(true);
+                                 setSavedAt(res.data.sampling_completed_at || null);
++                            } else {
++                                setIsSaved(false);
++                                setSavedAt(null);
+                             }
+                         } else {
+                             // En base de datos no hay muestras: garantizar 0 y limpiar borradores
+@@ -184,6 +386,12 @@ export default function EnsacadoraSamplingModal({
+                                 } catch (err) {}
+                             });
+                         }
++                        if (res.data?.is_sampling_blocked !== undefined) {
++                            setIsBlocked(Boolean(res.data.is_sampling_blocked));
++                        }
++                        if (res.data?.sampling_unlock_count !== undefined) {
++                            setUnlockCount(Number(res.data.sampling_unlock_count));
++                        }
+                     })
+                     .catch(() => {});
+             }
+@@ -246,7 +454,8 @@ export default function EnsacadoraSamplingModal({
+     // Helper: Guardar en tiempo real directamente en la base de datos (shipment_process_histories)
+     const saveSamplesToDatabase = async (
+         samplesToSave: SampleRecord[],
+-        isCompleted: boolean = false
++        isCompleted: boolean = false,
++        isBlockedParam?: boolean
+     ) => {
+         const now = new Date();
+         const timeStr = now.toLocaleTimeString("es-MX", {
+@@ -258,12 +467,15 @@ export default function EnsacadoraSamplingModal({
+         const targetId = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
+         if (!targetId) return null;
+ 
++        const effectiveBlocked = isBlockedParam !== undefined ? isBlockedParam : isBlocked;
++
+         // Respaldo local
+         try {
+             persistSamplingData({
+                 orderId: targetId,
+                 samples: samplesToSave,
+                 isSaved: isCompleted,
++                isBlocked: effectiveBlocked,
+                 savedAt: isCompleted ? (savedAt || now.toISOString()) : null,
+                 selectedEnsacadora,
+                 selectedEnvasadora: selectedEnsacadora,
+@@ -281,6 +493,7 @@ export default function EnsacadoraSamplingModal({
+                     samples: samplesToSave,
+                     stowage_count: stowageCount || order?.stowage_count || null,
+                     is_completed: isCompleted,
++                    is_blocked: effectiveBlocked,
+                     shipment_order_id: order?.id || order?.shipment_order_id,
+                     folio: order?.folio,
+                     history_id: order?.history_id,
+@@ -418,6 +631,21 @@ export default function EnsacadoraSamplingModal({
+ 
+     const handleSelectEnsacadora = (env: 1 | 2) => {
+         if (isLocked) return;
++        if (isBlocked) {
++            setIsSelectorOpen(false);
++            setPendingWeight(null);
++            Swal.fire({
++                icon: "error",
++                title: "Atención",
++                text: "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. Ingrese el usuario y contraseña del Jefe de Almacén para desbloquear.",
++                confirmButtonColor: "#dc2626",
++                confirmButtonText: "Entendido",
++                customClass: { container: "!z-[999999]" },
++            }).then(() => {
++                setIsUnlockModalOpen(true);
++            });
++            return;
++        }
+         const weightToSave = pendingWeight !== null ? pendingWeight : parseFloat(sampleInput);
+         if (weightToSave && !isNaN(weightToSave) && weightToSave > 0) {
+             const countForThisEnv = samples.filter((s) => (s.ensacadora || s.envasadora) === env).length;
+@@ -439,6 +667,7 @@ export default function EnsacadoraSamplingModal({
+                 });
+                 return;
+             }
++
+             const now = new Date();
+             const timeStr = now.toLocaleTimeString("es-MX", {
+                 hour: "2-digit",
+@@ -457,8 +686,88 @@ export default function EnsacadoraSamplingModal({
+             };
+             const updated = [...samples, newRecord];
+             setSamples(updated);
+-            // Guardar inmediatamente en base de datos en tiempo real
+-            saveSamplesToDatabase(updated, false);
++
++            // Calcular nuevo promedio y nuevo peso neto estimado
++            const newOverallAvg = updated.reduce((acc, s) => acc + (Number(s.weight) || 0), 0) / updated.length;
++            const newEstimatedNetTons = totalSacks > 0 ? (newOverallAvg * totalSacks) / 1000 : null;
++
++            // EVALUACIÓN CADA 10 MUESTRAS (10, 20, 30, 40, 50, 60, 70, 80)
++            const isCheckpoint = updated.length % 10 === 0;
++
++            if (isCheckpoint) {
++                // Verificar si el peso estimado neto o promedio está por debajo o por encima de los límites redondeados (color verde)
++                const isBelow = (newEstimatedNetTons !== null && newEstimatedNetTons < limits.totalInferiorTons) || (newOverallAvg < limits.inferior);
++                const isAbove = (newEstimatedNetTons !== null && newEstimatedNetTons > limits.totalSuperiorTons) || (newOverallAvg > limits.superior);
++                const isOut = isBelow || isAbove;
++
++                let nextStreak = consecutiveOutCount;
++
++                if (!isOut) {
++                    nextStreak = 0;
++                    setConsecutiveOutCount(0);
++                    saveSamplesToDatabase(updated, false, false);
++
++                    Swal.fire({
++                        toast: true,
++                        position: "top-end",
++                        icon: "success",
++                        title: `Control a las ${updated.length} muestras: Conforme`,
++                        text: `Peso neto estimado: ${newEstimatedNetTons?.toFixed(3)} ton (Dentro del rango verde oficial: ${limits.totalInferiorTons.toFixed(3)} - ${limits.totalSuperiorTons.toFixed(3)} ton).`,
++                        showConfirmButton: false,
++                        timer: 3500,
++                        customClass: { container: "!z-[999999]" },
++                    });
++                } else {
++                    nextStreak = consecutiveOutCount + 1;
++                    setConsecutiveOutCount(nextStreak);
++
++                    const diffText = isBelow
++                        ? `por debajo del límite inferior redondeado (${limits.totalInferiorTons.toFixed(3)} ton / ${limits.inferior.toFixed(3)} kg por saco)`
++                        : `por encima del límite superior redondeado (${limits.totalSuperiorTons.toFixed(3)} ton / ${limits.superior.toFixed(3)} kg por saco)`;
++
++                    const netInfo = newEstimatedNetTons !== null
++                        ? ` • Peso Neto Estimado: ${newEstimatedNetTons.toFixed(3)} ton`
++                        : "";
++                    const avgInfo = ` • Promedio actual: ${newOverallAvg.toFixed(3)} kg/saco`;
++
++                    if (nextStreak === 1) {
++                        Swal.fire({
++                            icon: "error",
++                            title: "Atención",
++                            text: `ALERTA: Control a las ${updated.length} muestras está ${diffText}.${netInfo}${avgInfo}. Rango oficial redondeado (color verde): ${limits.totalInferiorTons.toFixed(3)} a ${limits.totalSuperiorTons.toFixed(3)} ton (${limits.inferior.toFixed(3)} a ${limits.superior.toFixed(3)} kg). Advertencia 1 de 2.`,
++                            confirmButtonColor: "#dc2626",
++                            confirmButtonText: "Entendido",
++                            customClass: { container: "!z-[999999]" },
++                        });
++                        saveSamplesToDatabase(updated, false, false);
++                    } else if (nextStreak === 2) {
++                        Swal.fire({
++                            icon: "error",
++                            title: "Atención",
++                            text: `ALERTA: Segundo control consecutivo fuera de tolerancia a las ${updated.length} muestras (${diffText}).${netInfo}${avgInfo}. Si en el siguiente control de 10 muestras sigue fuera de tolerancia, la toma de muestras será BLOQUEADA automáticamente. Advertencia 2 de 2.`,
++                            confirmButtonColor: "#dc2626",
++                            confirmButtonText: "Entendido",
++                            customClass: { container: "!z-[999999]" },
++                        });
++                        saveSamplesToDatabase(updated, false, false);
++                    } else if (nextStreak >= 3) {
++                        setIsBlocked(true);
++                        saveSamplesToDatabase(updated, false, true);
++                        Swal.fire({
++                            icon: "error",
++                            title: "Atención",
++                            text: `ALERTA: Se han detectado 3 controles consecutivos fuera de tolerancia a las ${updated.length} muestras (${diffText}).${netInfo}${avgInfo}. La toma de muestras ha sido BLOQUEADA. Se requiere usuario y contraseña del Jefe de Almacén para desbloquear la captura.`,
++                            confirmButtonColor: "#dc2626",
++                            confirmButtonText: "Entendido",
++                            customClass: { container: "!z-[999999]" },
++                        }).then(() => {
++                            setIsUnlockModalOpen(true);
++                        });
++                    }
++                }
++            } else {
++                saveSamplesToDatabase(updated, false, false);
++            }
+         }
+         setSelectedEnsacadora(env);
+         setPendingWeight(null);
+@@ -511,58 +820,6 @@ export default function EnsacadoraSamplingModal({
+         return sum / samples.length;
+     }, [samples]);
+ 
+-    // Cantidad total de sacos programados en la orden de embarque
+-    const totalSacks = useMemo(() => {
+-        const o = detailedOrder || order;
+-        if (!o) return 0;
+-
+-        // 1. Conteo directo si ya viene como propiedad numérica
+-        if (o.total_sacks && Number(o.total_sacks) > 0) return Number(o.total_sacks);
+-        if (o.sacks_quantity && Number(o.sacks_quantity) > 0) return Number(o.sacks_quantity);
+-
+-        const rawSacks = String(o.sacks_count || "").trim();
+-
+-        // 2. Si sacks_count contiene el conteo directo (ej. "1440 SACOS", "1440", "1200 sacos")
+-        const directMatch = rawSacks.match(/^(\d+)\s*(sacos?|sck)?$/i);
+-        if (directMatch && !rawSacks.toUpperCase().includes("KG")) {
+-            const val = parseInt(directMatch[1], 10);
+-            if (!isNaN(val) && val > 0) return val;
+-        }
+-
+-        // 3. Determinar el peso del saco (25 kg o 50 kg)
+-        let bagSize = targetBaseWeight || 25;
+-        const sizeFromSacks = rawSacks.match(/(\d+)\s*kg/i);
+-        if (sizeFromSacks) {
+-            bagSize = parseInt(sizeFromSacks[1], 10) || bagSize;
+-        } else {
+-            const pText = String(o.product_text || o.product || o.presentation || "");
+-            const matchP = pText.match(/(\d+)\s*kg/i);
+-            if (matchP) {
+-                bagSize = parseInt(matchP[1], 10) || bagSize;
+-            }
+-        }
+-
+-        // 4. Calcular a partir de toneladas programadas (ej. 36.00 ton / 25 kg = 1440 sacos)
+-        const tons = parseFloat(String(o.programmed_tons || "0"));
+-        if (tons > 0 && bagSize > 0) {
+-            return Math.round((tons * 1000) / bagSize);
+-        }
+-
+-        // 5. Calcular a partir de peso programado en kg
+-        const weightKg = parseFloat(String(o.programmed_weight || "0"));
+-        if (weightKg > 0 && bagSize > 0) {
+-            return Math.round(weightKg / bagSize);
+-        }
+-
+-        // 6. Respaldo: si sacks_count tiene dígitos mayores a 50 (ej. "1080")
+-        const digits = rawSacks.replace(/\D/g, "");
+-        if (digits && parseInt(digits, 10) > 50) {
+-            return parseInt(digits, 10);
+-        }
+-
+-        return 0;
+-    }, [detailedOrder, order, targetBaseWeight]);
+-
+     // Peso Estimado Neto = Peso Estimado Saco (overallAvg) x Cantidad de Sacos (totalSacks)
+     const estimatedNetWeightKg = useMemo(() => {
+         if (overallAvg === null || totalSacks <= 0) return null;
+@@ -577,12 +834,115 @@ export default function EnsacadoraSamplingModal({
+     // Compliance status
+     const isWithinTolerance = useMemo(() => {
+         if (overallAvg === null) return null;
+-        return overallAvg >= limits.inferior && overallAvg <= limits.superior;
+-    }, [overallAvg, limits]);
++        const avgOk = overallAvg >= limits.inferior && overallAvg <= limits.superior;
++        const netOk = estimatedNetWeightTons === null || (estimatedNetWeightTons >= limits.totalInferiorTons && estimatedNetWeightTons <= limits.totalSuperiorTons);
++        return avgOk && netOk;
++    }, [overallAvg, estimatedNetWeightTons, limits]);
++
++    const currentAssistantName = detailedOrder?.loading_assistant || order?.loading_assistant || "Auxiliar no especificado";
++
++    const handleUnlockSubmit = async (e: React.FormEvent) => {
++        e.preventDefault();
++        if (!unlockUser.trim() || !unlockPassword) {
++            setUnlockError("Por favor ingrese el usuario/correo y contraseña del Jefe de Almacén.");
++            return;
++        }
++        setIsSubmittingUnlock(true);
++        setUnlockError("");
++
++        try {
++            const targetId = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
++            const res = await axios.post(
++                route("documentation.shipment-orders.unlock-sampling", targetId),
++                {
++                    username_or_email: unlockUser.trim(),
++                    password: unlockPassword,
++                    assistant_name: currentAssistantName,
++                    notes: unlockNotes.trim(),
++                }
++            );
++
++            if (res.data?.success) {
++                setIsBlocked(false);
++                setConsecutiveOutCount(0);
++                setIsSaved(false);
++                setSavedAt(null);
++                setIsUnlockModalOpen(false);
++                setUnlockUser("");
++                setUnlockPassword("");
++                setUnlockNotes("");
++                const newCount = res.data.unlock_count || (unlockCount + 1);
++                setUnlockCount(newCount);
++
++                // Limpiar cualquier estado previo guardado o bloqueado en localStorage
++                const id = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
++                const candidateKeys = [
++                    getStorageKey(),
++                    id ? `ensacadora_sampling_order_${id}` : null,
++                    id ? `ensacadora_sampling_${id}` : null,
++                    id ? `envasadora_sampling_order_${id}` : null,
++                    id ? `envasadora_sampling_${id}` : null,
++                ].filter(Boolean) as string[];
++                candidateKeys.forEach((k) => {
++                    try {
++                        const raw = localStorage.getItem(k);
++                        if (raw) {
++                            const parsed = JSON.parse(raw);
++                            parsed.isSaved = false;
++                            parsed.isBlocked = false;
++                            parsed.savedAt = null;
++                            localStorage.setItem(k, JSON.stringify(parsed));
++                        }
++                    } catch (e) {}
++                });
++
++                Swal.fire({
++                    icon: "success",
++                    title: "¡Muestreo Desbloqueado!",
++                    html: `<div class="text-left space-y-2 text-sm text-slate-700">
++                        <p>La captura de muestras ha sido autorizada y desbloqueada por <b>${res.data.incident?.unlocked_by_name || "el Jefe de Almacén"}</b>.</p>
++                        <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 text-xs font-semibold">
++                            Desbloqueo registrado como <b>Desbloqueo #${newCount}</b> en la tabla de Incidencias.
++                        </div>
++                        <p class="text-[11px] text-slate-500">
++                            Aviso: Si las capturas posteriores vuelven a situarse fuera de tolerancia, las alertas y el bloqueo seguirán activos normalmente.
++                        </p>
++                    </div>`,
++                    confirmButtonColor: "#16a34a",
++                    confirmButtonText: "Continuar Muestreo",
++                });
++
++                if (onUnlockSuccess) {
++                    onUnlockSuccess(res.data.incident);
++                }
++                setTimeout(() => {
++                    sampleInputRef.current?.focus();
++                }, 200);
++            }
++        } catch (err: any) {
++            const msg = err.response?.data?.message || "Error al validar credenciales del Jefe de Almacén.";
++            setUnlockError(msg);
++        } finally {
++            setIsSubmittingUnlock(false);
++        }
++    };
+ 
+     const handleAddSample = (e?: React.FormEvent) => {
+         if (e) e.preventDefault();
+         if (isLocked) return;
++        if (isBlocked) {
++            Swal.fire({
++                icon: "error",
++                title: "Atención",
++                text: "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. Ingrese el usuario y contraseña del Jefe de Almacén para autorizar el desbloqueo.",
++                confirmButtonColor: "#dc2626",
++                confirmButtonText: "Entendido",
++                customClass: { container: "!z-[999999]" },
++            }).then(() => {
++                setIsUnlockModalOpen(true);
++            });
++            return;
++        }
+         if (samples.length >= 80) {
+             Swal.fire({
+                 icon: "info",
+@@ -725,8 +1085,9 @@ export default function EnsacadoraSamplingModal({
+     }, [samples, yMin, yMax]);
+ 
+     return (
+-        <Transition.Root show={isOpen} as={Fragment}>
+-            <Dialog as="div" className="relative z-[9999]" onClose={() => {}}>
++        <>
++            <Transition.Root show={isOpen} as={Fragment}>
++            <Dialog as="div" className="relative z-50" onClose={() => {}}>
+                 <Transition.Child
+                     as={Fragment}
+                     enter="ease-out duration-300"
+@@ -802,11 +1163,50 @@ export default function EnsacadoraSamplingModal({
+                                                     </span>
+                                                 )}
+                                             </p>
++                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
++                                                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold border border-slate-200">
++                                                    {([25, 50, 1000] as const).map((peso) => (
++                                                        <button
++                                                            key={peso}
++                                                            type="button"
++                                                            onClick={() => setSelectedPresentation(peso)}
++                                                            className={`px-2 py-0.5 rounded-md transition ${
++                                                                targetBaseWeight === peso
++                                                                    ? "bg-white text-indigo-900 shadow-xs font-black"
++                                                                    : "text-slate-600 hover:text-slate-900"
++                                                            }`}
++                                                        >
++                                                            {peso === 1000 ? "1000 KG" : `${peso} KG`}
++                                                        </button>
++                                                    ))}
++                                                </div>
++
++                                                <button
++                                                    type="button"
++                                                    onClick={() => setShowToleranceGuideModal(true)}
++                                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md text-[11px] font-bold transition shadow-xs cursor-pointer"
++                                                    title="Ver Guía Oficial para Tolerancia de Pesos de Sacos (25, 50 y 1000 kg)"
++                                                >
++                                                    <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
++                                                    <span>Guía de Tolerancia</span>
++                                                </button>
++                                            </div>
+                                         </div>
+                                     </div>
+ 
+                                     {/* Action Buttons */}
+-                                    <div className="flex items-center gap-2.5 self-end sm:self-auto">
++                                    <div className="flex items-center gap-2.5 self-end sm:self-auto flex-wrap">
++                                        {isBlocked && (
++                                            <button
++                                                type="button"
++                                                onClick={() => setIsUnlockModalOpen(true)}
++                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/30 transition transform active:scale-95 animate-pulse cursor-pointer"
++                                                title="Desbloquear captura de muestras con usuario del Jefe de Almacén"
++                                            >
++                                                <KeyRound className="w-4 h-4" />
++                                                <span>Desbloquear con Jefe</span>
++                                            </button>
++                                        )}
+                                         <button
+                                             type="button"
+                                             onClick={handleSave}
+@@ -1021,60 +1421,151 @@ export default function EnsacadoraSamplingModal({
+                                         </button>
+                                     </div>
+                                 ) : (
+-                                    <form
+-                                        onSubmit={handleAddSample}
+-                                        className="mt-4 bg-gradient-to-r from-slate-50 via-indigo-50/30 to-slate-50 border border-indigo-100/90 rounded-2xl p-4 shadow-sm"
+-                                    >
+-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+-                                            <div className="flex items-center gap-2 text-xs font-bold text-gray-700 whitespace-nowrap">
+-                                                <Scale className="w-4 h-4 text-indigo-600" />
+-                                                <span>Capturar muestra (#{samples.length + 1} de 80):</span>
++                                    <>
++                                        {/* Banner de Bloqueo por 3 Alertas */}
++                                        {isBlocked && (
++                                            <div className="mt-4 bg-gradient-to-r from-rose-50 to-red-50 border-2 border-rose-400 rounded-2xl p-4 shadow-md flex flex-col sm:flex-row items-center justify-between gap-3 text-rose-950 animate-fade-in">
++                                                <div className="flex items-center gap-3.5">
++                                                    <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-md shadow-rose-600/30 shrink-0">
++                                                        <ShieldAlert className="w-6 h-6 animate-pulse" />
++                                                    </div>
++                                                    <div>
++                                                        <h4 className="text-sm font-black text-rose-950 flex items-center gap-2">
++                                                            🚫 TOMA DE MUESTRAS BLOQUEADA
++                                                            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-rose-200 text-rose-950 font-bold border border-rose-300">
++                                                                3 Pesos Fuera de Tolerancia
++                                                            </span>
++                                                        </h4>
++                                                        <p className="text-xs text-rose-800 mt-0.5">
++                                                            Se registraron 3 muestras consecutivas fuera del rango de tolerancia ({limits.inferior.toFixed(3)} - {limits.superior.toFixed(3)} kg). Se requiere autorización y contraseña del <b>Jefe de Almacén</b> para desbloquear la captura.
++                                                        </p>
++                                                    </div>
++                                                </div>
++                                                <button
++                                                    type="button"
++                                                    onClick={() => setIsUnlockModalOpen(true)}
++                                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/30 transition transform active:scale-95 shrink-0 whitespace-nowrap cursor-pointer"
++                                                >
++                                                    <KeyRound className="w-4 h-4" />
++                                                    <span>Desbloquear con Jefe</span>
++                                                </button>
+                                             </div>
++                                        )}
+ 
+-                                            <div className="relative flex-1">
+-                                                <input
+-                                                    ref={sampleInputRef}
+-                                                    type="number"
+-                                                    step="0.001"
+-                                                    value={sampleInput}
+-                                                    onChange={(e) => {
+-                                                        setSampleInput(e.target.value);
+-                                                        if (inputError) setInputError("");
+-                                                    }}
+-                                                    placeholder={`Ingrese peso del saco en kg (ej. ${limits.ideal.toFixed(2)})`}
+-                                                    className={`w-full rounded-xl px-4 py-2.5 pr-14 text-sm font-bold font-mono transition shadow-sm ${
+-                                                        inputError
+-                                                            ? "border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-200"
+-                                                            : sampleInput
+-                                                            ? "border-emerald-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
+-                                                            : "border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+-                                                    }`}
+-                                                    autoFocus
+-                                                />
+-                                                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+-                                                    <span className="text-xs font-bold text-gray-400 font-mono">kg</span>
++                                        {/* Alerta Preventiva de 1 o 2 advertencias consecutivas */}
++                                        {!isBlocked && consecutiveOutCount > 0 && (
++                                            <div className="mt-4 bg-amber-50 border border-amber-300 rounded-2xl p-3 shadow-xs flex items-center justify-between gap-2 text-amber-950 animate-fade-in">
++                                                <div className="flex items-center gap-2.5 text-xs font-bold">
++                                                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
++                                                    <span>
++                                                        ⚠️ Advertencia de Tolerancia: Lleva <b>{consecutiveOutCount} de 2 alertas</b> consecutivas fuera de rango. A la 3ª alerta se bloqueará automáticamente la captura.
++                                                    </span>
+                                                 </div>
++                                                <span className="text-[11px] font-mono text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md font-semibold">
++                                                    Límites: {limits.inferior.toFixed(3)} a {limits.superior.toFixed(3)} kg
++                                                </span>
+                                             </div>
++                                        )}
+ 
+-                                            <button
+-                                                type="submit"
+-                                                className={`px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-md transition transform active:scale-95 flex items-center justify-center gap-2 ${
+-                                                    selectedEnsacadora === 1
+-                                                        ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20"
+-                                                        : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+-                                                }`}
+-                                            >
+-                                                <Check className="w-4 h-4 stroke-[3]" />
+-                                                Capturar Muestra
+-                                            </button>
+-                                        </div>
+-                                        {inputError && (
+-                                            <div className="flex items-center gap-1.5 text-xs text-rose-600 font-semibold mt-2">
+-                                                <AlertCircle className="w-4 h-4 shrink-0" />
+-                                                {inputError}
++                                        {/* Alerta si el peso estimado neto actual está fuera de rango */}
++                                        {!isBlocked && consecutiveOutCount === 0 && estimatedNetWeightTons !== null && (estimatedNetWeightTons < limits.totalInferiorTons || estimatedNetWeightTons > limits.totalSuperiorTons) && (
++                                            <div className="mt-4 bg-rose-50 border-2 border-rose-300 rounded-2xl p-3 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-rose-950 animate-fade-in">
++                                                <div className="flex items-center gap-2.5 text-xs font-bold">
++                                                    <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 animate-bounce" />
++                                                    <div>
++                                                        <span className="font-extrabold text-rose-900">
++                                                            ⚠️ Alerta de Tolerancia Oficial ({limits.tons} TM):
++                                                        </span>{" "}
++                                                        El peso estimado neto (<b>{estimatedNetWeightTons.toFixed(3)} ton</b>) está{" "}
++                                                        <span className="underline decoration-rose-500 font-extrabold">
++                                                            {estimatedNetWeightTons < limits.totalInferiorTons ? "por debajo del límite inferior" : "por encima del límite superior"}
++                                                        </span>.
++                                                    </div>
++                                                </div>
++                                                <span className="text-[11px] font-mono text-rose-900 bg-rose-200/90 border border-rose-300 px-2.5 py-1 rounded-lg font-black whitespace-nowrap">
++                                                    Límites: {limits.totalInferiorTons.toFixed(3)} a {limits.totalSuperiorTons.toFixed(3)} ton ({limits.inferior.toFixed(3)} a {limits.superior.toFixed(3)} kg/saco)
++                                                </span>
+                                             </div>
+                                         )}
+-                                    </form>
++
++                                        <form
++                                            onSubmit={handleAddSample}
++                                            className={`mt-4 border rounded-2xl p-4 shadow-sm transition-all ${
++                                                isBlocked
++                                                    ? "bg-rose-50/40 border-rose-200"
++                                                    : "bg-gradient-to-r from-slate-50 via-indigo-50/30 to-slate-50 border-indigo-100/90"
++                                            }`}
++                                        >
++                                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
++                                                <div className="flex items-center gap-2 text-xs font-bold text-gray-700 whitespace-nowrap">
++                                                    <Scale className="w-4 h-4 text-indigo-600" />
++                                                    <span>Capturar muestra (#{samples.length + 1} de 80):</span>
++                                                </div>
++
++                                                <div className="relative flex-1">
++                                                    <input
++                                                        ref={sampleInputRef}
++                                                        type="number"
++                                                        step="0.001"
++                                                        disabled={isBlocked}
++                                                        value={sampleInput}
++                                                        onChange={(e) => {
++                                                            setSampleInput(e.target.value);
++                                                            if (inputError) setInputError("");
++                                                        }}
++                                                        placeholder={
++                                                            isBlocked
++                                                                ? "Captura bloqueada. Requiere desbloqueo del Jefe de Almacén."
++                                                                : `Ingrese peso del saco en kg (ej. ${limits.ideal.toFixed(2)})`
++                                                        }
++                                                        className={`w-full rounded-xl px-4 py-2.5 pr-14 text-sm font-bold font-mono transition shadow-sm ${
++                                                            isBlocked
++                                                                ? "bg-rose-50/60 border-rose-300 text-rose-900 cursor-not-allowed placeholder:text-rose-400"
++                                                                : inputError
++                                                                ? "border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-200"
++                                                                : sampleInput
++                                                                ? "border-emerald-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200"
++                                                                : "border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
++                                                        }`}
++                                                        autoFocus
++                                                    />
++                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
++                                                        <span className="text-xs font-bold text-gray-400 font-mono">kg</span>
++                                                    </div>
++                                                </div>
++
++                                                <button
++                                                    type="submit"
++                                                    disabled={isBlocked}
++                                                    className={`px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-md transition transform active:scale-95 flex items-center justify-center gap-2 ${
++                                                        isBlocked
++                                                            ? "bg-rose-400 cursor-not-allowed shadow-none"
++                                                            : selectedEnsacadora === 1
++                                                            ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20"
++                                                            : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
++                                                    }`}
++                                                >
++                                                    {isBlocked ? (
++                                                        <>
++                                                            <Lock className="w-4 h-4" />
++                                                            <span>Bloqueado</span>
++                                                        </>
++                                                    ) : (
++                                                        <>
++                                                            <Check className="w-4 h-4 stroke-[3]" />
++                                                            <span>Capturar Muestra</span>
++                                                        </>
++                                                    )}
++                                                </button>
++                                            </div>
++                                            {inputError && (
++                                                <div className="flex items-center gap-1.5 text-xs text-rose-600 font-semibold mt-2">
++                                                    <AlertCircle className="w-4 h-4 shrink-0" />
++                                                    {inputError}
++                                                </div>
++                                            )}
++                                        </form>
++                                    </>
+                                 )}
+ 
+                                 {/* Tables Grid: ENS-1 and ENS-2 */}
+@@ -1274,54 +1765,89 @@ export default function EnsacadoraSamplingModal({
+ 
+                                 {/* Tolerancias y Especificaciones */}
+                                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs">
+-                                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5">
+-                                        <div className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">
+-                                            Límite Inferior
++                                    <div className="bg-emerald-50/80 border border-emerald-300 rounded-xl p-2.5 shadow-xs">
++                                        <div className="flex items-center justify-between">
++                                            <div className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
++                                                Límite Inferior
++                                            </div>
++                                            <span className="text-[9px] font-extrabold bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded uppercase">
++                                                Redondeado
++                                            </span>
+                                         </div>
+-                                        <div className="text-sm font-black text-rose-950 font-mono mt-0.5">
++                                        <div className="text-sm font-black text-emerald-950 font-mono mt-0.5">
+                                             {limits.inferior.toFixed(3)} kg
+                                         </div>
++                                        <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
++                                            Mín: {limits.totalInferiorTons.toFixed(3)} ton
++                                        </div>
+                                     </div>
+-                                    <div className="bg-sky-50 border border-sky-200 rounded-xl p-2.5">
++                                    <div className="bg-sky-50 border border-sky-200 rounded-xl p-2.5 shadow-xs">
+                                         <div className="text-[11px] font-bold text-sky-800 uppercase tracking-wider">
+                                             Límite de Control
+                                         </div>
+                                         <div className="text-sm font-black text-sky-950 font-mono mt-0.5">
+                                             {limits.ideal.toFixed(3)} kg
+                                         </div>
++                                        <div className="text-[10px] text-sky-700 font-semibold mt-0.5">
++                                            Ideal: {limits.totalIdealTons.toFixed(3)} ton
++                                        </div>
+                                     </div>
+-                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+-                                            Límite Superior
++                                    <div className="bg-emerald-50/80 border border-emerald-300 rounded-xl p-2.5 shadow-xs">
++                                        <div className="flex items-center justify-between">
++                                            <div className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
++                                                Límite Superior
++                                            </div>
++                                            <span className="text-[9px] font-extrabold bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded uppercase">
++                                                Redondeado
++                                            </span>
+                                         </div>
+-                                        <div className="text-sm font-black text-slate-900 font-mono mt-0.5">
++                                        <div className="text-sm font-black text-emerald-950 font-mono mt-0.5">
+                                             {limits.superior.toFixed(3)} kg
+                                         </div>
++                                        <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
++                                            Máx: {limits.totalSuperiorTons.toFixed(3)} ton
++                                        </div>
+                                     </div>
+-                                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
++                                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 shadow-xs">
+                                         <div className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
+                                             Peso Estimado Saco
+                                         </div>
+                                         <div className="text-sm font-black text-emerald-950 font-mono mt-0.5">
+                                             {overallAvg !== null ? `${overallAvg.toFixed(3)} kg` : "---"}
+                                         </div>
+-                                        <div className="text-[10px] text-emerald-700 font-medium">
++                                        <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                                             Promedio actual
+                                         </div>
+                                     </div>
+-                                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-2.5 col-span-2 sm:col-span-1 shadow-sm">
++                                    <div className={`border rounded-xl p-2.5 col-span-2 sm:col-span-1 shadow-sm transition-all ${
++                                        estimatedNetWeightTons !== null && (estimatedNetWeightTons < limits.totalInferiorTons || estimatedNetWeightTons > limits.totalSuperiorTons)
++                                            ? "bg-rose-50 border-rose-300 ring-2 ring-rose-400/50"
++                                            : "bg-gradient-to-br from-indigo-50 to-blue-50 border-indigo-200"
++                                    }`}>
+                                         <div className="flex items-center justify-between">
+-                                            <div className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider">
++                                            <div className={`text-[11px] font-bold uppercase tracking-wider ${
++                                                estimatedNetWeightTons !== null && (estimatedNetWeightTons < limits.totalInferiorTons || estimatedNetWeightTons > limits.totalSuperiorTons)
++                                                    ? "text-rose-900"
++                                                    : "text-indigo-900"
++                                            }`}>
+                                                 Peso Estimado Neto
+                                             </div>
+                                             {totalSacks > 0 && (
+-                                                <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">
++                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
++                                                    estimatedNetWeightTons !== null && (estimatedNetWeightTons < limits.totalInferiorTons || estimatedNetWeightTons > limits.totalSuperiorTons)
++                                                        ? "bg-rose-200 text-rose-900 font-extrabold"
++                                                        : "bg-indigo-100 text-indigo-800"
++                                                }`}>
+                                                     {totalSacks.toLocaleString("es-MX")} sacos
+                                                 </span>
+                                             )}
+                                         </div>
+                                         <div
+-                                            className="text-sm font-black text-indigo-950 font-mono mt-0.5"
++                                            className={`text-sm font-black font-mono mt-0.5 ${
++                                                estimatedNetWeightTons !== null && (estimatedNetWeightTons < limits.totalInferiorTons || estimatedNetWeightTons > limits.totalSuperiorTons)
++                                                    ? "text-rose-700 animate-pulse"
++                                                    : "text-indigo-950"
++                                            }`}
+                                             title={
+                                                 estimatedNetWeightTons !== null
+                                                     ? `${overallAvg?.toFixed(3)} kg × ${totalSacks.toLocaleString("es-MX")} sacos`
+@@ -1332,6 +1858,11 @@ export default function EnsacadoraSamplingModal({
+                                                 ? `${estimatedNetWeightTons.toFixed(3)} ton`
+                                                 : "---"}
+                                         </div>
++                                        {estimatedNetWeightTons !== null && (estimatedNetWeightTons < limits.totalInferiorTons || estimatedNetWeightTons > limits.totalSuperiorTons) && (
++                                            <div className="text-[10px] font-bold text-rose-700 mt-0.5">
++                                                {estimatedNetWeightTons < limits.totalInferiorTons ? "⚠️ Inferior al límite" : "⚠️ Superior al límite"}
++                                            </div>
++                                        )}
+                                     </div>
+                                 </div>
+ 
+@@ -1630,7 +2161,7 @@ export default function EnsacadoraSamplingModal({
+                                     leaveTo="opacity-0"
+                                 >
+                                     <div
+-                                        className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
++                                        className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+                                         onClick={(e) => e.stopPropagation()}
+                                     >
+                                         <div
+@@ -1812,5 +2343,375 @@ export default function EnsacadoraSamplingModal({
+                 </div>
+             </Dialog>
+         </Transition.Root>
++
++        {/* Modal de Desbloqueo con Jefe de Almacén */}
++        <Transition.Root show={isUnlockModalOpen} as={Fragment}>
++            <Dialog as="div" className="relative z-[60]" onClose={() => !isSubmittingUnlock && setIsUnlockModalOpen(false)}>
++                <Transition.Child
++                    as={Fragment}
++                    enter="ease-out duration-200"
++                    enterFrom="opacity-0"
++                    enterTo="opacity-100"
++                    leave="ease-in duration-150"
++                    leaveFrom="opacity-100"
++                    leaveTo="opacity-0"
++                >
++                    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm transition-opacity" />
++                </Transition.Child>
++
++                <div className="fixed inset-0 z-10 overflow-y-auto">
++                    <div className="flex min-h-full items-center justify-center p-4 text-center">
++                        <Transition.Child
++                            as={Fragment}
++                            enter="ease-out duration-300"
++                            enterFrom="opacity-0 scale-95"
++                            enterTo="opacity-100 scale-100"
++                            leave="ease-in duration-200"
++                            leaveFrom="opacity-100 scale-100"
++                            leaveTo="opacity-0 scale-95"
++                        >
++                            <Dialog.Panel className="relative transform overflow-hidden rounded-3xl bg-white text-left shadow-2xl transition-all w-full max-w-md border border-rose-200 p-6">
++                                <div className="flex items-start justify-between pb-4 border-b border-gray-100">
++                                    <div className="flex items-center gap-3">
++                                        <div className="p-3 bg-rose-100 text-rose-700 rounded-2xl">
++                                            <ShieldAlert className="w-6 h-6" />
++                                        </div>
++                                        <div>
++                                            <Dialog.Title className="text-base font-extrabold text-gray-900">
++                                                Desbloqueo de Muestreo
++                                            </Dialog.Title>
++                                            <p className="text-xs text-rose-700 font-semibold">
++                                                Autorización de Jefe de Almacén
++                                            </p>
++                                        </div>
++                                    </div>
++                                    <button
++                                        type="button"
++                                        disabled={isSubmittingUnlock}
++                                        onClick={() => setIsUnlockModalOpen(false)}
++                                        className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 disabled:opacity-30 cursor-pointer"
++                                    >
++                                        <X className="w-5 h-5" />
++                                    </button>
++                                </div>
++
++                                <div className="mt-4 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-2">
++                                    <div className="flex justify-between items-center">
++                                        <span className="text-gray-500 font-medium">Orden de Embarque:</span>
++                                        <span className="font-bold text-gray-900 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
++                                            {order?.folio || order?.order_number || "N/A"}
++                                        </span>
++                                    </div>
++                                    <div className="flex justify-between items-center">
++                                        <span className="text-gray-500 font-medium">Auxiliar que Tomaba Muestras:</span>
++                                        <span className="font-bold text-indigo-900">
++                                            {currentAssistantName}
++                                        </span>
++                                    </div>
++                                    <div className="flex justify-between items-center">
++                                        <span className="text-gray-500 font-medium">Contador de Desbloqueos:</span>
++                                        <span className="font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full text-[11px]">
++                                            Desbloqueo #{unlockCount + 1}
++                                        </span>
++                                    </div>
++                                    <div className="flex justify-between items-center">
++                                        <span className="text-gray-500 font-medium">Motivo:</span>
++                                        <span className="font-bold text-rose-700">
++                                            3 pesos consecutivos fuera de tolerancia
++                                        </span>
++                                    </div>
++                                </div>
++
++                                {unlockError && (
++                                    <div className="mt-3 p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 font-bold flex items-center gap-2">
++                                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
++                                        <span>{unlockError}</span>
++                                    </div>
++                                )}
++
++                                <form onSubmit={handleUnlockSubmit} className="mt-4 space-y-3.5">
++                                    <div>
++                                        <label className="block text-xs font-bold text-gray-700 mb-1">
++                                            Usuario o Correo del Jefe de Almacén *
++                                        </label>
++                                        <input
++                                            type="text"
++                                            value={unlockUser}
++                                            onChange={(e) => setUnlockUser(e.target.value)}
++                                            placeholder="Ej. admin@proagro.com o nombre del jefe"
++                                            className="w-full rounded-xl border-gray-300 text-xs font-medium focus:border-rose-500 focus:ring-rose-500 px-3 py-2.5 shadow-xs"
++                                            required
++                                            autoFocus
++                                        />
++                                    </div>
++
++                                    <div>
++                                        <label className="block text-xs font-bold text-gray-700 mb-1">
++                                            Contraseña del Jefe de Almacén *
++                                        </label>
++                                        <input
++                                            type="password"
++                                            value={unlockPassword}
++                                            onChange={(e) => setUnlockPassword(e.target.value)}
++                                            placeholder="••••••••"
++                                            className="w-full rounded-xl border-gray-300 text-xs font-medium focus:border-rose-500 focus:ring-rose-500 px-3 py-2.5 shadow-xs"
++                                            required
++                                        />
++                                    </div>
++
++                                    <div>
++                                        <label className="block text-xs font-bold text-gray-700 mb-1">
++                                            Observaciones o Medida Tomada (Opcional)
++                                        </label>
++                                        <textarea
++                                            value={unlockNotes}
++                                            onChange={(e) => setUnlockNotes(e.target.value)}
++                                            placeholder="Ej. Se re-calibró la báscula de ensacadora y se autoriza continuar..."
++                                            rows={2}
++                                            className="w-full rounded-xl border-gray-300 text-xs font-medium focus:border-rose-500 focus:ring-rose-500 px-3 py-2 shadow-xs resize-none"
++                                        />
++                                    </div>
++
++                                    <div className="pt-2 flex items-center justify-end gap-2">
++                                        <button
++                                            type="button"
++                                            disabled={isSubmittingUnlock}
++                                            onClick={() => setIsUnlockModalOpen(false)}
++                                            className="px-4 py-2 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer"
++                                        >
++                                            Cancelar
++                                        </button>
++                                        <button
++                                            type="submit"
++                                            disabled={isSubmittingUnlock}
++                                            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/20 transition disabled:opacity-50 cursor-pointer"
++                                        >
++                                            <KeyRound className="w-3.5 h-3.5" />
++                                            <span>{isSubmittingUnlock ? "Validando..." : "Autorizar y Desbloquear"}</span>
++                                        </button>
++                                    </div>
++                                </form>
++                            </Dialog.Panel>
++                        </Transition.Child>
++                    </div>
++                </div>
++            </Dialog>
++        </Transition.Root>
++
++        {/* Modal Oficial de Guía de Tolerancia de Pesos */}
++        <Transition.Root show={showToleranceGuideModal} as={Fragment}>
++            <Dialog as="div" className="relative z-[60]" onClose={() => setShowToleranceGuideModal(false)}>
++                <Transition.Child
++                    as={Fragment}
++                    enter="ease-out duration-200"
++                    enterFrom="opacity-0"
++                    enterTo="opacity-100"
++                    leave="ease-in duration-150"
++                    leaveFrom="opacity-100"
++                    leaveTo="opacity-0"
++                >
++                    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm transition-opacity" />
++                </Transition.Child>
++
++                <div className="fixed inset-0 z-10 overflow-y-auto">
++                    <div className="flex min-h-full items-center justify-center p-4 text-center">
++                        <Transition.Child
++                            as={Fragment}
++                            enter="ease-out duration-300"
++                            enterFrom="opacity-0 scale-95"
++                            enterTo="opacity-100 scale-100"
++                            leave="ease-in duration-200"
++                            leaveFrom="opacity-100 scale-100"
++                            leaveTo="opacity-0 scale-95"
++                        >
++                            <Dialog.Panel className="relative transform overflow-hidden rounded-3xl bg-white text-left shadow-2xl transition-all w-full max-w-2xl border border-indigo-100 p-6">
++                                <div className="flex items-start justify-between pb-4 border-b border-gray-100">
++                                    <div className="flex items-center gap-3">
++                                        <div className="p-3 bg-indigo-100 text-indigo-700 rounded-2xl">
++                                            <FileSpreadsheet className="w-6 h-6" />
++                                        </div>
++                                        <div>
++                                            <Dialog.Title className="text-base font-extrabold text-gray-900 uppercase">
++                                                Guía Oficial para Tolerancia de Pesos
++                                            </Dialog.Title>
++                                            <p className="text-xs text-indigo-700 font-semibold">
++                                                Almacenes de Producto Terminado • Sacos de 25, 50 y 1000 KG
++                                            </p>
++                                        </div>
++                                    </div>
++                                    <button
++                                        type="button"
++                                        onClick={() => setShowToleranceGuideModal(false)}
++                                        className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer"
++                                    >
++                                        <X className="w-5 h-5" />
++                                    </button>
++                                </div>
++
++                                <div className="mt-4 space-y-3.5 max-h-[75vh] overflow-y-auto pr-1">
++                                    {/* Destacado: Parámetros de la Orden Actual */}
++                                    <div className="p-3.5 bg-gradient-to-r from-sky-50 via-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-2xl shadow-xs">
++                                        <div className="flex items-center justify-between">
++                                            <span className="text-xs font-black text-indigo-950 uppercase tracking-wide">
++                                                🎯 Parámetros Oficiales de Esta Orden ({limits.tons} TM • {limits.sacks.toLocaleString("es-MX")} sacos)
++                                            </span>
++                                            <span className="text-[10px] font-bold bg-indigo-200 text-indigo-950 px-2 py-0.5 rounded">
++                                                Presentación {limits.productWeight} kg
++                                            </span>
++                                        </div>
++                                        <div className="grid grid-cols-3 gap-2 mt-2 text-center text-xs">
++                                            <div className="bg-white p-2 rounded-xl border border-rose-200">
++                                                <div className="text-[10px] font-bold text-rose-800 uppercase">Límite Inferior</div>
++                                                <div className="font-black text-rose-950 mt-0.5">{limits.inferior.toFixed(3)} kg/saco</div>
++                                                <div className="text-[10px] text-rose-700 font-semibold">{limits.totalInferiorTons.toFixed(3)} ton</div>
++                                            </div>
++                                            <div className="bg-white p-2 rounded-xl border border-sky-200">
++                                                <div className="text-[10px] font-bold text-sky-800 uppercase">Peso Ideal</div>
++                                                <div className="font-black text-sky-950 mt-0.5">{limits.ideal.toFixed(3)} kg/saco</div>
++                                                <div className="text-[10px] text-sky-700 font-semibold">{limits.totalIdealTons.toFixed(3)} ton</div>
++                                            </div>
++                                            <div className="bg-white p-2 rounded-xl border border-slate-200">
++                                                <div className="text-[10px] font-bold text-slate-700 uppercase">Límite Superior</div>
++                                                <div className="font-black text-slate-950 mt-0.5">{limits.superior.toFixed(3)} kg/saco</div>
++                                                <div className="text-[10px] text-slate-600 font-semibold">{limits.totalSuperiorTons.toFixed(3)} ton</div>
++                                            </div>
++                                        </div>
++                                    </div>
++
++                                    {/* 25 KG */}
++                                    <div className="border border-sky-200 rounded-2xl overflow-hidden shadow-xs">
++                                        <div className="bg-sky-700 text-white px-4 py-2 font-black text-xs uppercase flex justify-between items-center">
++                                            <span>Tolerancia de Sacos de 25 KG (Tara saco: 0.08 kg • Total ideal: 25.08 kg)</span>
++                                            <span className="text-[10px] bg-sky-800 px-2 py-0.5 rounded font-mono">25 kg</span>
++                                        </div>
++                                        <div className="overflow-x-auto">
++                                            <table className="w-full text-[11px] text-left">
++                                                <thead className="bg-sky-50 text-sky-950 font-bold border-b border-sky-100">
++                                                    <tr>
++                                                        <th className="p-2">Prog. TM</th>
++                                                        <th className="p-2">Sacos</th>
++                                                        <th className="p-2">Ideal TM</th>
++                                                        <th className="p-2 text-rose-800">Lím. Inferior</th>
++                                                        <th className="p-2 text-slate-800">Lím. Superior</th>
++                                                        <th className="p-2 text-emerald-800">Redondeado</th>
++                                                    </tr>
++                                                </thead>
++                                                <tbody className="divide-y divide-sky-100 font-mono">
++                                                    {[20, 24, 25, 28, 30, 32, 35, 36].map((tm) => {
++                                                        const r = TOLERANCE_TABLE_25KG[tm];
++                                                        const isCur = tm === limits.tons && limits.productWeight === 25;
++                                                        return (
++                                                            <tr key={tm} className={isCur ? "bg-amber-100/80 font-bold" : "hover:bg-sky-50/50"}>
++                                                                <td className="p-2">{tm} TM {isCur && "⭐"}</td>
++                                                                <td className="p-2">{(tm * 1000 / 25).toLocaleString("es-MX")}</td>
++                                                                <td className="p-2">{(r.pesoIdealKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-rose-800">{(r.pesoLimiteInferiorKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-slate-800">{(r.pesoLimiteSuperiorKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-emerald-800">{(r.redondeadoInferiorKg / 1000).toFixed(3)} - {(r.redondeadoSuperiorKg / 1000).toFixed(3)} ton</td>
++                                                            </tr>
++                                                        );
++                                                    })}
++                                                </tbody>
++                                            </table>
++                                        </div>
++                                    </div>
++
++                                    {/* 50 KG */}
++                                    <div className="border border-emerald-200 rounded-2xl overflow-hidden shadow-xs">
++                                        <div className="bg-emerald-700 text-white px-4 py-2 font-black text-xs uppercase flex justify-between items-center">
++                                            <span>Tolerancia de Sacos de 50 KG (Tara saco: 0.12 kg • Total ideal: 50.12 kg)</span>
++                                            <span className="text-[10px] bg-emerald-800 px-2 py-0.5 rounded font-mono">50 kg</span>
++                                        </div>
++                                        <div className="overflow-x-auto">
++                                            <table className="w-full text-[11px] text-left">
++                                                <thead className="bg-emerald-50 text-emerald-950 font-bold border-b border-emerald-100">
++                                                    <tr>
++                                                        <th className="p-2">Prog. TM</th>
++                                                        <th className="p-2">Sacos</th>
++                                                        <th className="p-2">Ideal TM</th>
++                                                        <th className="p-2 text-rose-800">Lím. Inferior</th>
++                                                        <th className="p-2 text-slate-800">Lím. Superior</th>
++                                                        <th className="p-2 text-emerald-800">Redondeado</th>
++                                                    </tr>
++                                                </thead>
++                                                <tbody className="divide-y divide-emerald-100 font-mono">
++                                                    {[20, 24, 25, 28, 30, 32, 35, 36].map((tm) => {
++                                                        const r = TOLERANCE_TABLE_50KG[tm];
++                                                        const isCur = tm === limits.tons && limits.productWeight === 50;
++                                                        return (
++                                                            <tr key={tm} className={isCur ? "bg-amber-100/80 font-bold" : "hover:bg-emerald-50/50"}>
++                                                                <td className="p-2">{tm} TM {isCur && "⭐"}</td>
++                                                                <td className="p-2">{(tm * 1000 / 50).toLocaleString("es-MX")}</td>
++                                                                <td className="p-2">{(r.pesoIdealKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-rose-800">{(r.pesoLimiteInferiorKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-slate-800">{(r.pesoLimiteSuperiorKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-emerald-800">{(r.redondeadoInferiorKg / 1000).toFixed(3)} - {(r.redondeadoSuperiorKg / 1000).toFixed(3)} ton</td>
++                                                            </tr>
++                                                        );
++                                                    })}
++                                                </tbody>
++                                            </table>
++                                        </div>
++                                    </div>
++
++                                    {/* 1000 KG */}
++                                    <div className="border border-purple-200 rounded-2xl overflow-hidden shadow-xs">
++                                        <div className="bg-purple-700 text-white px-4 py-2 font-black text-xs uppercase flex justify-between items-center">
++                                            <span>Tolerancia de Big Bag de 1000 KG (Tara: 2.50 kg • Total ideal: 1002.50 kg)</span>
++                                            <span className="text-[10px] bg-purple-800 px-2 py-0.5 rounded font-mono">1000 kg</span>
++                                        </div>
++                                        <div className="overflow-x-auto">
++                                            <table className="w-full text-[11px] text-left">
++                                                <thead className="bg-purple-50 text-purple-950 font-bold border-b border-purple-100">
++                                                    <tr>
++                                                        <th className="p-2">Prog. TM</th>
++                                                        <th className="p-2">Sacos</th>
++                                                        <th className="p-2">Ideal TM</th>
++                                                        <th className="p-2 text-rose-800">Lím. Inferior</th>
++                                                        <th className="p-2 text-slate-800">Lím. Superior</th>
++                                                        <th className="p-2 text-emerald-800">Redondeado</th>
++                                                    </tr>
++                                                </thead>
++                                                <tbody className="divide-y divide-purple-100 font-mono">
++                                                    {[20, 24, 25, 28, 30, 32, 35, 36].map((tm) => {
++                                                        const r = TOLERANCE_TABLE_1000KG[tm];
++                                                        const isCur = tm === limits.tons && limits.productWeight === 1000;
++                                                        return (
++                                                            <tr key={tm} className={isCur ? "bg-amber-100/80 font-bold" : "hover:bg-purple-50/50"}>
++                                                                <td className="p-2">{tm} TM {isCur && "⭐"}</td>
++                                                                <td className="p-2">{tm}</td>
++                                                                <td className="p-2">{(r.pesoIdealKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-rose-800">{(r.pesoLimiteInferiorKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-slate-800">{(r.pesoLimiteSuperiorKg / 1000).toFixed(3)} ton</td>
++                                                                <td className="p-2 text-emerald-800">{(r.redondeadoInferiorKg / 1000).toFixed(3)} - {(r.redondeadoSuperiorKg / 1000).toFixed(3)} ton</td>
++                                                            </tr>
++                                                        );
++                                                    })}
++                                                </tbody>
++                                            </table>
++                                        </div>
++                                    </div>
++
++                                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
++                                        <b>Nota Oficial:</b> Para la corrida se está considerando (+ -) 20 kg de la incertidumbre de la báscula camionera, así mismo se está aplicando un redondeo para mayor control en el pesaje.
++                                    </div>
++                                </div>
++
++                                <div className="mt-5 text-right">
++                                    <button
++                                        type="button"
++                                        onClick={() => setShowToleranceGuideModal(false)}
++                                        className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold transition cursor-pointer"
++                                    >
++                                        Cerrar Guía
++                                    </button>
++                                </div>
++                            </Dialog.Panel>
++                        </Transition.Child>
++                    </div>
++                </div>
++            </Dialog>
++        </Transition.Root>
++    </>
+     );
+ }

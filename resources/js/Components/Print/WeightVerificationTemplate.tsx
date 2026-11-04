@@ -76,21 +76,45 @@ export default function WeightVerificationTemplate({ order = {}, samples = [], t
     const headerBgColor = !tenant || tenant?.slug === 'proagro' ? 'bg-gray-200' : (tenant?.primary_color ? 'bg-gray-200' : 'bg-green-200');
     const accentColor = !tenant || tenant?.slug === 'proagro' ? 'bg-green-100' : (tenant?.primary_color ? 'bg-gray-100' : 'bg-green-100');
 
-    // Determine target base weight
-    const is50kg = useMemo(() => {
-        const text = `${safeOrder.product_text || safeOrder.product?.name || safeOrder.product || ""} ${safeOrder.presentation || ""} ${safeOrder.sacks_count || ""}`.toUpperCase();
-        return text.includes("50KG") || text.includes("50 KG") || text.includes("50");
+    // Determine target base weight (25, 50, 1000 kg)
+    const targetPresentation = useMemo<25 | 50 | 1000>(() => {
+        const text = `${safeOrder.presentation || ""} ${safeOrder.product_text || safeOrder.product?.name || safeOrder.product || ""} ${safeOrder.sacks_count || ""}`.toUpperCase();
+        if (text.includes("1000") || text.includes("1 TON") || text.includes("BIG") || text.includes("SUPERSACO") || text.includes("SUPER SACO")) {
+            return 1000;
+        }
+        if (text.includes("50KG") || text.includes("50 KG") || /\b50\s*KG\b/i.test(text) || /\b50\b/.test(safeOrder.presentation || "")) {
+            return 50;
+        }
+        const tons = parseFloat(String(safeOrder.programmed_tons || "0")) || (parseFloat(String(safeOrder.programmed_weight || "0")) > 1000 ? parseFloat(String(safeOrder.programmed_weight || "0")) / 1000 : parseFloat(String(safeOrder.programmed_weight || "0")));
+        const sacksRaw = String(safeOrder.sacks_count || safeOrder.total_sacks || "").replace(/\D/g, "");
+        const sacks = parseInt(sacksRaw, 10);
+        if (tons > 0 && sacks > 0) {
+            const kgPerSack = (tons * 1000) / sacks;
+            if (kgPerSack >= 800) return 1000;
+            if (kgPerSack >= 40 && kgPerSack <= 65) return 50;
+        }
+        return 25;
     }, [safeOrder]);
 
     const limits = useMemo(() => {
-        if (is50kg) {
+        if (targetPresentation === 50) {
             return {
-                inferior: 50.00,
+                inferior: 49.90,
                 ideal: 50.10,
-                superior: 50.10,
-                licText: "50.000",
+                superior: 50.30,
+                licText: "49.900",
                 lcText: "50.100",
-                lscText: "50.100",
+                lscText: "50.300",
+            };
+        }
+        if (targetPresentation === 1000) {
+            return {
+                inferior: 998.00,
+                ideal: 1002.50,
+                superior: 1002.00,
+                licText: "998.000",
+                lcText: "1002.500",
+                lscText: "1002.000",
             };
         }
         return {
@@ -101,24 +125,34 @@ export default function WeightVerificationTemplate({ order = {}, samples = [], t
             lcText: "25.080",
             lscText: "25.250",
         };
-    }, [is50kg]);
+    }, [targetPresentation]);
 
-    // Map each sample into row 1..80 and col 0..5
+    // Map each sample consecutively into row 1..80 and col 0..5
     const sampleGrid = useMemo(() => {
         const grid: { [rowNum: number]: { [colIdx: number]: number } } = {};
         
-        effectiveSamples.forEach((s, idx) => {
+        // Ordenar muestras cronológicamente para mantener el orden consecutivo de captura
+        const sorted = [...effectiveSamples].sort((a, b) => {
+            if (a.captured_at && b.captured_at) {
+                const diff = new Date(a.captured_at).getTime() - new Date(b.captured_at).getTime();
+                if (diff !== 0) return diff;
+            }
+            if (a.id && b.id && typeof a.id === 'number' && typeof b.id === 'number') {
+                const diff = a.id - b.id;
+                if (diff !== 0) return diff;
+            }
+            return 0;
+        });
+
+        sorted.forEach((s, idx) => {
             const env = s.ensacadora || s.envasadora || 1; // 1 or 2
             const w = Number(s.weight) || 0;
+            if (w <= 0) return;
 
-            // Determinar fila (1 a 80):
-            // Si viene con num 1..40 y es Ensacadora 2, se coloca en las filas 41 a 80
-            let row = Number(s.num) || (idx + 1);
-            if (env === 2 && row <= 40 && effectiveSamples.some(o => (o.ensacadora === 1 || o.envasadora === 1))) {
-                row = row + 40;
-            } else if (row > 80) {
-                row = ((row - 1) % 80) + 1;
-            }
+            // Fila consecutiva del 1 al 80:
+            // Llena de forma consecutiva la Hoja 1 (filas 1 a 40) y luego la Hoja 2 (filas 41 a 80)
+            const row = idx + 1;
+            if (row > 80) return;
 
             let bracket = 1; // 0 = LIC, 1 = LC, 2 = LSC
             const thresholdLow = (limits.inferior + limits.ideal) / 2;
