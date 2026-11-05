@@ -1227,6 +1227,7 @@ class DocumentationController extends Controller
                 'items.product',
                 'weight_ticket.lot',
                 'lot',
+                'latestProcessHistory.lot',
                 'loadingOrders.weight_ticket.lot',
                 'loadingOrders.lot',
                 'accessLogs' => function ($q) {
@@ -1276,6 +1277,15 @@ class DocumentationController extends Controller
                     ->orWhere('transport_company', 'like', "%{$search}%")
                     ->orWhereHas('client', function ($q2) use ($search) {
                         $q2->where('business_name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('lot', function ($qL) use ($search) {
+                        $qL->where('folio', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('latestProcessHistory.lot', function ($qL) use ($search) {
+                        $qL->where('folio', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('weight_ticket.lot', function ($qL) use ($search) {
+                        $qL->where('folio', 'like', "%{$search}%");
                     });
             });
         }
@@ -1359,6 +1369,28 @@ class DocumentationController extends Controller
                 if ($lo->lot && !empty($lo->lot->warehouse) && $lo->lot->warehouse !== 'N/A') return $lo->lot->warehouse;
                 if ($lo->weight_ticket && !empty($lo->weight_ticket->warehouse) && $lo->weight_ticket->warehouse !== 'N/A') return $lo->weight_ticket->warehouse;
                 if ($lo->weight_ticket && $lo->weight_ticket->lot && !empty($lo->weight_ticket->lot->warehouse) && $lo->weight_ticket->lot->warehouse !== 'N/A') return $lo->weight_ticket->lot->warehouse;
+            }
+            return 'N/A';
+        };
+
+        // Helper: resolve lot folio
+        $resolveLot = function (ShipmentOrder $order): string {
+            if ($order->lot && !empty($order->lot->folio)) {
+                return $this->normalizeLotLabel($order->lot->folio);
+            }
+            if ($order->latestProcessHistory && $order->latestProcessHistory->lot && !empty($order->latestProcessHistory->lot->folio)) {
+                return $this->normalizeLotLabel($order->latestProcessHistory->lot->folio);
+            }
+            if ($order->weight_ticket && $order->weight_ticket->lot && !empty($order->weight_ticket->lot->folio)) {
+                return $this->normalizeLotLabel($order->weight_ticket->lot->folio);
+            }
+            foreach ($order->loadingOrders as $lo) {
+                if ($lo->lot && !empty($lo->lot->folio)) {
+                    return $this->normalizeLotLabel($lo->lot->folio);
+                }
+                if ($lo->weight_ticket && $lo->weight_ticket->lot && !empty($lo->weight_ticket->lot->folio)) {
+                    return $this->normalizeLotLabel($lo->weight_ticket->lot->folio);
+                }
             }
             return 'N/A';
         };
@@ -1463,7 +1495,7 @@ class DocumentationController extends Controller
 
         // Map a single order to the row format
         $mapOrder = function (ShipmentOrder $order, int $index, $activeCompanions = []) use (
-            $resolveProduct, $resolveTicket, $resolveWarehouse, $computeStatus, $resolveProcessStatus
+            $resolveProduct, $resolveTicket, $resolveWarehouse, $computeStatus, $resolveProcessStatus, $resolveLot
         ) {
             $timing = $computeStatus($order);
             $ticket = $resolveTicket($order);
@@ -1500,14 +1532,29 @@ class DocumentationController extends Controller
             $wh = $resolveWarehouse($order);
             $processStatus = $resolveProcessStatus($order, $timing, $ticket, $inPlant, $wh);
 
+            $trailerPlate = $order->trailer_plate;
+            if (empty($trailerPlate) || $trailerPlate === 'N/A') {
+                $trailerPlate = $ticket?->trailer_plate ?? null;
+            }
+            if (empty($trailerPlate) || $trailerPlate === 'N/A') {
+                foreach ($order->loadingOrders as $lo) {
+                    if (!empty($lo->trailer_plate) && $lo->trailer_plate !== 'N/A') {
+                        $trailerPlate = $lo->trailer_plate;
+                        break;
+                    }
+                }
+            }
+
             return [
                 'id'                => $order->id,
                 'num'               => $index + 1,
                 'folio'             => $order->folio,
                 'tractor_plate'     => $order->tractor_plate ?? 'N/A',
+                'trailer_plate'     => $trailerPlate ?: 'N/A',
                 'operator_name'     => $order->operator_name ?? 'N/A',
                 'unit_type'         => $unitType,
                 'transport_company' => $order->transport_company ?? 'N/A',
+                'lot'               => $resolveLot($order),
                 'client'            => $order->client?->business_name ?? 'N/A',
                 'warehouse'         => $wh,
                 'product'           => $resolveProduct($order),

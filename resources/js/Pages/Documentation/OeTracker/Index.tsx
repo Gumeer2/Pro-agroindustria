@@ -28,9 +28,11 @@ interface OeRow {
     num: number;
     folio: string;
     tractor_plate: string;
+    trailer_plate?: string;
     operator_name: string;
     unit_type: string;
     transport_company: string;
+    lot?: string;
     client: string;
     warehouse: string;
     product: string;
@@ -186,10 +188,12 @@ function OeTable({
     rows,
     showWarehouse,
     showPrint = true,
+    isQuality = false,
 }: {
     rows: OeRow[];
     showWarehouse: boolean;
     showPrint?: boolean;
+    isQuality?: boolean;
 }) {
     if (rows.length === 0) {
         return (
@@ -208,10 +212,21 @@ function OeTable({
                         <th className="px-2 py-2.5 text-center font-bold uppercase tracking-wider text-[11px] w-12">Ticket</th>
                         <th className="px-1 py-2.5 text-center font-bold uppercase tracking-wider text-[11px] w-8">#</th>
                         <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">OE</th>
-                        <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Placa Tracto</th>
+                        <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">
+                            {isQuality ? "Placas del Tracto" : "Placa Tracto"}
+                        </th>
+                        {isQuality && (
+                            <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">
+                                Placas del Remolque
+                            </th>
+                        )}
                         <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Operador</th>
                         <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Tipo Unidad</th>
-                        <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Línea Transp.</th>
+                        {isQuality ? (
+                            <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Lote</th>
+                        ) : (
+                            <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Línea Transp.</th>
+                        )}
                         <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Cliente</th>
                         {showWarehouse && (
                             <th className="px-2 py-2.5 text-left font-bold uppercase tracking-wider text-[11px]">Almacén</th>
@@ -220,7 +235,9 @@ function OeTable({
                         <th className="px-2 py-2.5 text-right font-bold uppercase tracking-wider text-[11px]">Tons. Prog.</th>
                         <th className="px-2 py-2.5 text-center font-bold uppercase tracking-wider text-[11px] w-28 sm:w-32">EN PROCESO</th>
                         <th className="px-2 py-2.5 text-center font-bold uppercase tracking-wider text-[11px] w-24">Cronómetro</th>
-                        {showPrint && <th className="px-1 py-2.5 text-center font-bold uppercase tracking-wider text-[11px] w-10">Reimp.</th>}
+                        {showPrint && !isQuality && (
+                            <th className="px-1 py-2.5 text-center font-bold uppercase tracking-wider text-[11px] w-10">Reimp.</th>
+                        )}
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -253,15 +270,32 @@ function OeTable({
                             <td className="px-2 py-2 whitespace-nowrap font-mono text-gray-700 uppercase text-[11px]">
                                 {row.tractor_plate}
                             </td>
+                            {isQuality && (
+                                <td className="px-2 py-2 whitespace-nowrap font-mono text-gray-700 uppercase text-[11px]">
+                                    {row.trailer_plate || "N/A"}
+                                </td>
+                            )}
                             <td className="px-2 py-2 text-gray-800 font-medium uppercase max-w-[150px] truncate" title={row.operator_name}>
                                 {row.operator_name}
                             </td>
                             <td className="px-2 py-2 text-gray-600 max-w-[130px] truncate" title={row.unit_type}>
                                 {row.unit_type}
                             </td>
-                            <td className="px-2 py-2 text-gray-600 max-w-[140px] truncate" title={row.transport_company}>
-                                {row.transport_company}
-                            </td>
+                            {isQuality ? (
+                                <td className="px-2 py-2 max-w-[140px] truncate" title={row.lot || 'N/A'}>
+                                    {row.lot && row.lot !== 'N/A' ? (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                            {row.lot}
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-400 font-normal">N/A</span>
+                                    )}
+                                </td>
+                            ) : (
+                                <td className="px-2 py-2 text-gray-600 max-w-[140px] truncate" title={row.transport_company}>
+                                    {row.transport_company}
+                                </td>
+                            )}
                             <td className="px-2 py-2 text-gray-800 font-medium max-w-[150px] truncate" title={row.client}>
                                 {row.client}
                             </td>
@@ -293,7 +327,7 @@ function OeTable({
                             <td className="px-2 py-2 text-center">
                                 <TimerCell row={row} />
                             </td>
-                            {showPrint && (
+                            {showPrint && !isQuality && (
                                 <td className="px-1 py-2 text-center">
                                     <a
                                         href={row.id ? `/documentation/shipment-orders/${row.id}/print` : "#"}
@@ -316,7 +350,7 @@ function OeTable({
 
 // ─── Section ─────────────────────────────────────────────────────────────────
 
-function Section({ rows, label, showPrint = true }: { rows: OeRow[]; label: string, showPrint?: boolean }) {
+function Section({ rows, label, showPrint = true, isQuality = false }: { rows: OeRow[]; label: string, showPrint?: boolean, isQuality?: boolean }) {
     const [subTab, setSubTab] = useState<"pending" | "completed">("pending");
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 15;
@@ -382,7 +416,7 @@ function Section({ rows, label, showPrint = true }: { rows: OeRow[]; label: stri
             </div>
 
             {/* Table */}
-            <OeTable rows={paginatedItems} showWarehouse={subTab === "completed"} showPrint={showPrint} />
+            <OeTable rows={paginatedItems} showWarehouse={subTab === "completed"} showPrint={showPrint} isQuality={isQuality} />
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
@@ -490,11 +524,13 @@ export default function OeTrackerIndex({
         product_id?: string
     } = {}) => {
         const fromParam = new URLSearchParams(window.location.search).get("from") || filters.from;
-        const targetRoute = filters.module === 'scale'
-            ? route('scale.oe-tracker')
-            : filters.module === 'apt'
-                ? route('apt.oe-tracker')
-                : route('documentation.oe-tracker');
+        const targetRoute = isQualityUser || filters.module === 'quality'
+            ? route('quality.oe-tracker')
+            : filters.module === 'scale'
+                ? route('scale.oe-tracker')
+                : filters.module === 'apt'
+                    ? route('apt.oe-tracker')
+                    : route('documentation.oe-tracker');
         router.get(
             targetRoute,
             {
@@ -674,7 +710,11 @@ export default function OeTrackerIndex({
 
                 {/* Tab Content Section */}
                 <div>
-                    <Section rows={data[activeTab]} label={TABS.find((tab) => tab.key === activeTab)?.label || ""} />
+                    <Section
+                        rows={data[activeTab]}
+                        label={TABS.find((tab) => tab.key === activeTab)?.label || ""}
+                        isQuality={isQualityUser}
+                    />
                 </div>
             </div>
         </DashboardLayout>
