@@ -12,6 +12,11 @@
     RewriteCond %{REQUEST_FILENAME} -f
     RewriteRule ^(build|images|img|js|css)(/.*)?$ public/$1$2 [END]
 
+    # Directly serve root public files (e.g. logo_pro_agro.png, Proagro.png, favicon.ico)
+    RewriteCond %{DOCUMENT_ROOT}/public/$1 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/Proagroindustria2/public/$1 -f
+    RewriteRule ^([^/]+\.(png|ico|jpg|jpeg|svg|webp|gif|txt|xml|webmanifest))$ public/$1 [END]
+
     # If file exists in public/storage, serve it directly
     RewriteCond %{DOCUMENT_ROOT}/public/storage/$1 -f [OR]
     RewriteCond %{DOCUMENT_ROOT}/Proagroindustria2/public/storage/$1 -f

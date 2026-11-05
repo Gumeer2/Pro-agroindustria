@@ -1,11 +1,15 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
-import { Head, Link } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import { ArrowLeft, Search, Printer } from "lucide-react";
 import axios from "axios";
 import QRCode from "qrcode";
 
-export default function QrPrint({ auth }: { auth: any }) {
+export default function QrPrint({ auth, logo }: { auth: any; logo?: string }) {
+    const { props } = usePage<any>();
+    const baseUrl = (props?.base_url || "").replace(/\/$/, "");
+    const logoSrc = logo || (baseUrl ? `${baseUrl}/logo_pro_agro.png` : "/logo_pro_agro.png");
+    const fallbackLogo = baseUrl ? `${baseUrl}/images/logo_proagro.png` : "/images/logo_proagro.png";
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<any[]>([]);
     const [selectedOperator, setSelectedOperator] = useState<any>(null);
@@ -151,9 +155,14 @@ export default function QrPrint({ auth }: { auth: any }) {
                                 {/* Header Logo */}
                                 <div className="mb-8">
                                     <img
-                                        src="/logo_pro_agro.png"
+                                        src={logoSrc}
                                         alt="Pro Agroindustria"
                                         className="h-20 object-contain"
+                                        onError={(e) => {
+                                            if (e.currentTarget.src !== fallbackLogo) {
+                                                e.currentTarget.src = fallbackLogo;
+                                            }
+                                        }}
                                     />
                                 </div>
                                 <h1 className="text-3xl font-bold text-gray-900 mb-8 font-sans">
@@ -214,9 +223,14 @@ export default function QrPrint({ auth }: { auth: any }) {
                     <div className="max-w-[21cm] mx-auto">
                         <div className="mb-8">
                             <img
-                                src="/logo_pro_agro.png"
+                                src={logoSrc}
                                 alt="Pro Agroindustria"
                                 className="h-24 object-contain"
+                                onError={(e) => {
+                                    if (e.currentTarget.src !== fallbackLogo) {
+                                        e.currentTarget.src = fallbackLogo;
+                                    }
+                                }}
                             />
                         </div>
 

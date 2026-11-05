@@ -59464,3 +59464,127 @@ Stack trace:
 #20 C:/xampp/htdocs/Proagroindustria2/index.php(2): require_once('C://xampp//htdocs...')
 #21 {main}
 "} 
+[2026-11-05 09:55:49] local.ERROR: SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso (Connection: mysql, SQL: select `id`, `folio`, `stowage_plan_status`, `stowage_plan_saved_at`, `warehouse`, `status`, `presentation` from `shipment_orders` order by `updated_at` desc limit 5) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 2002): SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso (Connection: mysql, SQL: select `id`, `folio`, `stowage_plan_status`, `stowage_plan_saved_at`, `warehouse`, `status`, `presentation` from `shipment_orders` order by `updated_at` desc limit 5) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#8 C:/xampp/htdocs/Proagroindustria2/check_stowage.php(7): Illuminate/Database/Eloquent/Builder->get(Array)
+#9 {main}
+
+[previous exception] [object] (PDOException(code: 2002): SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:66)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php(66): PDO->__construct('mysql:host=127....', 'root', Object(SensitiveParameterValue), Array)
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php(44): Illuminate/Database/Connectors/Connector->createPdoConnection('mysql:host=127....', 'root', Object(SensitiveParameterValue), Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/MySqlConnector.php(24): Illuminate/Database/Connectors/Connector->createConnection('mysql:host=127....', Array, Array)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/ConnectionFactory.php(185): Illuminate/Database/Connectors/MySqlConnector->connect(Array)
+#4 [internal function]: Illuminate/Database/Connectors/ConnectionFactory->Illuminate/Database/Connectors/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(1231): call_user_func(Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(1267): Illuminate/Database/Connection->getPdo()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(512): Illuminate/Database/Connection->getReadPdo()
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): Illuminate/Database/Connection->getPdoForSelect(true)
+#9 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select `id`, `f...', Array)
+#10 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#11 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#12 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#13 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#14 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#15 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#16 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#17 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#18 C:/xampp/htdocs/Proagroindustria2/check_stowage.php(7): Illuminate/Database/Eloquent/Builder->get(Array)
+#19 {main}
+"} 
+[2026-11-05 10:22:07] local.ERROR: SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso (Connection: mysql, SQL: select * from `shipment_orders` where `folio` = PA2026-0041 limit 1) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 2002): SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso (Connection: mysql, SQL: select * from `shipment_orders` where `folio` = PA2026-0041 limit 1) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select * from `...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select * from `...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select * from `...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php(343): Illuminate/Database/Eloquent/Builder->get(Array)
+#9 C:/Users/juan.villegas/.gemini/antigravity/brain/53da1d86-d18c-4255-b6dd-5b6182fcaff9/scratch/check_order.php(7): Illuminate/Database/Eloquent/Builder->first()
+#10 {main}
+
+[previous exception] [object] (PDOException(code: 2002): SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:66)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php(66): PDO->__construct('mysql:host=127....', 'root', Object(SensitiveParameterValue), Array)
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php(44): Illuminate/Database/Connectors/Connector->createPdoConnection('mysql:host=127....', 'root', Object(SensitiveParameterValue), Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/MySqlConnector.php(24): Illuminate/Database/Connectors/Connector->createConnection('mysql:host=127....', Array, Array)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/ConnectionFactory.php(185): Illuminate/Database/Connectors/MySqlConnector->connect(Array)
+#4 [internal function]: Illuminate/Database/Connectors/ConnectionFactory->Illuminate/Database/Connectors/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(1231): call_user_func(Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(1267): Illuminate/Database/Connection->getPdo()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(512): Illuminate/Database/Connection->getReadPdo()
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): Illuminate/Database/Connection->getPdoForSelect(true)
+#9 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select * from `...', Array)
+#10 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select * from `...', Array, Object(Closure))
+#11 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select * from `...', Array, Object(Closure))
+#12 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select * from `...', Array, true)
+#13 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#14 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#15 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#16 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#17 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#18 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php(343): Illuminate/Database/Eloquent/Builder->get(Array)
+#19 C:/Users/juan.villegas/.gemini/antigravity/brain/53da1d86-d18c-4255-b6dd-5b6182fcaff9/scratch/check_order.php(7): Illuminate/Database/Eloquent/Builder->first()
+#20 {main}
+"} 
+[2026-11-05 11:56:47] local.ERROR: Method Illuminate\Http\Request::getFirstArgument does not exist. {"exception":"[object] (BadMethodCallException(code: 0): Method Illuminate\\Http\\Request::getFirstArgument does not exist. at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Macroable/Traits/Macroable.php:115)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(192): Illuminate/Http/Request->__call('getFirstArgumen...', Array)
+#1 C:/Users/juan.villegas/.gemini/antigravity/brain/53da1d86-d18c-4255-b6dd-5b6182fcaff9/scratch/test_inertia.php(10): Illuminate/Foundation/Console/Kernel->handle(Object(Illuminate/Http/Request))
+#2 {main}
+"} 
+[2026-11-05 11:56:47] local.ERROR: Symfony\Component\Console\Application::renderThrowable(): Argument #2 ($output) must be of type Symfony\Component\Console\Output\OutputInterface, null given, called in C:\xampp\htdocs\Proagroindustria2\vendor\laravel\framework\src\Illuminate\Foundation\Exceptions\Handler.php on line 1027 {"exception":"[object] (TypeError(code: 0): Symfony\\Component\\Console\\Application::renderThrowable(): Argument #2 ($output) must be of type Symfony\\Component\\Console\\Output\\OutputInterface, null given, called in C:\\xampp\\htdocs\\Proagroindustria2\\vendor\\laravel\\framework\\src\\Illuminate\\Foundation\\Exceptions\\Handler.php on line 1027 at C:/xampp/htdocs/Proagroindustria2/vendor/symfony/console/Application.php:875)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Foundation/Exceptions/Handler.php(1027): Symfony/Component/Console/Application->renderThrowable(Object(BadMethodCallException), NULL)
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(633): Illuminate/Foundation/Exceptions/Handler->renderForConsole(NULL, Object(BadMethodCallException))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(202): Illuminate/Foundation/Console/Kernel->renderException(NULL, Object(BadMethodCallException))
+#3 C:/Users/juan.villegas/.gemini/antigravity/brain/53da1d86-d18c-4255-b6dd-5b6182fcaff9/scratch/test_inertia.php(10): Illuminate/Foundation/Console/Kernel->handle(Object(Illuminate/Http/Request))
+#4 {main}
+"} 
+[2026-11-05 12:49:46] local.ERROR: SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso (Connection: mysql, SQL: select `id`, `folio`, `order_number`, `warehouse`, `lot_id`, `status`, `stowage_plan_status`, `stowage_plan_saved_at` from `shipment_orders` order by `created_at` desc limit 10) {"exception":"[object] (Illuminate\\Database\\QueryException(code: 2002): SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso (Connection: mysql, SQL: select `id`, `folio`, `order_number`, `warehouse`, `lot_id`, `status`, `stowage_plan_status`, `stowage_plan_saved_at` from `shipment_orders` order by `created_at` desc limit 10) at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php:825)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#4 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#8 C:/xampp/htdocs/Proagroindustria2/scratch/check.php(7): Illuminate/Database/Eloquent/Builder->get(Array)
+#9 {main}
+
+[previous exception] [object] (PDOException(code: 2002): SQLSTATE[HY000] [2002] Intento de acceso a un socket no permitido por sus permisos de acceso at C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:66)
+[stacktrace]
+#0 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php(66): PDO->__construct('mysql:host=127....', 'root', Object(SensitiveParameterValue), Array)
+#1 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php(44): Illuminate/Database/Connectors/Connector->createPdoConnection('mysql:host=127....', 'root', Object(SensitiveParameterValue), Array)
+#2 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/MySqlConnector.php(24): Illuminate/Database/Connectors/Connector->createConnection('mysql:host=127....', Array, Array)
+#3 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connectors/ConnectionFactory.php(185): Illuminate/Database/Connectors/MySqlConnector->connect(Array)
+#4 [internal function]: Illuminate/Database/Connectors/ConnectionFactory->Illuminate/Database/Connectors/{closure}()
+#5 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(1231): call_user_func(Object(Closure))
+#6 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(1267): Illuminate/Database/Connection->getPdo()
+#7 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(512): Illuminate/Database/Connection->getReadPdo()
+#8 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(407): Illuminate/Database/Connection->getPdoForSelect(true)
+#9 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate/Database/Connection->Illuminate/Database/{closure}('select `id`, `f...', Array)
+#10 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(779): Illuminate/Database/Connection->runQueryCallback('select `id`, `f...', Array, Object(Closure))
+#11 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Connection.php(398): Illuminate/Database/Connection->run('select `id`, `f...', Array, Object(Closure))
+#12 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3106): Illuminate/Database/Connection->select('select `id`, `f...', Array, true)
+#13 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3091): Illuminate/Database/Query/Builder->runSelect()
+#14 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3676): Illuminate/Database/Query/Builder->Illuminate/Database/Query/{closure}()
+#15 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Query/Builder.php(3090): Illuminate/Database/Query/Builder->onceWithColumns(Array, Object(Closure))
+#16 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(811): Illuminate/Database/Query/Builder->get(Array)
+#17 C:/xampp/htdocs/Proagroindustria2/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php(793): Illuminate/Database/Eloquent/Builder->getModels(Array)
+#18 C:/xampp/htdocs/Proagroindustria2/scratch/check.php(7): Illuminate/Database/Eloquent/Builder->get(Array)
+#19 {main}
+"} 

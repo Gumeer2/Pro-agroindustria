@@ -162,6 +162,8 @@ export default function StowagePlanModal({
         const targetId = order.id || order.shipment_order_id || order.history_id;
         setIsSaving(true);
 
+        const activeWh = typeof window !== "undefined" ? localStorage.getItem("shipment_process_selected_warehouse") : null;
+        const assignedWarehouse = activeWh ? `Almacen ${activeWh}` : (order.warehouse || "Almacen 2");
         const payload = {
             stowage_plan: {
                 shift,
@@ -176,10 +178,12 @@ export default function StowagePlanModal({
                 line_3: line3,
                 line_4: line4,
                 comments,
+                warehouse: assignedWarehouse,
             },
             shipment_order_id: order.shipment_order_id || order.id,
             history_id: order.history_id,
             folio: order.folio,
+            warehouse: assignedWarehouse,
         };
 
         try {

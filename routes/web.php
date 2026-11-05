@@ -158,6 +158,10 @@ Route::middleware('auth')->group(function () {
 
         Route::resource('scale', \App\Http\Controllers\WeightTicketController::class);
 
+        // Quality Module
+        Route::get('/quality', [\App\Http\Controllers\QualityController::class, 'index'])->name('quality.index');
+        Route::get('/quality/oe-tracker', [\App\Http\Controllers\DocumentationController::class, 'oeTrackerIndex'])->name('quality.oe-tracker');
+
         // Documentation Module
         Route::get('/documentation/dock', [\App\Http\Controllers\DocumentationController::class , 'dock'])->name('documentation.dock');
         Route::get('/documentation/qr/print', [\App\Http\Controllers\DocumentationController::class , 'qrPrint'])->name('documentation.qr');
@@ -307,6 +311,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/apt/operator', [\App\Http\Controllers\AptController::class , 'createOperator'])->name('apt.operators.create');
         Route::post('/apt/operator', [\App\Http\Controllers\AptController::class , 'storeOperator'])->name('apt.operators.store');
         Route::get('/apt/oe-tracker', [\App\Http\Controllers\DocumentationController::class , 'oeTrackerIndex'])->name('apt.oe-tracker');
+        Route::get('/estibadores', [\App\Http\Controllers\DocumentationController::class , 'estibadoresIndex'])->name('apt.estibadores');
+        Route::get('/apt/estibadores', function () {
+            return redirect()->route('apt.estibadores');
+        });
+        Route::get('/apt/shipment-process/estibadores', function () {
+            return redirect()->route('apt.estibadores');
+        });
         Route::get('/apt/shipment-process', [\App\Http\Controllers\DocumentationController::class , 'shipmentProcessIndex'])->name('apt.shipment-process');
         // APT Machinery Management (Gestión de Maquinarias - Mantenimiento Preventivo y Correctivo)
         Route::get('/apt/machinery', [\App\Http\Controllers\AptController::class, 'machinery'])->name('apt.machinery');

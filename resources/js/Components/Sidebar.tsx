@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship, Building2, Layers } from 'lucide-react';
+import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship, Building2, Layers, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -22,8 +22,13 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
         return name === 'estibadores' || name === 'estibador';
     }) && !roles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'admin');
 
+    const isQualityRole = roles.some((r: any) => {
+        const name = (typeof r === 'string' ? r : r.name || '').toLowerCase();
+        return name === 'calidad' || name === 'quality';
+    }) && !roles.some((r: any) => (typeof r === 'string' ? r : r.name || '').toLowerCase() === 'admin');
+
     const allLinks = [
-        { name: 'Inicio', href: route('dashboard'), icon: LayoutDashboard, show: !isClientRole && !isEstibadorRole, module: 'dashboard', color: 'text-indigo-400' },
+        { name: 'Inicio', href: route('dashboard'), icon: LayoutDashboard, show: !isClientRole && !isEstibadorRole && !isQualityRole, module: 'dashboard', color: 'text-indigo-400' },
         { name: 'Comercialización', href: route('sales.index'), icon: ClipboardList, permission: 'view commercialization', module: 'sales', color: 'text-blue-400' },
         { name: 'Tráfico', href: route('traffic.index'), icon: Truck, permission: 'view traffic', role: 'Admin', module: 'traffic', color: 'text-orange-400' },
         { name: 'Vigilancia', icon: Search, href: route('surveillance.index'), permission: 'view surveillance', module: 'surveillance', color: 'text-red-400' },
@@ -31,7 +36,9 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
         { name: 'Báscula', href: route('scale.index'), icon: Scale, permission: 'view scale', module: 'scale', color: 'text-teal-400' },
         { name: 'Muelle', href: route('dock.index'), icon: Ship, permission: 'view dock', module: 'dock', color: 'text-cyan-400' },
         { name: 'APT', href: route('apt.index'), icon: Box, permission: 'view apt', module: 'apt', color: 'text-purple-400' },
+        { name: 'Calidad', href: route('quality.index'), icon: ShieldCheck, show: !isClientRole && !isEstibadorRole, module: 'quality', color: 'text-teal-400' },
         { name: 'Clientes', href: route('clients.index'), icon: Building2, permission: ['view commercialization', 'view documentation'], role: ['Admin', 'Clientes'], module: 'clients', color: 'text-rose-400' },
+        { name: 'Estibadores', href: route('apt.estibadores'), icon: Layers, permission: ['view apt', 'manage shipments', 'view estibadores'], role: ['Admin', 'admin', 'Estibadores', 'estibadores', 'Estibador', 'estibador', 'Almacen', 'almacen', 'Jefe de Almacen'], module: 'estibadores', color: 'text-emerald-400' },
         { name: 'Administración', href: route('admin.users.index'), icon: Users, role: 'Admin', module: 'admin', color: 'text-green-400' },
     ];
 
@@ -51,11 +58,21 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
     } else if (isEstibadorRole) {
         visibleLinks = [
             {
-                name: 'Proceso de Embarques',
-                href: route('apt.shipment-process'),
+                name: 'Estibadores',
+                href: route('apt.estibadores'),
                 icon: Layers,
-                module: 'apt',
+                module: 'estibadores',
                 color: 'text-emerald-400',
+            },
+        ];
+    } else if (isQualityRole) {
+        visibleLinks = [
+            {
+                name: 'Calidad',
+                href: route('quality.index'),
+                icon: ShieldCheck,
+                module: 'quality',
+                color: 'text-teal-400',
             },
         ];
     }
@@ -70,7 +87,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
             {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent py-6 space-y-8">
                 <div className="px-4 flex flex-col items-center">
-                    <Link href={isClientRole ? route('clients.index') : (isEstibadorRole ? route('apt.shipment-process') : route('dashboard'))} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
+                    <Link href={isClientRole ? route('clients.index') : (isEstibadorRole ? route('apt.estibadores') : (isQualityRole ? route('quality.index') : route('dashboard')))} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
                         <img
                             src={props.tenant?.logo || `/images/logovecode.png`}
                             alt={props.tenant?.name || "Logo"}
@@ -98,7 +115,13 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
                             // Accurate highlighting: prioritize context_module, then check URL sub-paths
                             const isActive = currentModule
                                 ? currentModule === link.module
-                                : (url.startsWith(link.href) || (link.href === route('dashboard') && (url === route('dashboard') || url.endsWith('/dashboard'))));
+                                : (link.module === 'quality'
+                                    ? (url.includes('/quality'))
+                                    : (link.module === 'estibadores'
+                                        ? (url.includes('estibadores'))
+                                        : (link.module === 'apt'
+                                            ? (url.includes('/apt') && !url.includes('estibadores'))
+                                            : (url.startsWith(link.href) || (link.href === route('dashboard') && (url === route('dashboard') || url.endsWith('/dashboard')))))));
                             return (
                                 <Link
                                     key={link.href}

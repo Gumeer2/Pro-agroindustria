@@ -529,38 +529,46 @@ export default function OeTrackerIndex({
 
     const fromParam = typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get("from") || filters.from) : filters.from;
     const isFromProduction = filters.module === 'apt' && fromParam === 'production';
+    const isQualityUser =
+        filters.module === 'quality' ||
+        auth?.user?.roles?.some((r: any) =>
+            (typeof r === 'string' ? r : r.name || '').toLowerCase().includes('calidad')
+        ) ||
+        (typeof window !== 'undefined' && window.location.pathname.includes('/quality'));
 
     return (
         <DashboardLayout user={auth.user} header="Seguimiento de OE del Dia">
             <Head title="Seguimiento de OE" />
 
             <div className="w-full space-y-4">
-                {/* Back Link */}
-                <div>
-                    <Link
-                        href={
-                            filters.module === 'scale'
-                                ? route('scale.index')
-                                : isFromProduction
-                                    ? route('apt.production')
-                                    : filters.module === 'apt'
-                                        ? route('apt.index')
-                                        : route('documentation.index')
-                        }
-                        className="text-gray-500 hover:text-indigo-700 inline-flex items-center text-xs sm:text-sm font-bold transition-colors"
-                    >
-                        <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-                        {
-                            filters.module === 'scale'
-                                ? "Volver a Báscula"
-                                : isFromProduction
-                                    ? "Volver a Gestión de almacenes"
-                                    : filters.module === 'apt'
-                                        ? "Volver a APT"
-                                        : "Volver a Documentación"
-                        }
-                    </Link>
-                </div>
+                {/* Back Link (oculto para Calidad) */}
+                {!isQualityUser && (
+                    <div>
+                        <Link
+                            href={
+                                filters.module === 'scale'
+                                    ? route('scale.index')
+                                    : isFromProduction
+                                        ? route('apt.production')
+                                        : filters.module === 'apt'
+                                            ? route('apt.index')
+                                            : route('documentation.index')
+                            }
+                            className="text-gray-500 hover:text-indigo-700 inline-flex items-center text-xs sm:text-sm font-bold transition-colors"
+                        >
+                            <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+                            {
+                                filters.module === 'scale'
+                                    ? "Volver a Báscula"
+                                    : isFromProduction
+                                        ? "Volver a Gestión de almacenes"
+                                        : filters.module === 'apt'
+                                            ? "Volver a APT"
+                                            : "Volver a Documentación"
+                            }
+                        </Link>
+                    </div>
+                )}
 
                 {/* Top Header & Filters Bar */}
                 <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">

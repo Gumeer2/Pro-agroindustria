@@ -446,8 +446,17 @@ class ExitOperatorController extends Controller
                 ->with('error', 'No se puede generar QR para un operador vetado.');
         }
 
+        $logoPath = public_path('logo_pro_agro.png');
+        if (!file_exists($logoPath)) {
+            $logoPath = public_path('images/logo_proagro.png');
+        }
+        $logoBase64 = file_exists($logoPath)
+            ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath))
+            : null;
+
         return Inertia::render('Documentation/ExitOperators/Qr', [
             'operator' => $operator,
+            'logo' => $logoBase64,
         ]);
     }
 

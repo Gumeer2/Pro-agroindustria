@@ -1,11 +1,15 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
-import { Head, Link } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import { ArrowLeft, Printer, Search } from "lucide-react";
 import axios from "axios";
 import QRCode from "qrcode";
 
-export default function QrPrint({ auth, operator: initialOperator }: { auth: any; operator?: any }) {
+export default function QrPrint({ auth, operator: initialOperator, logo }: { auth: any; operator?: any; logo?: string }) {
+    const { props } = usePage<any>();
+    const baseUrl = (props?.base_url || "").replace(/\/$/, "");
+    const logoSrc = logo || (baseUrl ? `${baseUrl}/logo_pro_agro.png` : "/logo_pro_agro.png");
+    const fallbackLogo = baseUrl ? `${baseUrl}/images/logo_proagro.png` : "/images/logo_proagro.png";
     // State to handle both direct mode (initialOperator) and manual search
     const [selectedOperator, setSelectedOperator] = useState<any>(initialOperator || null);
 
@@ -135,7 +139,16 @@ export default function QrPrint({ auth, operator: initialOperator }: { auth: any
                             {/* Preview Card */}
                             <div className="bg-white border-2 border-gray-200 w-full max-w-[21cm] p-12 shadow-inner rounded-lg">
                                 <div className="flex justify-between items-start mb-10">
-                                    <img src="/logo_pro_agro.png" alt="Logo" className="h-16 object-contain" />
+                                    <img
+                                        src={logoSrc}
+                                        alt="Logo"
+                                        className="h-16 object-contain"
+                                        onError={(e) => {
+                                            if (e.currentTarget.src !== fallbackLogo) {
+                                                e.currentTarget.src = fallbackLogo;
+                                            }
+                                        }}
+                                    />
                                     <div className="text-right">
                                         <h2 className="text-2xl font-black text-gray-900 leading-tight">FICHA DE<br />OPERADOR</h2>
                                         <p className="text-indigo-600 font-bold text-sm">INGRESO / MUELLE</p>
@@ -196,7 +209,16 @@ export default function QrPrint({ auth, operator: initialOperator }: { auth: any
                     <div className="max-w-[19cm] mx-auto p-4 flex flex-col items-center">
                         <div className="w-full border-2 border-gray-200 rounded-xl p-8 mb-4">
                             <div className="flex justify-between items-start mb-8">
-                                <img src="/logo_pro_agro.png" alt="Logo" className="h-16 object-contain" />
+                                <img
+                                    src={logoSrc}
+                                    alt="Logo"
+                                    className="h-16 object-contain"
+                                    onError={(e) => {
+                                        if (e.currentTarget.src !== fallbackLogo) {
+                                            e.currentTarget.src = fallbackLogo;
+                                        }
+                                    }}
+                                />
                                 <div className="text-right">
                                     <h2 className="text-2xl font-black text-gray-900 leading-tight">FICHA DE<br />OPERADOR</h2>
                                     <p className="text-indigo-600 font-bold text-sm">INGRESO / MUELLE</p>

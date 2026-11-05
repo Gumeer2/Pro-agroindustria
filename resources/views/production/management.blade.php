@@ -938,6 +938,15 @@
                     <span>Clientes</span>
                 </a>
                 @endif
+                @if($authUser?->hasRole('Admin') || $authUser?->hasRole('Estibadores') || $authUser?->hasRole('estibadores') || $authUser?->can('view apt'))
+                <a href="{{ route('apt.estibadores') }}" class="app-nav-link {{ request()->routeIs('apt.estibadores') ? 'active' : '' }}" title="Estibadores">
+                    @if(request()->routeIs('apt.estibadores'))
+                    <div class="active-indicator"></div>
+                    @endif
+                    <svg class="nav-icon text-emerald-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
+                    <span>Estibadores</span>
+                </a>
+                @endif
                 @if($authUser?->hasRole('Admin'))
                 <a href="{{ route('admin.users.index') }}" class="app-nav-link" title="Administración">
                     <svg class="nav-icon text-green-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>

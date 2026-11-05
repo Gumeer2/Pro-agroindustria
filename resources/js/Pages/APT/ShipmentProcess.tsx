@@ -12,6 +12,7 @@ import {
     MoreHorizontal,
     Package,
     Pause,
+    Pencil,
     Printer,
     QrCode,
     Search,
@@ -94,6 +95,8 @@ interface HistoryItem {
 
 interface Props {
     auth: any;
+    is_estibadores_module?: boolean;
+    context_module?: string;
     lots: Lot[];
     squad_leaders: string[];
     assistants: Assistant[];
@@ -358,6 +361,7 @@ const isRowEnvasado = (row: any): boolean => {
     const pres = (row.presentation || "").toString().toUpperCase();
     if (pres.includes("ENVASADO")) return true;
     if (pres.includes("GRANEL")) return false;
+    if (row.stowage_plan || row.stowage_plan_status === "completed" || row.stowage_plan_saved_at) return true;
     if (row.stowage_count && parseInt(row.stowage_count, 10) > 0) return true;
     if (row.sacks_count && parseInt(row.sacks_count, 10) > 0) return true;
     const text = `${row.product || row.product_text || ""}`.toUpperCase();
@@ -412,6 +416,8 @@ const getOrderSamplingStatus = (row: HistoryItem): {
 
 export default function ShipmentProcess({
     auth,
+    is_estibadores_module = false,
+    context_module = "",
     lots = [],
     squad_leaders = [],
     assistants = [],
@@ -521,20 +527,59 @@ export default function ShipmentProcess({
         }) || Boolean(auth?.user?.is_admin) || (auth?.user?.name || "").toLowerCase().includes("admin");
     }, [userRoles, auth?.user]);
 
-    const isEstibadorUser = useMemo(() => {
+    const isEstibadorRole = useMemo(() => {
+        if (isAdmin) return false;
         return userRoles.some((r: any) => {
             const name = (typeof r === "string" ? r : r.name || "").toLowerCase();
-            return name === "estibadores" || name === "estibador";
-        }) && !isAdmin;
+            return name === "estibador" || name === "estibadores";
+        });
     }, [userRoles, isAdmin]);
+
+    // Determina si está en el módulo o con rol de Estibadores
+    const isEstibadorUser = Boolean(
+        is_estibadores_module ||
+        context_module === "estibadores" ||
+        isEstibadorRole ||
+        (typeof window !== "undefined" && (window.location.pathname.includes("estibadores") || window.location.href.includes("estibadores")))
+    );
 
     const isStowagePlanCompleted = (row: any): boolean => {
         if (!row) return false;
-        if (!row.stowage_plan_status || row.stowage_plan_status === "pending") return false;
-        return row.stowage_plan_status === "completed";
+        if (row.stowage_plan_status === "completed") return true;
+        if (row.stowage_plan_saved_at) return true;
+        if (row.stowage_plan && typeof row.stowage_plan === "object") {
+            const st = row.stowage_plan;
+            if (st.operator_name || st.unit_type || (Array.isArray(st.stowages) && st.stowages.length > 0)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const isInAptProcess = (row: any): boolean => {
+        if (!row) return false;
+        if (row.is_in_apt === true) return true;
+        if (row.is_in_apt === false) return false;
+        return Boolean(row.history_id || row.lot_id);
     };
 
     const handleOpenStowagePlan = (order: any) => {
+        if (isEstibadorUser && order && isInAptProcess(order)) {
+            Swal.fire({
+                icon: "warning",
+                title: "Nota de Estiba Bloqueada",
+                html: `<div class="text-left space-y-2">
+                    <p class="font-medium text-slate-800">
+                        La orden <b>${order.folio || ""}</b> se encuentra actualmente en proceso en <b>Gestión de Proceso de Embarques (APT)</b>.
+                    </p>
+                    <p class="text-sm text-slate-600">
+                        Solo podrá <b>editar</b> la nota de estiba siempre y cuando en APT la hayan eliminado primero del proceso.
+                    </p>
+                </div>`,
+                confirmButtonColor: "#4f46e5",
+            });
+            return;
+        }
         setActiveStowageOrder(order);
         setIsStowageModalOpen(true);
     };
@@ -548,52 +593,27 @@ export default function ShipmentProcess({
             return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
         })();
 
-        const isSamplingStarted = (Array.isArray(row?.samples) && row.samples.length > 0) || 
-            (row?.sampling_status && row.sampling_status !== "pending") ||
-            (typeof row?.samples_count === "number" && row.samples_count > 0);
-
-        if (isRowEnvasado && !isStowagePlanCompleted(row) && !isSamplingStarted) {
-            if (isAdmin) {
-                Swal.fire({
-                    icon: "warning",
-                    title: "Candado Activo: Plan de Estiba Pendiente",
-                    html: `<div class="text-left space-y-3">
-                        <p class="font-medium text-slate-800">
-                            No se pueden tomar las muestras de la orden <b>${row?.folio || ""}</b> porque la <b>Nota de Estiba (GLS-AP-FO-002)</b> está pendiente.
-                        </p>
-                        <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                            <b>Aviso de Administrador:</b> Como Administrador puedes realizar directamente la Nota de Estiba a continuación.
-                        </div>
-                    </div>`,
-                    showCancelButton: true,
-                    confirmButtonColor: "#059669",
-                    cancelButtonColor: "#64748b",
-                    confirmButtonText: "Realizar Nota de Estiba",
-                    cancelButtonText: "Cancelar",
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        handleOpenStowagePlan(row);
-                    }
-                });
-                return;
-            }
-
+        if (isRowEnvasado && !isStowagePlanCompleted(row)) {
             Swal.fire({
                 icon: "warning",
-                title: "Candado Activo: Plan de Estiba Pendiente",
+                title: "Candado Activo: Requiere Nota de Estiba",
                 html: `<div class="text-left space-y-3">
                     <p class="font-medium text-slate-800">
-                        No se pueden tomar las muestras de la orden <b>${row?.folio || ""}</b>.
+                        No se pueden tomar las muestras de la orden <b>${row?.folio || ""}</b> porque la <b>Nota de Estiba (GLS-AP-FO-002)</b> no ha sido realizada o fue eliminada.
                     </p>
                     <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                        <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
+                        <b>Bloqueo estricto:</b> Se debe realizar y liberar primero la <b>Nota de Estiba a Camión</b> en el módulo de Estibadores para poder habilitar el muestreo de ensacadora.
                     </div>
-                    <p class="text-xs text-slate-600">
-                        Mientras el estibador no guarde la nota de estiba, la toma de muestras y la verificación de pesos permanecen estrictamente bloqueadas.
-                    </p>
                 </div>`,
-                confirmButtonColor: "#dc2626",
-                confirmButtonText: "Entendido",
+                showCancelButton: true,
+                confirmButtonColor: "#059669",
+                cancelButtonColor: "#64748b",
+                confirmButtonText: "Realizar Nota de Estiba",
+                cancelButtonText: "Cerrar",
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    handleOpenStowagePlan(row);
+                }
             });
             return;
         }
@@ -709,7 +729,11 @@ export default function ShipmentProcess({
 
     const refreshHistory = async () => {
         try {
-            const response = await axios.get(route("documentation.shipment-orders.loading-history"));
+            const response = await axios.get(route("documentation.shipment-orders.loading-history"), {
+                params: {
+                    is_estibadores: isEstibadorUser ? 1 : 0,
+                },
+            });
             if (Array.isArray(response.data)) {
                 setHistory(response.data);
             }
@@ -752,27 +776,8 @@ export default function ShipmentProcess({
                 );
                 const targetOrder = matchedHistory ? { ...matchedHistory, ...order } : order;
 
-                // 1. Si el usuario es Estibador, abrir directamente la Nota de Estiba (GLS-AP-FO-002)
+                // 1. Abrir directamente la Nota de Estiba (GLS-AP-FO-002) para captura o edición
                 if (isEstibadorUser) {
-                    if (isStowagePlanCompleted(targetOrder)) {
-                        Swal.fire({
-                            icon: "info",
-                            title: "Nota de Estiba Ya Guardada",
-                            html: `<div class="text-left space-y-2">
-                                <p class="font-medium text-slate-800">
-                                    La orden <b>${targetOrder.folio || ""}</b> ya tiene una Nota de Estiba guardada.
-                                </p>
-                                <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs">
-                                    Si te equivocaste y requieres realizar otra, primero debes <b>eliminar</b> la nota de estiba en el historial inferior.
-                                </div>
-                            </div>`,
-                            confirmButtonColor: "#059669",
-                            confirmButtonText: "Entendido",
-                        });
-                        setSearchQr("");
-                        setScannedOrder(null);
-                        return;
-                    }
                     handleOpenStowagePlan(targetOrder);
                     setSearchQr("");
                     setScannedOrder(null);
@@ -789,62 +794,31 @@ export default function ShipmentProcess({
                 })();
 
                 if (isTargetEnvasado) {
-                    // CANDADO DE ESTIBADOR:
-                    // Si el estibador no ha guardado la nota de estiba y aún no hay muestras:
-                    const isTargetSamplingStarted = (Array.isArray(targetOrder?.samples) && targetOrder.samples.length > 0) || 
-                        (targetOrder?.sampling_status && targetOrder.sampling_status !== "pending") ||
-                        (typeof targetOrder?.samples_count === "number" && targetOrder.samples_count > 0);
-
-                    if (!isStowagePlanCompleted(targetOrder) && !isTargetSamplingStarted) {
-                        if (isAdmin) {
-                            Swal.fire({
-                                icon: "warning",
-                                title: "Candado Activo: Plan de Estiba Pendiente",
-                                html: `<div class="text-left space-y-3">
-                                    <p class="font-medium text-slate-800">
-                                        No se pueden tomar las muestras de la orden <b>${targetOrder.folio || ""}</b>.
-                                    </p>
-                                    <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                                        <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
-                                    </div>
-                                    <p class="text-xs text-slate-600">
-                                        Como <b>Administrador</b> puedes realizar todas las operaciones. A continuación se abrirá la <b>Nota de Estiba</b> para realizarla.
-                                    </p>
-                                </div>`,
-                                showCancelButton: true,
-                                confirmButtonColor: "#059669",
-                                cancelButtonColor: "#64748b",
-                                confirmButtonText: "Realizar Nota de Estiba",
-                                cancelButtonText: "Cancelar",
-                            }).then((result) => {
-                                if (result.isConfirmed) {
-                                    handleOpenStowagePlan(targetOrder);
-                                }
-                                setSearchQr("");
-                                setScannedOrder(null);
-                            });
-                            return;
-                        }
-
+                    // CANDADO ESTRICTO DE NOTA DE ESTIBA:
+                    if (!isStowagePlanCompleted(targetOrder)) {
                         Swal.fire({
                             icon: "warning",
-                            title: "Candado Activo: Plan de Estiba Pendiente",
+                            title: "Candado Activo: Requiere Nota de Estiba",
                             html: `<div class="text-left space-y-3">
                                 <p class="font-medium text-slate-800">
-                                    No se pueden tomar las muestras de la orden <b>${targetOrder.folio || ""}</b>.
+                                    No se pueden registrar muestras para la orden <b>${targetOrder.folio || ""}</b> porque la <b>Nota de Estiba (GLS-AP-FO-002)</b> está pendiente o fue eliminada.
                                 </p>
                                 <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                                    <b>Candado de seguridad:</b> El usuario <b>Estibador</b> debe registrar y guardar primero la <b>Nota de Estiba (GLS-AP-FO-002)</b>.
+                                    <b>Bloqueo estricto:</b> Se debe realizar y liberar primero la <b>Nota de Estiba</b> en el módulo de Estibadores para poder habilitar el muestreo de ensacadora.
                                 </div>
-                                <p class="text-xs text-slate-600">
-                                    Mientras el estibador no guarde la nota de estiba, la persona encargada no puede continuar con el formulario de carga ni con la verificación de pesos.
-                                </p>
                             </div>`,
-                            confirmButtonColor: "#dc2626",
-                            confirmButtonText: "Entendido",
+                            showCancelButton: true,
+                            confirmButtonColor: "#059669",
+                            cancelButtonColor: "#64748b",
+                            confirmButtonText: "Realizar Nota de Estiba",
+                            cancelButtonText: "Cancelar",
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                handleOpenStowagePlan(targetOrder);
+                            }
+                            setSearchQr("");
+                            setScannedOrder(null);
                         });
-                        setSearchQr("");
-                        setScannedOrder(null);
                         return;
                     }
 
@@ -960,7 +934,7 @@ export default function ShipmentProcess({
             };
 
             if (isEnvasado) {
-                if (isStowagePlanCompleted(savedOrder) || isAdmin) {
+                if (isStowagePlanCompleted(savedOrder)) {
                     // Open the Sampling Modal (Estibas y gráfica)
                     setActiveSamplingOrder(savedOrder);
                     setPrintOrderData(savedOrder);
@@ -1060,6 +1034,24 @@ export default function ShipmentProcess({
     };
 
     const handleDelete = async (id: string, folio: string) => {
+        const targetRow = history.find((h) => String(h.id) === String(id) || h.folio === folio);
+        if (isEstibadorUser && targetRow && isInAptProcess(targetRow)) {
+            Swal.fire({
+                icon: "warning",
+                title: "Acción Bloqueada",
+                html: `<div class="text-left space-y-2">
+                    <p class="font-medium text-slate-800">
+                        La orden <b>${folio}</b> se encuentra actualmente en proceso en <b>Gestión de Proceso de Embarques (APT)</b>.
+                    </p>
+                    <p class="text-sm text-slate-600">
+                        Solo podrá <b>eliminar</b> la nota de estiba siempre y cuando en APT la hayan eliminado primero del proceso.
+                    </p>
+                </div>`,
+                confirmButtonColor: "#4f46e5",
+            });
+            return;
+        }
+
         const titleText = isEstibadorUser ? "¿Eliminar Nota de Estiba?" : "¿Eliminar del historial?";
         const bodyText = isEstibadorUser
             ? `¿Estás seguro de eliminar la nota de estiba de la orden ${folio}? Esto te permitirá volver a escanearla y realizar una nueva nota si te equivocaste.`
@@ -1078,7 +1070,19 @@ export default function ShipmentProcess({
 
         if (result.isConfirmed) {
             try {
-                await axios.delete(route("documentation.shipment-orders.delete-loading", id));
+                await axios.delete(route("documentation.shipment-orders.delete-loading", id), {
+                    params: {
+                        is_estibadores: isEstibadorUser ? 1 : 0,
+                    },
+                });
+                setHistory((prev) =>
+                    prev.filter(
+                        (item) =>
+                            String(item.id) !== String(id) &&
+                            String(item.shipment_order_id) !== String(id) &&
+                            item.folio !== folio
+                    )
+                );
                 await refreshHistory();
                 Swal.fire({
                     icon: "success",
@@ -1099,9 +1103,21 @@ export default function ShipmentProcess({
     };
 
     const filteredHistory = history.filter((item) => {
-        // Los usuarios con el rol de estibador solo pueden visualizar los de envasador
-        if (isEstibadorUser && !isRowEnvasado(item)) {
+        // En el módulo de Gestión de Embarques (APT), la orden solo debe aparecer si ya fue guardada y asignada para muestreo/carga
+        if (!isEstibadorUser && !item.lot_id && !item.history_id) {
             return false;
+        }
+
+        // Para el módulo de Estibadores: mostrar órdenes con nota de estiba guardada o productos envasados
+        if (isEstibadorUser) {
+            const hasStowage = Boolean(
+                item.stowage_plan ||
+                item.stowage_plan_status === "completed" ||
+                item.stowage_plan_saved_at
+            );
+            if (!hasStowage && !isRowEnvasado(item)) {
+                return false;
+            }
         }
 
         // Warehouse filter
@@ -1142,31 +1158,38 @@ export default function ShipmentProcess({
 
     const currentUserName = auth?.user?.name || auth?.user?.username || "admin";
 
+    const pageTitle = isEstibadorUser ? "Módulo de Estibadores" : "Gestión de proceso de embarques";
+    const pageSubtitle = isEstibadorUser
+        ? "Elaboración y edición de Nota de Estiba a Camión (GLS-AP-FO-002)."
+        : "Registro, control y seguimiento de órdenes de embarque en tiempo real.";
+
     return (
-        <DashboardLayout user={auth.user} header="Gestión de proceso de embarques">
-            <Head title="Gestión de proceso de embarques" />
+        <DashboardLayout user={auth.user} header={pageTitle}>
+            <Head title={pageTitle} />
 
             <div className="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Back Link & Header with Active Warehouse Indicator */}
                 <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                        <Link
-                            href={route("apt.production")}
-                            className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3.5 py-2 rounded-xl border border-gray-200 shadow-sm text-sm font-semibold mb-4"
-                        >
-                            <ArrowLeft className="w-4 h-4 mr-1.5 text-gray-500" />
-                            Volver a Gestión de almacenes
-                        </Link>
+                        {!isEstibadorUser && (
+                            <Link
+                                href={route("apt.production")}
+                                className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3.5 py-2 rounded-xl border border-gray-200 shadow-sm text-sm font-semibold mb-4"
+                            >
+                                <ArrowLeft className="w-4 h-4 mr-1.5 text-gray-500" />
+                                Volver a Gestión de almacenes
+                            </Link>
+                        )}
                         <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm">
-                                <Truck className="w-6 h-6" />
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${isEstibadorUser ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
+                                {isEstibadorUser ? <Layers className="w-6 h-6" /> : <Truck className="w-6 h-6" />}
                             </div>
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-900">
-                                    Gestión de proceso de embarques
+                                    {pageTitle}
                                 </h2>
                                 <p className="text-sm text-gray-500">
-                                    Registro, control y seguimiento de órdenes de embarque en tiempo real.
+                                    {pageSubtitle}
                                 </p>
                             </div>
                         </div>
@@ -1203,27 +1226,170 @@ export default function ShipmentProcess({
                     </button>
                 </div>
 
-                {/* Stepper Progress Bar (Hidden for Estibadores) */}
-                {isEstibadorUser ? (
-                    <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white shadow-md flex items-center justify-between">
-                        <div className="flex items-center gap-3.5">
-                            <div className="p-2.5 bg-white/10 rounded-xl border border-white/20 shadow-inner">
-                                <Layers className="w-6 h-6 text-emerald-300" />
+                {/* Tabs Navigation (Gestión de Órdenes de Embarque vs Incidencias) */}
+                {!isEstibadorUser && (
+                    <div className="mb-6 bg-white rounded-2xl border border-gray-200 flex justify-center overflow-x-auto shadow-xs">
+                        <button
+                            type="button"
+                            onClick={() => setIsIncidentsOpen(false)}
+                            className={`flex items-center px-8 py-5 font-bold text-sm uppercase tracking-wider transition-all border-b-4 cursor-pointer ${
+                                !isIncidentsOpen
+                                    ? "border-indigo-600 text-indigo-700 bg-indigo-50/50"
+                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                            }`}
+                        >
+                            <Truck className={`w-5 h-5 mr-2 ${!isIncidentsOpen ? "text-indigo-600" : "text-gray-400"}`} />
+                            Gestión de Órdenes de Embarque
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIsIncidentsOpen(true)}
+                            className={`flex items-center px-8 py-5 font-bold text-sm uppercase tracking-wider transition-all border-b-4 cursor-pointer ${
+                                isIncidentsOpen
+                                    ? "border-indigo-600 text-indigo-700 bg-indigo-50/50"
+                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                            }`}
+                        >
+                            <AlertTriangle className={`w-5 h-5 mr-2 ${isIncidentsOpen ? "text-amber-500" : "text-gray-400"}`} />
+                            Incidencias
+                            {incidents.length > 0 && (
+                                <span
+                                    className={`ml-2 py-0.5 px-2.5 rounded-full text-xs font-bold ${
+                                        isIncidentsOpen ? "bg-indigo-600 text-white" : "bg-amber-100 text-amber-800"
+                                    }`}
+                                >
+                                    {incidents.length}
+                                </span>
+                            )}
+                        </button>
+                    </div>
+                )}
+
+                {/* Vista Standalone de Incidencias cuando está activa la pestaña de Incidencias */}
+                {isIncidentsOpen && !isEstibadorUser && (
+                    <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 md:p-8 mb-8 animate-fade-in">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-sm">
+                                    <AlertTriangle className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h4 className="text-base font-black text-amber-950 flex items-center gap-2">
+                                        <span>Registro de Incidencias de Muestreo</span>
+                                        <span className="text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full font-bold">
+                                            {filteredIncidents.length} {filteredIncidents.length === 1 ? "registro" : "registros"}
+                                        </span>
+                                    </h4>
+                                    <p className="text-xs text-amber-800">
+                                        Historial de desbloqueos autorizados por el Jefe de Almacén tras registrar 3 pesos consecutivos fuera de tolerancia.
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <h2 className="text-base font-extrabold uppercase tracking-tight">
-                                    Módulo de Estibadores • Notas de Estiba (GLS-AP-FO-002)
-                                </h2>
-                                <p className="text-xs text-emerald-100">
-                                    Escanee el código QR de la Orden de Embarque con la pistola lectora o la cámara para abrir la Nota de Estiba a Camión.
-                                </p>
+
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <div className="relative flex-1 sm:w-64">
+                                    <Search className="w-4 h-4 text-amber-600 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    <input
+                                        type="text"
+                                        value={incidentsSearch}
+                                        onChange={(e) => setIncidentsSearch(e.target.value)}
+                                        placeholder="Filtrar por orden, jefe o auxiliar..."
+                                        className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-amber-200 bg-white text-xs font-medium focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={refreshIncidents}
+                                    className="p-1.5 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl transition shadow-2xs cursor-pointer"
+                                    title="Actualizar tabla de incidencias"
+                                >
+                                    <RotateCcw className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
-                        <span className="text-xs font-bold bg-white/15 px-3 py-1.5 rounded-full border border-white/20 hidden md:inline">
-                            Rol: Estibadores
-                        </span>
+
+                        {/* Tabla de Incidencias */}
+                        <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white shadow-sm">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr className="bg-amber-100/80 border-b border-amber-200 text-amber-950 font-bold uppercase tracking-wider text-[11px]">
+                                        <th className="py-2.5 px-3">Folio Orden</th>
+                                        <th className="py-2.5 px-3">Almacén</th>
+                                        <th className="py-2.5 px-3">Quién Desbloqueó</th>
+                                        <th className="py-2.5 px-3">Fecha y Hora</th>
+                                        <th className="py-2.5 px-3 text-center">Veces Desbloqueado</th>
+                                        <th className="py-2.5 px-3">Auxiliar de Muestras</th>
+                                        <th className="py-2.5 px-3">Motivo / Detalle</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-amber-100 font-medium text-slate-700">
+                                    {filteredIncidents.length > 0 ? (
+                                        filteredIncidents.map((inc: any) => (
+                                            <tr key={inc.id} className="hover:bg-amber-50/50 transition-colors">
+                                                <td className="py-2.5 px-3 font-mono font-bold text-indigo-950 whitespace-nowrap">
+                                                    <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-md">
+                                                        {inc.order_folio || "N/A"}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                                    <span className="font-semibold text-slate-800">
+                                                        {inc.warehouse || "Almacén"}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                                                        <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                                        <span>{inc.unlocked_by_name || "Jefe de Almacén"}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-2.5 px-3 whitespace-nowrap font-mono text-slate-600">
+                                                    <div className="flex items-center gap-1">
+                                                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                                        <span>
+                                                            {inc.unlocked_at_formatted ||
+                                                                (inc.unlocked_at
+                                                                    ? new Date(inc.unlocked_at).toLocaleString("es-MX")
+                                                                    : "N/A")}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                                                        {inc.unlock_count || 1} {Number(inc.unlock_count) === 1 ? "vez" : "veces"} (Desbloqueo #{inc.unlock_count || 1})
+                                                    </span>
+                                                </td>
+                                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1.5 font-semibold text-indigo-900">
+                                                        <User className="w-3.5 h-3.5 text-indigo-500" />
+                                                        <span>{inc.assistant_name || "No asignado"}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-2.5 px-3 text-slate-600 max-w-xs truncate" title={inc.reason}>
+                                                    {inc.reason || "3 pesos consecutivos fuera de tolerancia"}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={7} className="py-8 px-4 text-center text-slate-400">
+                                                <AlertTriangle className="w-8 h-8 mx-auto text-amber-300 mb-1" />
+                                                <p className="font-medium text-slate-600">
+                                                    No hay incidencias registradas {incidentsSearch ? "con ese criterio" : "en este momento"}.
+                                                </p>
+                                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                                    Las incidencias se generan automáticamente cuando el Jefe de Almacén autoriza y desbloquea la toma de muestras.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                ) : (
+                )}
+
+                {/* Stepper Progress Bar (Hidden for Estibadores y cuando Incidencias está abierto) */}
+                {isEstibadorUser || isIncidentsOpen ? null : (
                     <div className="mb-6 bg-white rounded-2xl shadow-sm border border-gray-200/80 p-4">
                         <div className="flex items-center justify-between max-w-2xl mx-auto">
                             {/* Step 1 Indicator */}
@@ -1307,7 +1473,8 @@ export default function ShipmentProcess({
                 )}
 
                 {/* Form Card */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 p-6 md:p-8 mb-8">
+                {(!isIncidentsOpen || isEstibadorUser) && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 p-6 md:p-8 mb-8">
                     {/* STEP 1: SCAN QR / ENTER FOLIO */}
                     {currentStep === 1 && (
                         <div className="animate-fade-in">
@@ -1566,205 +1733,55 @@ export default function ShipmentProcess({
                         </div>
                     )}
                 </div>
+                )}
 
-                {/* Table Section: HISTORIAL DE ÓRDENES DE EMBARQUE */}
-                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden w-full">
-                    <div className="p-5 md:p-6 bg-white border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div>
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                                <h3 className="text-xl font-extrabold text-indigo-950 uppercase tracking-wide">
-                                    Historial de Órdenes de Embarque
-                                </h3>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsWarehouseModalOpen(true)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-sm transition-colors cursor-pointer"
-                                    title="Cambiar filtro de almacén"
-                                >
-                                    <Warehouse className="w-3.5 h-3.5 text-indigo-600" />
-                                    <span>ALMACÉN 0{selectedWarehouseId}</span>
-                                    {selectedWarehouseId === 5 && (
-                                        <span className="text-indigo-900 font-black">
-                                            {selectedCubicle ? `(Cubículo 0${selectedCubicle})` : "(Todos los cubículos)"}
-                                        </span>
-                                    )}
-                                    <Settings className="w-3 h-3 ml-0.5 text-indigo-400" />
-                                </button>
-
-                                {/* Botón Desplegable de Incidencias en el espacio en blanco */}
-                                <button
-                                    type="button"
-                                    onClick={() => setIsIncidentsOpen(!isIncidentsOpen)}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border shadow-xs transition-all cursor-pointer ${
-                                        isIncidentsOpen
-                                            ? "bg-amber-600 text-white border-amber-600 ring-2 ring-amber-300"
-                                            : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200 hover:border-amber-300"
-                                    }`}
-                                    title="Ver tabla de incidencias de desbloqueo de muestreo"
-                                >
-                                    <AlertTriangle className={`w-3.5 h-3.5 ${isIncidentsOpen ? "text-white" : "text-amber-600"}`} />
-                                    <span>Incidencias</span>
-                                    {incidents.length > 0 && (
-                                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                                            isIncidentsOpen ? "bg-amber-800 text-white" : "bg-amber-200 text-amber-900"
-                                        }`}>
-                                            {incidents.length}
-                                        </span>
-                                    )}
-                                    <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isIncidentsOpen ? "rotate-180 text-white" : "text-amber-600"}`} />
-                                </button>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                                Consulta de órdenes en proceso de carga y finalizadas asignadas a este almacén.
-                            </p>
-                        </div>
-                        <div className="relative w-full sm:w-72">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search className="h-4 w-4 text-gray-400" />
-                            </div>
-                            <input
-                                type="text"
-                                value={historySearch}
-                                onChange={(e) => setHistorySearch(e.target.value)}
-                                placeholder="Filtrar folio, operador..."
-                                className="block w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Tabla Desplegable de Incidencias */}
-                    {isIncidentsOpen && (
-                        <div className="bg-gradient-to-b from-amber-50/80 via-orange-50/40 to-white border-b border-amber-200 p-4 md:p-6 transition-all duration-300 animate-fade-in">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-sm">
-                                        <AlertTriangle className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-base font-black text-amber-950 flex items-center gap-2">
-                                            <span>Registro de Incidencias de Muestreo</span>
-                                            <span className="text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full font-bold">
-                                                {filteredIncidents.length} {filteredIncidents.length === 1 ? "registro" : "registros"}
+                {/* Table Section: HISTORIAL */}
+                {!isIncidentsOpen && (
+                    <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden w-full">
+                        <div className="p-5 md:p-6 bg-white border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div>
+                                <div className="flex items-center gap-2.5 flex-wrap">
+                                    <h3 className="text-xl font-extrabold text-indigo-950 uppercase tracking-wide">
+                                        {isEstibadorUser ? "Historial de Notas de Estiba" : "Historial de Órdenes de Embarque"}
+                                    </h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsWarehouseModalOpen(true)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-sm transition-colors cursor-pointer"
+                                        title="Cambiar filtro de almacén"
+                                    >
+                                        <Warehouse className="w-3.5 h-3.5 text-indigo-600" />
+                                        <span>ALMACÉN 0{selectedWarehouseId}</span>
+                                        {selectedWarehouseId === 5 && (
+                                            <span className="text-indigo-900 font-black">
+                                                {selectedCubicle ? `(Cubículo 0${selectedCubicle})` : "(Todos los cubículos)"}
                                             </span>
-                                        </h4>
-                                        <p className="text-xs text-amber-800">
-                                            Historial de desbloqueos autorizados por el Jefe de Almacén tras registrar 3 pesos consecutivos fuera de tolerancia.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 w-full sm:w-auto">
-                                    <div className="relative flex-1 sm:w-64">
-                                        <Search className="w-4 h-4 text-amber-600 absolute left-3 top-1/2 -translate-y-1/2" />
-                                        <input
-                                            type="text"
-                                            value={incidentsSearch}
-                                            onChange={(e) => setIncidentsSearch(e.target.value)}
-                                            placeholder="Filtrar por orden, jefe o auxiliar..."
-                                            className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-amber-200 bg-white text-xs font-medium focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-2xs"
-                                        />
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={refreshIncidents}
-                                        className="p-1.5 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl transition shadow-2xs cursor-pointer"
-                                        title="Actualizar tabla de incidencias"
-                                    >
-                                        <RotateCcw className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsIncidentsOpen(false)}
-                                        className="p-1.5 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl transition shadow-2xs cursor-pointer"
-                                        title="Cerrar tabla desplegable"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Tabla de Incidencias */}
-                            <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white shadow-sm">
-                                <table className="w-full text-left text-xs border-collapse">
-                                    <thead>
-                                        <tr className="bg-amber-100/80 border-b border-amber-200 text-amber-950 font-bold uppercase tracking-wider text-[11px]">
-                                            <th className="py-2.5 px-3">Folio Orden</th>
-                                            <th className="py-2.5 px-3">Almacén</th>
-                                            <th className="py-2.5 px-3">Quién Desbloqueó</th>
-                                            <th className="py-2.5 px-3">Fecha y Hora</th>
-                                            <th className="py-2.5 px-3 text-center">Veces Desbloqueado</th>
-                                            <th className="py-2.5 px-3">Auxiliar de Muestras</th>
-                                            <th className="py-2.5 px-3">Motivo / Detalle</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-amber-100 font-medium text-slate-700">
-                                        {filteredIncidents.length > 0 ? (
-                                            filteredIncidents.map((inc: any) => (
-                                                <tr key={inc.id} className="hover:bg-amber-50/50 transition-colors">
-                                                    <td className="py-2.5 px-3 font-mono font-bold text-indigo-950 whitespace-nowrap">
-                                                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-md">
-                                                            {inc.order_folio || "N/A"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                                        <span className="font-semibold text-slate-800">
-                                                            {inc.warehouse || "Almacén"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                                        <div className="flex items-center gap-1.5 font-bold text-slate-900">
-                                                            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                                            <span>{inc.unlocked_by_name || "Jefe de Almacén"}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-2.5 px-3 whitespace-nowrap font-mono text-slate-600">
-                                                        <div className="flex items-center gap-1">
-                                                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                                            <span>
-                                                                {inc.unlocked_at_formatted ||
-                                                                    (inc.unlocked_at
-                                                                        ? new Date(inc.unlocked_at).toLocaleString("es-MX")
-                                                                        : "N/A")}
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
-                                                            {inc.unlock_count || 1} {Number(inc.unlock_count) === 1 ? "vez" : "veces"} (Desbloqueo #{inc.unlock_count || 1})
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                                        <div className="flex items-center gap-1.5 font-semibold text-indigo-900">
-                                                            <User className="w-3.5 h-3.5 text-indigo-500" />
-                                                            <span>{inc.assistant_name || "No asignado"}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-2.5 px-3 text-slate-600 max-w-xs truncate" title={inc.reason}>
-                                                        {inc.reason || "3 pesos consecutivos fuera de tolerancia"}
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        ) : (
-                                            <tr>
-                                                <td colSpan={7} className="py-8 px-4 text-center text-slate-400">
-                                                    <AlertTriangle className="w-8 h-8 mx-auto text-amber-300 mb-1" />
-                                                    <p className="font-medium text-slate-600">
-                                                        No hay incidencias registradas {incidentsSearch ? "con ese criterio" : "en este momento"}.
-                                                    </p>
-                                                    <p className="text-[11px] text-slate-400 mt-0.5">
-                                                        Las incidencias se generan automáticamente cuando el Jefe de Almacén autoriza y desbloquea la toma de muestras.
-                                                    </p>
-                                                </td>
-                                            </tr>
                                         )}
-                                    </tbody>
-                                </table>
+                                        <Settings className="w-3 h-3 ml-0.5 text-indigo-400" />
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    {isEstibadorUser
+                                        ? "Registro de notas de estiba a camión (GLS-AP-FO-002) generadas para este almacén."
+                                        : "Consulta de órdenes en proceso de carga y finalizadas asignadas a este almacén."}
+                                </p>
+                            </div>
+                            <div className="relative w-full sm:w-72">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Search className="h-4 w-4 text-gray-400" />
+                                </div>
+                                <input
+                                    type="text"
+                                    value={historySearch}
+                                    onChange={(e) => setHistorySearch(e.target.value)}
+                                    placeholder={isEstibadorUser ? "Filtrar folio, operador, placas..." : "Filtrar folio, operador..."}
+                                    className="block w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                />
                             </div>
                         </div>
-                    )}
 
-                    <div className="w-full overflow-hidden">
-                        <table className="w-full table-fixed divide-y divide-gray-200 text-xs">
+                        <div className="w-full overflow-hidden">
+                            <table className="w-full table-fixed divide-y divide-gray-200 text-xs">
                             <thead className="bg-[#1e1b4b] text-white">
                                 <tr>
                                     <th className="w-[2.5%] px-0.5 py-3.5 text-center font-bold uppercase tracking-wider">
@@ -1798,7 +1815,7 @@ export default function ShipmentProcess({
                                         CRONÓMETRO
                                     </th>
                                     <th className="w-[31%] px-1 py-3.5 text-center font-bold uppercase tracking-wider truncate">
-                                        ACCIÓN
+                                        {isEstibadorUser ? "ACCIONES" : "ACCIÓN"}
                                     </th>
                                 </tr>
                             </thead>
@@ -1827,21 +1844,23 @@ export default function ShipmentProcess({
                                                         leaveTo="transform opacity-0 scale-95"
                                                     >
                                                         <Menu.Items className="absolute left-0 z-50 mt-1 w-48 origin-top-left rounded-xl bg-white p-1 shadow-lg ring-1 ring-black/5 focus:outline-none text-xs">
-                                                            <Menu.Item>
-                                                                {({ active }) => (
-                                                                    <a
-                                                                        href={route("documentation.print-order", row.id)}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg font-bold ${
-                                                                            active ? "bg-indigo-600 text-white" : "text-gray-700"
-                                                                        }`}
-                                                                    >
-                                                                        <Printer className="w-3.5 h-3.5" />
-                                                                        Imprimir OE
-                                                                    </a>
-                                                                )}
-                                                            </Menu.Item>
+                                                            {!isEstibadorUser && (
+                                                                <Menu.Item>
+                                                                    {({ active }) => (
+                                                                        <a
+                                                                            href={route("documentation.print-order", row.id)}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-bold ${
+                                                                                active ? "bg-indigo-600 text-white" : "text-gray-700"
+                                                                            }`}
+                                                                        >
+                                                                            <Printer className="w-3.5 h-3.5" />
+                                                                            Imprimir OE
+                                                                        </a>
+                                                                    )}
+                                                                </Menu.Item>
+                                                            )}
                                                             {(() => {
                                                                 const rowIsEnvasado = isRowEnvasado(row);
 
@@ -1892,7 +1911,7 @@ export default function ShipmentProcess({
                                                                                         }`}
                                                                                     >
                                                                                         <Scale className="w-3.5 h-3.5" />
-                                                                                        Muestreo Ensacadora {!isStowagePlanCompleted(row) && samplingStatus.samplesCount === 0 ? "(Bloqueado)" : ""}
+                                                                                        Muestreo Ensacadora {!isStowagePlanCompleted(row) ? "(Bloqueado)" : ""}
                                                                                     </button>
                                                                                 )}
                                                                             </Menu.Item>
@@ -1907,15 +1926,21 @@ export default function ShipmentProcess({
 
                                             {/* Folio & Warehouse */}
                                             <td className="w-[7.5%] px-1 py-2 font-bold text-indigo-700 uppercase truncate text-left">
-                                                <a
-                                                    href={route("documentation.print-order", row.id)}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="hover:underline block font-extrabold text-[11px]"
-                                                    title="Ver / Imprimir orden"
-                                                >
-                                                    {row.folio}
-                                                </a>
+                                                {isEstibadorUser ? (
+                                                    <span className="block font-extrabold text-[11px] text-gray-900">
+                                                        {row.folio}
+                                                    </span>
+                                                ) : (
+                                                    <a
+                                                        href={route("documentation.print-order", row.id)}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="hover:underline block font-extrabold text-[11px]"
+                                                        title="Ver / Imprimir orden"
+                                                    >
+                                                        {row.folio}
+                                                    </a>
+                                                )}
                                                 <div className="text-[9px] text-gray-500 font-medium truncate">
                                                     {row.warehouse || `Almacen ${selectedWarehouseId}`}
                                                     {row.cubicle ? ` • Cub. 0${row.cubicle}` : ""}
@@ -1989,116 +2014,180 @@ export default function ShipmentProcess({
                                                 />
                                             </td>
 
-                                            {/* Acción */}
+                                            {/* Acciones */}
                                             <td className="w-[31%] px-1 py-2 text-center">
-                                                <div className="flex items-center justify-center gap-1 flex-nowrap">
-                                                    {isEstibadorUser ? (
-                                                        <>
-                                                            {samplingStatus.isEnvasado && (
+                                                {isEstibadorUser ? (
+                                                    <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+                                                        {isInAptProcess(row) ? (
+                                                            <>
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200"
+                                                                    title="En proceso en APT: Debe eliminarse primero de Gestión de Embarques de APT para poder editar o eliminar"
+                                                                >
+                                                                    <Lock className="w-3 h-3 text-amber-600" />
+                                                                    En proceso APT
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        Swal.fire({
+                                                                            icon: "warning",
+                                                                            title: "Acción Bloqueada",
+                                                                            html: `<div class="text-left space-y-2">
+                                                                                <p class="font-medium text-slate-800">
+                                                                                    La orden <b>${row.folio}</b> se encuentra actualmente en proceso en <b>Gestión de Proceso de Embarques (APT)</b>.
+                                                                                </p>
+                                                                                <p class="text-sm text-slate-600">
+                                                                                    Solo podrá <b>editar</b> o <b>eliminar</b> la nota de estiba siempre y cuando en APT la hayan eliminado primero del proceso.
+                                                                                </p>
+                                                                            </div>`,
+                                                                            confirmButtonColor: "#4f46e5",
+                                                                        });
+                                                                    }}
+                                                                    className="p-1 rounded-md text-gray-300 hover:text-amber-600 hover:bg-amber-50 transition cursor-not-allowed"
+                                                                    title="Bloqueado: La orden está en proceso en APT"
+                                                                >
+                                                                    <Pencil className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        Swal.fire({
+                                                                            icon: "warning",
+                                                                            title: "Acción Bloqueada",
+                                                                            html: `<div class="text-left space-y-2">
+                                                                                <p class="font-medium text-slate-800">
+                                                                                    La orden <b>${row.folio}</b> se encuentra actualmente en proceso en <b>Gestión de Proceso de Embarques (APT)</b>.
+                                                                                </p>
+                                                                                <p class="text-sm text-slate-600">
+                                                                                    Solo podrá <b>eliminar</b> la nota de estiba siempre y cuando en APT la hayan eliminado primero del proceso.
+                                                                                </p>
+                                                                            </div>`,
+                                                                            confirmButtonColor: "#4f46e5",
+                                                                        });
+                                                                    }}
+                                                                    className="p-1 rounded-md text-gray-300 hover:text-red-600 hover:bg-red-50 transition cursor-not-allowed"
+                                                                    title="Bloqueado: La orden está en proceso en APT"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenStowagePlan(row)}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition"
+                                                                    title="Editar Nota de Estiba (GLS-AP-FO-002)"
+                                                                >
+                                                                    <Pencil className="w-3 h-3" />
+                                                                    Editar
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDelete(row.id, row.folio)}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition"
+                                                                    title="Eliminar Nota de Estiba"
+                                                                >
+                                                                    <Trash2 className="w-3 h-3" />
+                                                                    Eliminar
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-center gap-1 flex-nowrap">
+                                                        {samplingStatus.isEnvasado ? (
+                                                            <>
+                                                                {/* Muestreo */}
+                                                                {!isStowagePlanCompleted(row) ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
+                                                                        title="Candado Activo: Requiere que se guarde y libere primero la Nota de Estiba (GLS-AP-FO-002)"
+                                                                    >
+                                                                        <Lock className="w-3 h-3 text-amber-600" />
+                                                                        <span>Bloqueado</span>
+                                                                    </button>
+                                                                ) : samplingStatus.isCompleted ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
+                                                                        title="Muestreo finalizado (80/80). Haga clic para ver o editar."
+                                                                    >
+                                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                        <span>80/80</span>
+                                                                    </button>
+                                                                ) : row.is_sampling_blocked ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                        title="Muestreo bloqueado por 3 alertas de tolerancia. Haga clic para desbloquear con el Jefe de Almacén."
+                                                                    >
+                                                                        <Lock className="w-3 h-3" />
+                                                                        <span>Bloqueado ({samplingStatus.samplesCount}/80)</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
+                                                                        title={`Muestreo (${samplingStatus.samplesCount} de 80 muestras). Haga clic para continuar.`}
+                                                                    >
+                                                                        <Scale className="w-3 h-3" />
+                                                                        <span>Muestreo ({samplingStatus.samplesCount}/80)</span>
+                                                                    </button>
+                                                                )}
+
+                                                                {/* Imprimir */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenPrintModal(row.id)}
+                                                                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                    title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
+                                                                >
+                                                                    <Printer className="w-3.5 h-3.5" />
+                                                                </button>
+
+                                                                {/* Eliminar */}
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleDelete(row.id, row.folio)}
                                                                     className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                    title="Eliminar Nota de Estiba guardada para corregir o realizar otra"
+                                                                    title="Eliminar orden del historial"
                                                                 >
                                                                     <Trash2 className="w-3.5 h-3.5" />
                                                                 </button>
-                                                            )}
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            {samplingStatus.isEnvasado ? (
-                                                                <>
-                                                                    {/* Muestreo */}
-                                                                    {!isStowagePlanCompleted(row) && samplingStatus.samplesCount === 0 ? (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
-                                                                            title="Candado Activo: Requiere que el usuario Estibador guarde primero el Plan de Estiba"
-                                                                        >
-                                                                            <Lock className="w-3 h-3 text-amber-600" />
-                                                                            <span>Bloqueado</span>
-                                                                        </button>
-                                                                    ) : samplingStatus.isCompleted ? (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
-                                                                            title="Muestreo finalizado (80/80). Haga clic para ver o editar."
-                                                                        >
-                                                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                            <span>80/80</span>
-                                                                        </button>
-                                                                    ) : row.is_sampling_blocked ? (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                            title="Muestreo bloqueado por 3 alertas de tolerancia. Haga clic para desbloquear con el Jefe de Almacén."
-                                                                        >
-                                                                            <Lock className="w-3 h-3" />
-                                                                            <span>Bloqueado ({samplingStatus.samplesCount}/80)</span>
-                                                                        </button>
-                                                                    ) : (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
-                                                                            title={`Muestreo (${samplingStatus.samplesCount} de 80 muestras). Haga clic para continuar.`}
-                                                                        >
-                                                                            <Scale className="w-3 h-3" />
-                                                                            <span>Muestreo ({samplingStatus.samplesCount}/80)</span>
-                                                                        </button>
-                                                                    )}
-
-                                                                    {/* Imprimir */}
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                {/* Granel: Finalizar (mientras esté en carga) */}
+                                                                {row.status === "loading" && !row.finished_at && (
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => handleOpenPrintModal(row.id)}
-                                                                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                        title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
+                                                                        onClick={() => handleFinish(row.id, row.folio)}
+                                                                        className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0"
                                                                     >
-                                                                        <Printer className="w-3.5 h-3.5" />
+                                                                        Finalizar
                                                                     </button>
+                                                                )}
 
-                                                                    {/* Eliminar */}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleDelete(row.id, row.folio)}
-                                                                        className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                        title="Eliminar orden del historial"
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    {/* Granel: Finalizar (mientras esté en carga) */}
-                                                                    {row.status === "loading" && !row.finished_at && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleFinish(row.id, row.folio)}
-                                                                            className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0"
-                                                                        >
-                                                                            Finalizar
-                                                                        </button>
-                                                                    )}
-
-                                                                    {/* Eliminar */}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleDelete(row.id, row.folio)}
-                                                                        className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                        title="Eliminar orden del historial"
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                </>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                </div>
+                                                                {/* Eliminar */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDelete(row.id, row.folio)}
+                                                                    className="bg-red-800 hover:bg-red-900 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                    title="Eliminar orden del historial"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     );
@@ -2108,7 +2197,9 @@ export default function ShipmentProcess({
                                         <td colSpan={11} className="px-6 py-12 text-center text-gray-400">
                                             <Package className="mx-auto h-10 w-10 mb-2 opacity-40" />
                                             <p className="text-sm font-medium">
-                                                No hay registros en el historial de carga para Almacén 0{selectedWarehouseId}
+                                                {isEstibadorUser
+                                                    ? `No hay notas de estiba generadas para Almacén 0${selectedWarehouseId}`
+                                                    : `No hay registros en el historial de carga para Almacén 0${selectedWarehouseId}`}
                                                 {selectedWarehouseId === 5 && selectedCubicle ? ` (Cubículo 0${selectedCubicle})` : ""}
                                             </p>
                                         </td>
@@ -2118,6 +2209,7 @@ export default function ShipmentProcess({
                         </table>
                     </div>
                 </div>
+                )}
             </div>
 
             {/* Warehouse Selection Modal (like Báscula Modal) */}
@@ -2261,10 +2353,19 @@ export default function ShipmentProcess({
                 }}
                 order={activeStowageOrder}
                 onSaved={async (updated) => {
-                    await refreshHistory();
                     if (updated) {
                         setActiveStowageOrder(updated);
+                        if (isEstibadorUser || updated.lot_id || (updated as any).history_id) {
+                            setHistory((prev) => {
+                                const exists = prev.some((h) => String(h.id) === String(updated.id) || h.folio === updated.folio);
+                                if (exists) {
+                                    return prev.map((h) => (String(h.id) === String(updated.id) || h.folio === updated.folio ? { ...h, ...updated } : h));
+                                }
+                                return [updated, ...prev];
+                            });
+                        }
                     }
+                    await refreshHistory();
                 }}
             />
 

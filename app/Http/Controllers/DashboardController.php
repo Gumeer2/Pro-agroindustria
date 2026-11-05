@@ -152,6 +152,10 @@ class DashboardController extends Controller
             return redirect()->route('apt.shipment-process');
         }
 
+        if ($request->user() && ($request->user()->hasRole('Calidad') || $request->user()->hasRole('calidad') || $request->user()->hasRole('Quality')) && !$request->user()->hasRole('Admin')) {
+            return redirect()->route('quality.index');
+        }
+
         $vesselId = $request->input('vessel_id');
         $dateStart = $request->input('start_date');
         $dateEnd = $request->input('end_date');
