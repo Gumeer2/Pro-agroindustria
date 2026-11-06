@@ -47,7 +47,7 @@ class ProductionLotsExport implements FromCollection, WithHeadings, WithMapping,
 
     public function map($act): array
     {
-        $lot = optional($act->shiftStart)->lot;
+        $lot = $act->lot ?: optional($act->shiftStart)->lot;
         $product = str_contains(strtoupper((string) optional($lot)->plant_origin), 'UREA')
             ? 'UREA AGRICOLA'
             : (optional($lot)->plant_origin ?: (optional($lot)->folio ? 'Automático' : '—'));

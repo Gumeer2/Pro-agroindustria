@@ -639,15 +639,18 @@ class AptController extends Controller
         }
 
         $shiftFilter = $request->input('shift', 'all');
+        $activityType = $request->input('type', $request->input('activity_type', 'all'));
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
         $hasFilters = !empty($lotIds)
             || ($request->filled('shift') && $shiftFilter !== 'all')
+            || ($request->filled('type') && $activityType !== 'all')
+            || ($request->filled('activity_type') && $activityType !== 'all')
             || $request->filled('date_from')
             || $request->filled('date_to');
 
-        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'lot', 'shiftStart.lot', 'shiftStart.user']);
+        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'lot', 'shiftStart.lot', 'shiftStart.user', 'shiftStart.lots']);
 
         if (!empty($lotIds)) {
             $query->where(function ($q) use ($lotIds) {
@@ -668,6 +671,9 @@ class AptController extends Controller
                 $q->where('shift', $shiftFilter);
             });
         }
+        if (in_array($activityType, ['incidencia', 'relevancia'], true)) {
+            $query->where('type', $activityType);
+        }
         if ($request->filled('date_from')) {
             $query->whereDate('occurred_at', '>=', $dateFrom);
         }
@@ -677,7 +683,7 @@ class AptController extends Controller
 
         $activities = $hasFilters ? $query->orderBy('occurred_at', 'desc')->get() : collect();
 
-        return view('production.lots-report', compact('activities', 'lots', 'lotIds', 'shiftFilter', 'dateFrom', 'dateTo', 'hasFilters'));
+        return view('production.lots-report', compact('activities', 'lots', 'lotIds', 'shiftFilter', 'activityType', 'dateFrom', 'dateTo', 'hasFilters'));
     }
 
     public function assignmentsReport(Request $request)
@@ -860,17 +866,24 @@ class AptController extends Controller
         }
 
         $shiftFilter = $request->input('shift', 'all');
+        $activityType = $request->input('type', $request->input('activity_type', 'all'));
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'shiftStart.lot', 'shiftStart.user']);
+        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'lot', 'shiftStart.lot', 'shiftStart.user', 'shiftStart.lots']);
 
         $selectedLots = collect();
         if (!empty($lotIds)) {
-            $query->whereHas('shiftStart', function ($q) use ($lotIds) {
+            $query->where(function ($q) use ($lotIds) {
                 $q->whereIn('lot_id', $lotIds)
-                    ->orWhereHas('lots', function ($lotQuery) use ($lotIds) {
-                        $lotQuery->whereIn('lots.id', $lotIds);
+                    ->orWhere(function ($sub) use ($lotIds) {
+                        $sub->whereNull('lot_id')
+                            ->whereHas('shiftStart', function ($shiftQuery) use ($lotIds) {
+                                $shiftQuery->whereIn('lot_id', $lotIds)
+                                    ->orWhereHas('lots', function ($lotQuery) use ($lotIds) {
+                                        $lotQuery->whereIn('lots.id', $lotIds);
+                                    });
+                            });
                     });
             });
             $selectedLots = Lot::whereIn('id', $lotIds)->get();
@@ -879,6 +892,9 @@ class AptController extends Controller
             $query->whereHas('shiftStart', function ($q) use ($shiftFilter) {
                 $q->where('shift', $shiftFilter);
             });
+        }
+        if (in_array($activityType, ['incidencia', 'relevancia'], true)) {
+            $query->where('type', $activityType);
         }
         if ($request->filled('date_from')) {
             $query->whereDate('occurred_at', '>=', $dateFrom);
@@ -889,7 +905,7 @@ class AptController extends Controller
 
         $activities = $query->orderBy('occurred_at', 'desc')->get();
 
-        return view('production.print-lots-report', compact('activities', 'selectedLots', 'lotIds', 'shiftFilter', 'dateFrom', 'dateTo'));
+        return view('production.print-lots-report', compact('activities', 'selectedLots', 'lotIds', 'shiftFilter', 'activityType', 'dateFrom', 'dateTo'));
     }
 
     public function exportLotsReport(Request $request)
@@ -904,16 +920,23 @@ class AptController extends Controller
         }
 
         $shiftFilter = $request->input('shift', 'all');
+        $activityType = $request->input('type', $request->input('activity_type', 'all'));
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'shiftStart.lot', 'shiftStart.user']);
+        $query = \App\Models\ProductionShiftActivity::with(['user:id,name', 'lot', 'shiftStart.lot', 'shiftStart.user', 'shiftStart.lots']);
 
         if (!empty($lotIds)) {
-            $query->whereHas('shiftStart', function ($q) use ($lotIds) {
+            $query->where(function ($q) use ($lotIds) {
                 $q->whereIn('lot_id', $lotIds)
-                    ->orWhereHas('lots', function ($lotQuery) use ($lotIds) {
-                        $lotQuery->whereIn('lots.id', $lotIds);
+                    ->orWhere(function ($sub) use ($lotIds) {
+                        $sub->whereNull('lot_id')
+                            ->whereHas('shiftStart', function ($shiftQuery) use ($lotIds) {
+                                $shiftQuery->whereIn('lot_id', $lotIds)
+                                    ->orWhereHas('lots', function ($lotQuery) use ($lotIds) {
+                                        $lotQuery->whereIn('lots.id', $lotIds);
+                                    });
+                            });
                     });
             });
         }
@@ -921,6 +944,9 @@ class AptController extends Controller
             $query->whereHas('shiftStart', function ($q) use ($shiftFilter) {
                 $q->where('shift', $shiftFilter);
             });
+        }
+        if (in_array($activityType, ['incidencia', 'relevancia'], true)) {
+            $query->where('type', $activityType);
         }
         if ($request->filled('date_from')) {
             $query->whereDate('occurred_at', '>=', $dateFrom);

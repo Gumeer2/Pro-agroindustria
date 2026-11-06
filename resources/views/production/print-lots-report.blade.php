@@ -152,7 +152,7 @@
 
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 12px;
             margin-bottom: 24px;
             background: var(--slate-100);
@@ -347,6 +347,12 @@
                 </span>
             </div>
             <div class="summary-item">
+                <span class="summary-label">Tipo</span>
+                <span class="summary-value">
+                    {{ ($activityType ?? 'all') === 'incidencia' ? 'Incidencias' : (($activityType ?? 'all') === 'relevancia' ? 'Relevancias' : 'Todas') }}
+                </span>
+            </div>
+            <div class="summary-item">
                 <span class="summary-label">Período del Reporte</span>
                 <span class="summary-value" style="color: var(--sky-700);">
                     {{ $periodText }}
@@ -377,7 +383,7 @@
             <tbody>
                 @forelse($activities as $index => $act)
                     @php
-                        $lot = optional($act->shiftStart)->lot;
+                        $lot = $act->lot ?: optional($act->shiftStart)->lot;
                         $product = str_contains(strtoupper((string) optional($lot)->plant_origin), 'UREA')
                             ? 'UREA AGRICOLA'
                             : (optional($lot)->plant_origin ?: 'Automático');

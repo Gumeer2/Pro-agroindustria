@@ -896,6 +896,13 @@
                                     <option value="Turno 1B" @selected(($shiftFilter ?? '') === 'Turno 1B')>Turno 1B</option>
                                 </select>
                             </label>
+                            <label>Tipo
+                                <select data-filter-type>
+                                    <option value="all" @selected(($activityType ?? 'all') === 'all')>Todas</option>
+                                    <option value="incidencia" @selected(($activityType ?? '') === 'incidencia')>Incidencias</option>
+                                    <option value="relevancia" @selected(($activityType ?? '') === 'relevancia')>Relevancias</option>
+                                </select>
+                            </label>
                             <label>Desde
                                 <input type="date" data-filter-from value="{{ $dateFrom ?? '' }}" onclick="try{this.showPicker()}catch(e){}">
                             </label>
@@ -967,7 +974,7 @@
                                     <tr>
                                         <td colspan="10" class="empty-history">
                                             @if(!($hasFilters ?? false))
-                                                <i class="fa-solid fa-filter" style="margin-right: 8px;"></i> Selecciona un filtro (Lote, Turno o Rango de fechas) para consultar el historial de lotes.
+                                                <i class="fa-solid fa-filter" style="margin-right: 8px;"></i> Selecciona un filtro (Lote, Turno, Tipo o Rango de fechas) para consultar el historial de lotes.
                                             @else
                                                 No hay registros de actividades de lotes para los filtros seleccionados.
                                             @endif
@@ -1000,6 +1007,7 @@
         const lotSelectAll = document.querySelector('[data-lot-select-all]');
         const lotCheckboxes = document.querySelectorAll('[data-lot-checkbox]');
         const filterShift = document.querySelector('[data-filter-shift]');
+        const filterType = document.querySelector('[data-filter-type]');
         const filterFrom = document.querySelector('[data-filter-from]');
         const filterTo = document.querySelector('[data-filter-to]');
         const printBtn = document.querySelector('[data-print-report]');
@@ -1117,6 +1125,12 @@
                 url.searchParams.set('shift', filterShift.value);
             }
 
+            if (!filterType || filterType.value === 'all') {
+                url.searchParams.delete('type');
+            } else {
+                url.searchParams.set('type', filterType.value);
+            }
+
             if (!filterFrom || !filterFrom.value) {
                 url.searchParams.delete('date_from');
             } else {
@@ -1151,6 +1165,7 @@
         });
 
         filterShift?.addEventListener('change', applyFilters);
+        filterType?.addEventListener('change', applyFilters);
         filterFrom?.addEventListener('change', applyFilters);
         filterFrom?.addEventListener('input', applyFilters);
         filterFrom?.addEventListener('click', () => {
@@ -1166,6 +1181,7 @@
             document.querySelectorAll('[data-lot-checkbox]').forEach(cb => { cb.checked = false; });
             if (lotSelectAll) lotSelectAll.checked = false;
             if (filterShift) filterShift.value = 'all';
+            if (filterType) filterType.value = 'all';
             if (filterFrom) filterFrom.value = '';
             if (filterTo) filterTo.value = '';
             updateTriggerLabel();
@@ -1174,6 +1190,7 @@
             url.searchParams.delete('lot_ids');
             url.searchParams.delete('lot_id');
             url.searchParams.delete('shift');
+            url.searchParams.delete('type');
             url.searchParams.delete('date_from');
             url.searchParams.delete('date_to');
             window.history.replaceState({}, '', url.pathname + url.search);
@@ -1188,6 +1205,9 @@
             }
             if (filterShift && filterShift.value !== 'all') {
                 targetUrl.searchParams.set('shift', filterShift.value);
+            }
+            if (filterType && filterType.value !== 'all') {
+                targetUrl.searchParams.set('type', filterType.value);
             }
             if (filterFrom && filterFrom.value) {
                 targetUrl.searchParams.set('date_from', filterFrom.value);
