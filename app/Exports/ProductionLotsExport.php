@@ -36,6 +36,7 @@ class ProductionLotsExport implements FromCollection, WithHeadings, WithMapping,
             'HORA',
             'NO. DE LOTE',
             'TURNO',
+            'TIPO',
             'DISPOSICIÓN',
             'UBICACIÓN',
             'PRODUCTO',
@@ -57,6 +58,7 @@ class ProductionLotsExport implements FromCollection, WithHeadings, WithMapping,
             $act->occurred_at ? $act->occurred_at->format('H:i:s') : ($act->created_at ? $act->created_at->format('H:i:s') : '—'),
             optional($lot)->folio ?: '—',
             optional($act->shiftStart)->shift ?: '—',
+            ucfirst($act->type ?: '—'),
             optional($lot)->warehouse ?: '—',
             $act->location ?: (optional($lot)->cubicle ?: 'Automático'),
             $product,
@@ -80,7 +82,7 @@ class ProductionLotsExport implements FromCollection, WithHeadings, WithMapping,
                 $drawing->setDescription('Evidencia');
                 $drawing->setPath($path);
                 $drawing->setHeight(80);
-                $drawing->setCoordinates('J' . $row);
+                $drawing->setCoordinates('K' . $row);
                 $drawing->setOffsetX(5);
                 $drawing->setOffsetY(5);
                 $drawings[] = $drawing;

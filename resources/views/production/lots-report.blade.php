@@ -694,6 +694,26 @@
             object-fit: cover;
             cursor: zoom-in;
         }
+        .type-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            white-space: nowrap;
+        }
+        .type-incidencia {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+        .type-relevancia {
+            background: #e0f2fe;
+            color: #0369a1;
+            border: 1px solid #bae6fd;
+        }
 
         .photo-modal { display: none; position: fixed; inset: 0; z-index: 1200; align-items: center; justify-content: center; background: rgba(15,23,42,.82); padding: 22px; }
         .photo-modal.open { display: flex; }
@@ -926,6 +946,7 @@
                                     <th>Hora</th>
                                     <th>No. de lote</th>
                                     <th>Turno</th>
+                                    <th>Tipo</th>
                                     <th>Disposición</th>
                                     <th>Ubicación</th>
                                     <th>Producto</th>
@@ -957,6 +978,15 @@
                                         <td>{{ $act->occurred_at ? $act->occurred_at->format('H:i:s') : ($act->created_at ? $act->created_at->format('H:i:s') : '—') }}</td>
                                         <td><strong>{{ optional($lot)->folio ?: '—' }}</strong></td>
                                         <td>{{ optional($act->shiftStart)->shift ?: '—' }}</td>
+                                        <td>
+                                            @if($act->type)
+                                                <span class="type-badge {{ strtolower($act->type) === 'incidencia' ? 'type-incidencia' : 'type-relevancia' }}">
+                                                    {{ ucfirst($act->type) }}
+                                                </span>
+                                            @else
+                                                —
+                                            @endif
+                                        </td>
                                         <td>{{ optional($lot)->warehouse ?: '—' }}</td>
                                         <td>{{ $act->location ?: (optional($lot)->cubicle ?: 'Automático') }}</td>
                                         <td>{{ $product }}</td>
@@ -972,7 +1002,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="10" class="empty-history">
+                                        <td colspan="11" class="empty-history">
                                             @if(!($hasFilters ?? false))
                                                 <i class="fa-solid fa-filter" style="margin-right: 8px;"></i> Selecciona un filtro (Lote, Turno, Tipo o Rango de fechas) para consultar el historial de lotes.
                                             @else

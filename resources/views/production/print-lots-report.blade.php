@@ -204,6 +204,22 @@
         .data-table tr:nth-child(even) td {
             background: #f8fafc;
         }
+        .type-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .type-incidencia {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .type-relevancia {
+            background: #e0f2fe;
+            color: #0369a1;
+        }
         .thumb-preview {
             width: 46px;
             height: 34px;
@@ -372,6 +388,7 @@
                     <th style="width: 70px;">Hora</th>
                     <th>No. de Lote</th>
                     <th>Turno</th>
+                    <th>Tipo</th>
                     <th>Disposición</th>
                     <th>Ubicación</th>
                     <th>Producto</th>
@@ -394,6 +411,15 @@
                         <td>{{ $act->occurred_at ? $act->occurred_at->format('H:i:s') : ($act->created_at ? $act->created_at->format('H:i:s') : '—') }}</td>
                         <td><strong>{{ optional($lot)->folio ?: '—' }}</strong></td>
                         <td>{{ optional($act->shiftStart)->shift ?: '—' }}</td>
+                        <td>
+                            @if($act->type)
+                                <span class="type-badge {{ strtolower($act->type) === 'incidencia' ? 'type-incidencia' : 'type-relevancia' }}">
+                                    {{ ucfirst($act->type) }}
+                                </span>
+                            @else
+                                —
+                            @endif
+                        </td>
                         <td>{{ optional($lot)->warehouse ?: '—' }}</td>
                         <td>{{ $act->location ?: (optional($lot)->cubicle ?: 'Automático') }}</td>
                         <td>{{ $product }}</td>
@@ -409,7 +435,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="11" class="empty-row">
+                        <td colspan="12" class="empty-row">
                             No se encontraron registros de actividades de lotes para los filtros seleccionados.
                         </td>
                     </tr>
