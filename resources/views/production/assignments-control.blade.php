@@ -1012,25 +1012,31 @@
                                     <span data-started-text>{{ $firstLot && $firstLot->started_at ? \Carbon\Carbon::parse($firstLot->started_at)->format('d/m/Y H:i') : '—' }}</span>
                                 </td>
                                 <td>
-                                    <span class="badge {{ $firstClosed ? 'closed' : 'open' }}" data-status-badge>
-                                        <i class="fa-solid {{ $firstClosed ? 'fa-lock' : 'fa-lock-open' }}"></i>
-                                        <span>{{ $firstClosed ? 'Cerrado' : 'Abierto' }}</span>
-                                    </span>
-                                    <span class="date-sub" data-closed-meta style="{{ $firstClosed && $firstLot->closed_at ? '' : 'display:none;' }}">
-                                        @if($firstClosed && $firstLot->closed_at)
-                                            Cerrado: {{ \Carbon\Carbon::parse($firstLot->closed_at)->format('d/m/Y H:i') }}
-                                            {{ $firstLot->closed_by_name ? ' por ' . $firstLot->closed_by_name : '' }}
-                                        @endif
-                                    </span>
+                                    @if($firstLot)
+                                        <span class="badge {{ $firstClosed ? 'closed' : 'open' }}" data-status-badge>
+                                            <i class="fa-solid {{ $firstClosed ? 'fa-lock' : 'fa-lock-open' }}"></i>
+                                            <span>{{ $firstClosed ? 'Cerrado' : 'Abierto' }}</span>
+                                        </span>
+                                        <span class="date-sub" data-closed-meta style="{{ $firstClosed && $firstLot->closed_at ? '' : 'display:none;' }}">
+                                            @if($firstClosed && $firstLot->closed_at)
+                                                Cerrado: {{ \Carbon\Carbon::parse($firstLot->closed_at)->format('d/m/Y H:i') }}
+                                                {{ $firstLot->closed_by_name ? ' por ' . $firstLot->closed_by_name : '' }}
+                                            @endif
+                                        </span>
+                                    @else
+                                        <span style="color: var(--slate-400);">—</span>
+                                    @endif
                                 </td>
                                 <td>
                                     <div class="actions-group">
-                                        <button type="button" class="action-btn close" data-close-btn style="{{ $firstClosed ? 'display:none;' : '' }}">
-                                            <i class="fa-solid fa-lock"></i> Cerrar Turno
-                                        </button>
-                                        <button type="button" class="action-btn reopen" data-reopen-btn style="{{ $firstClosed ? '' : 'display:none;' }}">
-                                            <i class="fa-solid fa-lock-open"></i> Abrir lote
-                                        </button>
+                                        @if($firstLot)
+                                            <button type="button" class="action-btn close" data-close-btn style="{{ $firstClosed ? 'display:none;' : '' }}">
+                                                <i class="fa-solid fa-lock"></i> Cerrar Turno
+                                            </button>
+                                            <button type="button" class="action-btn reopen" data-reopen-btn style="{{ $firstClosed ? '' : 'display:none;' }}">
+                                                <i class="fa-solid fa-lock-open"></i> Abrir turno
+                                            </button>
+                                        @endif
                                     </div>
                                 </td>
                             </tr>
@@ -1162,7 +1168,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 closeBtn.disabled = false;
                 reopenBtn.disabled = false;
                 closeBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Cerrar Turno';
-                reopenBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Abrir lote';
+                reopenBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Abrir turno';
             }
         };
 
@@ -1205,23 +1211,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 }) : '';
                 const newClosedBy = data.closed_by_name || (action === 'close' ? 'Usuario' : '');
 
-                // Update element datasets
-                active.element.dataset.status = newStatus;
-                active.element.dataset.closedAt = newClosedAt;
-                active.element.dataset.closedBy = newClosedBy;
-
-                if (active.isSelect) {
-                    const warehouseStr = active.warehouse ? ` · ${active.warehouse}` : '';
-                    const statusStr = newStatus === 'closed' ? ' (Cerrado)' : ' (Abierto)';
-                    active.element.textContent = `${active.folio}${warehouseStr}${statusStr}`;
-                    if (storageKey && select) {
-                        localStorage.setItem(storageKey, select.value);
+                if (action === 'close') {
+                    // Al cerrar turno, desaparece de "Lote Asignado"
+                    if (active.isSelect) {
+                        active.element.remove();
+                        if (storageKey) {
+                            localStorage.removeItem(storageKey);
+                        }
+                        if (select.options.length > 0) {
+                            select.selectedIndex = 0;
+                            if (storageKey) {
+                                localStorage.setItem(storageKey, select.value);
+                            }
+                            updateRowView();
+                        } else {
+                            const cell = select.closest('td');
+                            if (cell) {
+                                cell.innerHTML = '<span style="color: var(--slate-400);">Sin lotes asignados</span>';
+                            }
+                            if (shiftText) shiftText.textContent = '—';
+                            if (startedText) startedText.textContent = '—';
+                            if (statusBadge) statusBadge.style.display = 'none';
+                            if (closedMeta) closedMeta.style.display = 'none';
+                            if (closeBtn) closeBtn.style.display = 'none';
+                            if (reopenBtn) reopenBtn.style.display = 'none';
+                        }
+                    } else if (singleLot) {
+                        const cell = singleLot.closest('td');
+                        if (cell) {
+                            cell.innerHTML = '<span style="color: var(--slate-400);">Sin lotes asignados</span>';
+                        }
+                        if (shiftText) shiftText.textContent = '—';
+                        if (startedText) startedText.textContent = '—';
+                        if (statusBadge) statusBadge.style.display = 'none';
+                        if (closedMeta) closedMeta.style.display = 'none';
+                        if (closeBtn) closeBtn.style.display = 'none';
+                        if (reopenBtn) reopenBtn.style.display = 'none';
                     }
+                } else {
+                    // Update element datasets para reapertura
+                    active.element.dataset.status = newStatus;
+                    active.element.dataset.closedAt = newClosedAt;
+                    active.element.dataset.closedBy = newClosedBy;
+
+                    if (active.isSelect) {
+                        const warehouseStr = active.warehouse ? ` · ${active.warehouse}` : '';
+                        const statusStr = ' (Abierto)';
+                        active.element.textContent = `${active.folio}${warehouseStr}${statusStr}`;
+                        if (storageKey && select) {
+                            localStorage.setItem(storageKey, select.value);
+                        }
+                    }
+
+                    updateRowView();
                 }
 
-                updateRowView();
                 updateSummaryCards();
-                showToast(data.message || (action === 'close' ? 'Lote cerrado correctamente.' : 'Lote reabierto correctamente.'), 'success');
+                showToast(data.message || (action === 'close' ? 'Turno cerrado y removido de lote asignado.' : 'Turno reabierto correctamente.'), 'success');
             } catch (err) {
                 if (closeBtn) {
                     closeBtn.disabled = false;
@@ -1229,7 +1275,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (reopenBtn) {
                     reopenBtn.disabled = false;
-                    reopenBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Abrir lote';
+                    reopenBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Abrir turno';
                 }
                 showToast(err.message || 'Error al conectar con el servidor.', 'error');
             }

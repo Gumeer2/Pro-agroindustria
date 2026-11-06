@@ -277,7 +277,8 @@ class SurveillanceController extends Controller
                 ];
             });
 
-            $isPending = ($log->status === 'pending');
+            $hasOrders = $orders->count() > 0;
+            $isPending = ($log->status === 'pending') || !$hasOrders;
             $unitType = $log->subject?->unit_type ?: ($orders->first()['unit_type'] ?? 'N/A');
 
             $log->current_status = $isPending ? 'pending' : 'in_plant';
@@ -286,7 +287,7 @@ class SurveillanceController extends Controller
             $log->shipment_orders_data = $orders->values()->all();
             $log->shipment_orders = $orders->values()->all();
             $log->setRelation('shipmentOrders', $orders);
-            $log->can_exit = !$isPending && empty($uncompletedFolios);
+            $log->can_exit = !$isPending && $orders->count() > 0 && empty($uncompletedFolios);
             $log->uncompleted_folios = $uncompletedFolios;
             $log->has_sader_orders = $hasSader;
 
@@ -915,6 +916,11 @@ class SurveillanceController extends Controller
                 }
             } else {
                 $targetOrders = $log->shipmentOrders->whereNotIn('status', ['cancelled', 'closed']);
+            }
+
+            if ($targetOrders->count() === 0) {
+                $opName = $log->subject?->operator_name ?? $log->subject?->name ?? 'Operador';
+                return back()->with('error', "No se puede dar salida a {$opName}: No cuenta con órdenes de embarque escaneadas.");
             }
 
             foreach ($targetOrders as $ord) {

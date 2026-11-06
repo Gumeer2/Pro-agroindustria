@@ -423,11 +423,13 @@ class AptController extends Controller
     public function closeProductionLot(Request $request, int $shiftStart, string $lot)
     {
         $authUser = auth()->user();
-        if (!$this->isWarehouseChief($authUser)) {
-            abort(403, 'Solo el Jefe de Almacén puede cerrar un lote.');
+        $isChief = $this->isWarehouseChief($authUser);
+        $registration = \App\Models\ProductionShiftStart::findOrFail($shiftStart);
+
+        if (!$isChief && (int) $registration->user_id !== (int) $authUser->id) {
+            abort(403, 'No tienes autorización para cerrar o finalizar este lote.');
         }
 
-        $registration = \App\Models\ProductionShiftStart::findOrFail($shiftStart);
         $lotIsAssigned = $registration->lots()->where('lots.id', $lot)->exists();
         if (!$lotIsAssigned) {
             abort(404, 'El lote no pertenece a esta asignación.');
@@ -526,14 +528,17 @@ class AptController extends Controller
         $activityDate = $request->input('activity_date');
         $selectedLotId = $request->input('lot_id');
 
-        if (!$selectedLotId && $registration) {
-            $selectedLots = ($registration->lots->isNotEmpty() ? $registration->lots : collect([$registration->lot]))
-                ->filter()
+        if ($registration) {
+            $allLots = ($registration->lots->isNotEmpty() ? $registration->lots : collect([$registration->lot]))
+                ->filter();
+
+            $openLots = $allLots
+                ->filter(fn ($lot) => ($lot->pivot?->status ?? 'open') !== 'closed' && empty($lot->pivot?->closed_at))
                 ->sortBy(fn ($lot) => (string) $lot->folio)
                 ->values();
 
-            if ($selectedLots->count() === 1) {
-                $selectedLotId = $selectedLots->first()?->id;
+            if (!$selectedLotId || !$openLots->contains('id', $selectedLotId)) {
+                $selectedLotId = $openLots->first()?->id;
             }
         }
 
@@ -794,9 +799,21 @@ class AptController extends Controller
 
         $rawAssignments = $query->get();
 
+        $allUniqueAssignments = $rawAssignments
+            ->sortByDesc('started_at')
+            ->unique(fn ($item) => $item->user_id . '_' . $item->lot_id)
+            ->values();
+
+        $summary = [
+            'users' => $allUniqueAssignments->pluck('user_name')->unique()->count(),
+            'total' => $allUniqueAssignments->count(),
+            'open' => $allUniqueAssignments->where('status', 'open')->count(),
+            'closed' => $allUniqueAssignments->where('status', 'closed')->count(),
+        ];
+
         $assignments = $rawAssignments
             ->groupBy('user_name')
-            ->map(function ($userLots, $userName) {
+            ->map(function ($userLots, $userName) use ($statusFilter) {
                 $latestByLot = $userLots
                     ->sortByDesc('started_at')
                     ->unique('lot_id')
@@ -804,11 +821,22 @@ class AptController extends Controller
 
                 $sortedLots = $latestByLot->sortByDesc('started_at')->values();
 
+                // Si no se filtra explícitamente por cerrados, solo los lotes abiertos aparecen en "Lote Asignado"
+                if ($statusFilter !== 'closed') {
+                    $sortedLots = $sortedLots->filter(fn ($l) => $l->status === 'open')->values();
+                }
+
                 return [
                     'user_name' => $userName,
                     'lots' => $sortedLots,
                     'has_open' => $sortedLots->contains(fn ($l) => $l->status === 'open'),
                 ];
+            })
+            ->filter(function ($assignment) use ($statusFilter) {
+                if ($statusFilter === 'open' || $statusFilter === 'closed') {
+                    return $assignment['lots']->isNotEmpty();
+                }
+                return true;
             })
             ->sort(function ($a, $b) {
                 $aTime = $a['lots']->first()?->started_at ?? '';
@@ -816,14 +844,6 @@ class AptController extends Controller
                 return strcmp((string) $bTime, (string) $aTime);
             })
             ->values();
-
-        $allAssignedLots = $assignments->flatMap(fn ($a) => $a['lots']);
-        $summary = [
-            'users' => $assignments->count(),
-            'total' => $allAssignedLots->count(),
-            'open' => $allAssignedLots->where('status', 'open')->count(),
-            'closed' => $allAssignedLots->where('status', 'closed')->count(),
-        ];
 
         return view('production.assignments-control', compact('assignments', 'statusFilter', 'search', 'summary'));
     }

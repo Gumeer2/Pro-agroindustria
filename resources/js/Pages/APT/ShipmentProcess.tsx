@@ -2314,7 +2314,17 @@ export default function ShipmentProcess({
                 order={activeSamplingOrder}
                 stowageCount={activeSamplingOrder?.stowage_count || stowageCount}
                 totalSamplesCount={80}
-                onSave={async () => {
+                onSave={async (savedSamples) => {
+                    if (savedSamples && savedSamples.length >= 80 && activeSamplingOrder) {
+                        try {
+                            const targetId = activeSamplingOrder.id || activeSamplingOrder.shipment_order_id || activeSamplingOrder.folio;
+                            if (targetId) {
+                                await axios.patch(route("documentation.shipment-orders.finish-loading", targetId));
+                            }
+                        } catch (e) {
+                            console.error("Error al finalizar orden tras muestreo final:", e);
+                        }
+                    }
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
                 }}

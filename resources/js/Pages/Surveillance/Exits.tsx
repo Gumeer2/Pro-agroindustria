@@ -450,20 +450,23 @@ export default function Exits({
         );
     });
 
-    const inPlantCount = inPlantLogs.filter((l) => (l.current_status || l.status) === "in_plant").length;
-    const pendingCount = inPlantLogs.filter((l) => (l.current_status || l.status) === "pending").length;
+    const inPlantCount = inPlantLogs.filter(
+        (l) => (l.current_status || l.status) === "in_plant" && (l.shipment_orders_data || l.shipment_orders || []).filter((o: any) => o && o.status !== "closed").length > 0
+    ).length;
+    const pendingCount = inPlantLogs.length - inPlantCount;
 
     // 1 row per operator log (never duplicates operators)
     const displayRows = filteredLogs.map((log) => {
-        const isPendingLog = (log.current_status || log.status) === "pending";
         const orders = (log.shipment_orders_data || log.shipment_orders || []).filter(
             (o: any) => o && o.status !== "closed"
         );
+        const hasOrders = orders.length > 0;
+        const isPendingLog = (log.current_status || log.status) === "pending" || !hasOrders;
         const uncompletedOrders = orders.filter(
             (o: any) => !o.is_completed && !o.has_destare && o.destare_status !== "completed" && !o.is_cancelled && o.status !== "cancelled"
         );
         const hasUncompleted = uncompletedOrders.length > 0;
-        const canExit = !isPendingLog && !hasUncompleted;
+        const canExit = !isPendingLog && hasOrders && !hasUncompleted;
 
         return {
             rowKey: `log-${log.id}`,
@@ -476,7 +479,7 @@ export default function Exits({
     });
 
     // Toggle select all in-plant rows (excluding pending units which cannot exit yet)
-    const selectableRowKeys = displayRows.filter((r) => !r.isPendingLog).map((r) => r.rowKey);
+    const selectableRowKeys = displayRows.filter((r) => !r.isPendingLog && r.orders.length > 0).map((r) => r.rowKey);
     const isAllSelected = selectableRowKeys.length > 0 && selectableRowKeys.every((k) => selectedRowKeys.includes(k));
     const toggleSelectAll = () => {
         if (isAllSelected) {
@@ -751,13 +754,19 @@ export default function Exits({
                                                 <td className="px-2 py-2.5 text-center whitespace-nowrap w-10">
                                                     <input
                                                         type="checkbox"
-                                                        disabled={isPendingLog}
-                                                        checked={isChecked && !isPendingLog}
-                                                        onChange={() => !isPendingLog && toggleSelectRow(rowKey)}
+                                                        disabled={isPendingLog || orders.length === 0}
+                                                        checked={isChecked && !isPendingLog && orders.length > 0}
+                                                        onChange={() => !isPendingLog && orders.length > 0 && toggleSelectRow(rowKey)}
                                                         className={`w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 ${
-                                                            isPendingLog ? "opacity-30 cursor-not-allowed bg-gray-100" : "cursor-pointer"
+                                                            isPendingLog || orders.length === 0 ? "opacity-30 cursor-not-allowed bg-gray-100" : "cursor-pointer"
                                                         }`}
-                                                        title={isPendingLog ? "Solo unidades dentro de planta pueden marcar salida" : "Seleccionar"}
+                                                        title={
+                                                            isPendingLog
+                                                                ? "Solo unidades dentro de planta pueden marcar salida"
+                                                                : orders.length === 0
+                                                                ? "Pendiente de escanear orden de embarque"
+                                                                : "Seleccionar"
+                                                        }
                                                     />
                                                 </td>
 
@@ -929,56 +938,54 @@ export default function Exits({
                                                 {/* Column 6: Actions */}
                                                 <td className="px-2 py-2.5 whitespace-nowrap text-center">
                                                     <div className="flex flex-col gap-1 items-stretch justify-center w-32 mx-auto">
-                                                        {isPendingLog ? (
-                                                            <span
-                                                                className="text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg font-black text-[10px] uppercase inline-flex items-center justify-center gap-1 shadow-2xs"
-                                                                title="Operador pendiente de ingresar a planta"
-                                                            >
-                                                                <Clock className="w-3 h-3 text-amber-600" />
-                                                                Por Ingresar
-                                                            </span>
-                                                        ) : !canExit ? (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    const uncompletedFoliosStr = uncompletedOrders
-                                                                        .map((o: any) => o.folio || o.id)
-                                                                        .join(", ");
-                                                                    Swal.fire({
-                                                                        icon: "warning",
-                                                                        title: "Salida Bloqueada por Báscula",
-                                                                        html: `<p class="text-sm font-medium">No se puede registrar la salida del operador <b>${log.subject?.operator_name || log.subject?.name}</b>.</p><div class="text-xs text-amber-900 bg-amber-50 p-3 rounded-xl mt-3 border border-amber-200 text-left"><b>Orden(es) pendiente(s) en báscula / destare:</b><p class="font-bold mt-1 text-slate-800">${uncompletedFoliosStr}</p><p class="mt-2 text-slate-600 font-normal">Debe completarse el proceso de pesaje y destare en báscula antes de autorizar la salida del vehículo.</p></div>`,
-                                                                        confirmButtonColor: "#4f46e5",
-                                                                        confirmButtonText: "Entendido",
-                                                                    });
-                                                                }}
-                                                                className="text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-1 rounded-lg transition-all shadow-2xs font-black text-[10px] uppercase inline-flex items-center justify-center gap-1"
-                                                                title="Salida bloqueada: Órdenes pendientes por completar en báscula"
-                                                            >
-                                                                <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
-                                                                <span>Salida Bloqueada</span>
-                                                            </button>
+                                                        {orders.length === 0 || isPendingLog ? (
+                                                            <span className="text-xs text-slate-400 italic">Sin acciones</span>
                                                         ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => openExitModal([{ log, order: null }])}
-                                                                className="text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded-lg transition-all shadow-xs font-black text-[10px] uppercase inline-flex items-center justify-center gap-1 cursor-pointer"
-                                                            >
-                                                                <LogOut className="w-3 h-3 flex-shrink-0" />
-                                                                <span>Marcar Salida</span>
-                                                            </button>
-                                                        )}
+                                                            <>
+                                                                {!canExit ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const uncompletedFoliosStr = uncompletedOrders
+                                                                                .map((o: any) => o.folio || o.id)
+                                                                                .join(", ");
+                                                                            Swal.fire({
+                                                                                icon: "warning",
+                                                                                title: "Salida Bloqueada por Báscula",
+                                                                                html: `<p class="text-sm font-medium">No se puede registrar la salida del operador <b>${log.subject?.operator_name || log.subject?.name}</b>.</p><div class="text-xs text-amber-900 bg-amber-50 p-3 rounded-xl mt-3 border border-amber-200 text-left"><b>Orden(es) pendiente(s) en báscula / destare:</b><p class="font-bold mt-1 text-slate-800">${uncompletedFoliosStr}</p><p class="mt-2 text-slate-600 font-normal">Debe completarse el proceso de pesaje y destare en báscula antes de autorizar la salida del vehículo.</p></div>`,
+                                                                                confirmButtonColor: "#4f46e5",
+                                                                                confirmButtonText: "Entendido",
+                                                                            });
+                                                                        }}
+                                                                        className="text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-1 rounded-lg transition-all shadow-2xs font-black text-[10px] uppercase inline-flex items-center justify-center gap-1"
+                                                                        title="Salida bloqueada: Órdenes pendientes por completar en báscula"
+                                                                    >
+                                                                        <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                                                                        <span>Salida Bloqueada</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openExitModal([{ log, order: null }])}
+                                                                        className="text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded-lg transition-all shadow-xs font-black text-[10px] uppercase inline-flex items-center justify-center gap-1 cursor-pointer"
+                                                                    >
+                                                                        <LogOut className="w-3 h-3 flex-shrink-0" />
+                                                                        <span>Marcar Salida</span>
+                                                                    </button>
+                                                                )}
 
-                                                        {/* Botón Cancelar Entrada */}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleCancelEntry(log)}
-                                                            className="text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition-all shadow-2xs hover:shadow-xs font-bold text-[10px] uppercase inline-flex items-center justify-center gap-1 cursor-pointer"
-                                                            title="Cancelar entrada de este operador y borrar registro de planta"
-                                                        >
-                                                            <Ban className="w-3 h-3 flex-shrink-0" />
-                                                            <span>Cancelar Entrada</span>
-                                                        </button>
+                                                                {/* Botón Cancelar Entrada */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCancelEntry(log)}
+                                                                    className="text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 px-2 py-1 rounded-lg transition-all shadow-2xs hover:shadow-xs font-bold text-[10px] uppercase inline-flex items-center justify-center gap-1 cursor-pointer"
+                                                                    title="Cancelar entrada de este operador y borrar registro de planta"
+                                                                >
+                                                                    <Ban className="w-3 h-3 flex-shrink-0" />
+                                                                    <span>Cancelar Entrada</span>
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

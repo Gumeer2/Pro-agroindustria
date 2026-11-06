@@ -34,9 +34,6 @@ export default function ProductionActivity({ auth, registration }: { auth: any; 
                     <header className="mb-4 bg-gradient-to-r from-slate-900 to-blue-900 px-5 py-2 text-2xl font-black uppercase tracking-wide text-white shadow-lg">
                         Gestión de la producción
                     </header>
-                    <nav className="mb-6 grid max-w-sm grid-cols-1 gap-2">
-                        <span className="rounded-xl bg-sky-600 px-4 py-3 text-center font-black uppercase text-white shadow">Generación de lote</span>
-                    </nav>
                     <div className="grid gap-6 lg:grid-cols-[minmax(0,780px)_330px]">
                         <section className="space-y-3 rounded-[3rem] bg-slate-200 p-5">
                             <DataSection title="Personal a cargo">

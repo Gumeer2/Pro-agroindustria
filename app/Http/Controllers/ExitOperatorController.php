@@ -20,25 +20,69 @@ class ExitOperatorController extends Controller
 
         $query = ExitOperator::query();
 
-        if ($request->has('search')) {
-            $search = $request->input('search');
-            $query->where(function ($q) use ($search) {
+        if ($request->filled('search')) {
+            $search = trim($request->input('search'));
+            $cleanSearch = preg_replace('/[^a-zA-Z0-9]/', '', $search);
+            $matchedClientIds = Client::where('business_name', 'like', "%{$search}%")
+                ->orWhere('rfc', 'like', "%{$search}%")
+                ->pluck('id');
+
+            $query->where(function ($q) use ($search, $cleanSearch, $matchedClientIds) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('id', 'like', "%{$search}%")
+                    ->orWhere('license', 'like', "%{$search}%")
                     ->orWhere('transport_line', 'like', "%{$search}%")
-                    ->orWhere('tractor_plate', 'like', "%{$search}%");
+                    ->orWhere('real_transport_line', 'like', "%{$search}%")
+                    ->orWhere('tractor_plate', 'like', "%{$search}%")
+                    ->orWhere('trailer_plate', 'like', "%{$search}%")
+                    ->orWhere('economic_number', 'like', "%{$search}%")
+                    ->orWhere('brand_model', 'like', "%{$search}%")
+                    ->orWhere('unit_type', 'like', "%{$search}%")
+                    ->orWhereHas('clients', function ($sub) use ($search) {
+                        $sub->where('business_name', 'like', "%{$search}%")
+                            ->orWhere('rfc', 'like', "%{$search}%");
+                    });
+
+                if ($matchedClientIds->isNotEmpty()) {
+                    $cIds = $matchedClientIds->toArray();
+                    $q->orWhereHas('clients', function ($sub) use ($cIds) {
+                        $sub->whereIn('clients.id', $cIds);
+                    });
+                    foreach ($cIds as $cid) {
+                        $q->orWhereJsonContains('client_ids', (int)$cid)
+                          ->orWhereJsonContains('client_ids', (string)$cid);
+                    }
+                }
+
+                if (!empty($cleanSearch) && strlen($cleanSearch) >= 3) {
+                    $q->orWhereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') LIKE ?", ["%{$cleanSearch}%"])
+                      ->orWhereRaw("REPLACE(REPLACE(trailer_plate, '-', ''), ' ', '') LIKE ?", ["%{$cleanSearch}%"]);
+                }
             });
         }
 
-        if ($request->has('status')) {
+        if ($request->filled('client_id') && $request->input('client_id') !== 'all') {
+            $clientId = (int)$request->input('client_id');
+            $query->where(function ($q) use ($clientId) {
+                $q->whereHas('clients', function ($sub) use ($clientId) {
+                    $sub->where('clients.id', $clientId);
+                })
+                ->orWhereJsonContains('client_ids', $clientId)
+                ->orWhereJsonContains('client_ids', (string)$clientId);
+            });
+        }
+
+        if ($request->filled('status') && $request->input('status') !== 'all') {
             $query->where('status', $request->input('status'));
         }
 
         $operators = $query->with('clients')->orderBy('created_at', 'desc')->paginate(10);
+        $clientsList = Client::orderBy('business_name')->get(['id', 'business_name']);
 
         return Inertia::render('Documentation/ExitOperators/Index', [
             'operators' => $operators,
-            'filters' => $request->only(['search', 'status']),
+            'clients' => $clientsList,
+            'filters' => $request->only(['search', 'status', 'client_id']),
         ]);
     }
 

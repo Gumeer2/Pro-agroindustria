@@ -1963,11 +1963,14 @@ class DocumentationController extends Controller
             }
         }
 
+        $now = now();
+        $isFinalSave = $isCompleted && ($request->boolean('is_completed') || count($samples) >= 80);
+
         $updateData = [
             'samples' => $samples,
             'sampling_avg' => $avg,
             'sampling_status' => $isCompleted ? 'completed' : ($sampleCount > 0 ? 'in_progress' : 'pending'),
-            'sampling_completed_at' => $isCompleted ? ($history->sampling_completed_at ?? now()) : null,
+            'sampling_completed_at' => $isCompleted ? ($history->sampling_completed_at ?? $now) : null,
             'updated_by' => auth()->id(),
         ];
 
@@ -1977,6 +1980,12 @@ class DocumentationController extends Controller
 
         if ($stowageCount !== null && $stowageCount !== '') {
             $updateData['stowage_count'] = (int)$stowageCount;
+        }
+
+        // Al certificar y guardar el muestreo final (80/80), terminar el proceso de carga
+        if ($isFinalSave) {
+            $updateData['finished_at'] = $history->finished_at ?? $now;
+            $updateData['status'] = 'completed';
         }
 
         $history->update($updateData);
@@ -1990,6 +1999,10 @@ class DocumentationController extends Controller
             ];
             if ($request->has('is_blocked')) {
                 $orderUpdate['is_sampling_blocked'] = $request->boolean('is_blocked');
+            }
+            if ($isFinalSave) {
+                $orderUpdate['loading_finished_at'] = $order->loading_finished_at ?? $now;
+                $orderUpdate['status'] = 'loading';
             }
             $order->update($orderUpdate);
         }
@@ -2374,7 +2387,13 @@ class DocumentationController extends Controller
 
     public function finishLoading(string $id)
     {
-        $order = ShipmentOrder::find($id);
+        $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
+        if (!$order) {
+            $loadingOrder = \App\Models\LoadingOrder::where('id', $id)->orWhere('folio', $id)->first();
+            if ($loadingOrder && $loadingOrder->shipment_order) {
+                $order = $loadingOrder->shipment_order;
+            }
+        }
         $history = null;
 
         if ($order) {
@@ -2394,13 +2413,13 @@ class DocumentationController extends Controller
         if ($order) {
             $order->update([
                 'status' => 'loading',
-                'loading_finished_at' => $now,
+                'loading_finished_at' => $order->loading_finished_at ?? $now,
             ]);
         }
 
         if ($history) {
             $history->update([
-                'finished_at' => $now,
+                'finished_at' => $history->finished_at ?? $now,
                 'status' => 'completed',
             ]);
         }

@@ -47,9 +47,11 @@ interface PageProps {
         to: number;
         total: number;
     };
+    clients?: Array<{ id: number; business_name: string }>;
     filters: {
         search?: string;
         status?: string;
+        client_id?: string | number;
     };
     auth: {
         user: any;
@@ -64,11 +66,25 @@ export default function Index({
     auth,
     operators,
     filters,
+    clients = [],
 }: PageProps) {
     const { flash } = usePage<any>().props;
     const [search, setSearch] = useState(filters.search || "");
-    const [status, setStatus] = useState(filters.status || "active");
+    const [status, setStatus] = useState(filters.status || "all");
+    const [clientId, setClientId] = useState(filters.client_id ? String(filters.client_id) : "all");
     const [showAlert, setShowAlert] = useState(!!flash?.success);
+
+    useEffect(() => {
+        setSearch(filters.search || "");
+    }, [filters.search]);
+
+    useEffect(() => {
+        setStatus(filters.status || "all");
+    }, [filters.status]);
+
+    useEffect(() => {
+        setClientId(filters.client_id ? String(filters.client_id) : "all");
+    }, [filters.client_id]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -78,11 +94,17 @@ export default function Index({
         }
     }, [flash?.success]);
 
-    const applyFilters = (newParams: Partial<PageProps["filters"] & { page?: string | number }>) => {
+    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearch(e.target.value);
+    };
+
+    const handleClearSearch = () => {
+        setSearch("");
         const params = pickBy({
-            search,
-            status,
-            ...newParams,
+            search: undefined,
+            status: status !== "all" ? status : undefined,
+            client_id: clientId !== "all" ? clientId : undefined,
+            page: 1,
         });
         router.get(route("documentation.exit-operators.index"), params as any, {
             preserveState: true,
@@ -90,18 +112,50 @@ export default function Index({
         });
     };
 
-    const handleSearch = (e: React.FormEvent) => {
+    const handleSearchSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        applyFilters({ page: 1 });
+        const params = pickBy({
+            search: search ? search.trim() : undefined,
+            status: status !== "all" ? status : undefined,
+            client_id: clientId !== "all" ? clientId : undefined,
+            page: 1,
+        });
+        router.get(route("documentation.exit-operators.index"), params as any, {
+            preserveState: true,
+            preserveScroll: true,
+        });
     };
 
     const handleFilterChange = (key: string, value: string) => {
+        const newStatus = key === "status" ? value : status;
+        const newClientId = key === "client_id" ? value : clientId;
+
         if (key === "status") setStatus(value);
-        applyFilters({ [key]: value, page: 1 });
+        if (key === "client_id") setClientId(value);
+
+        const params = pickBy({
+            search: search ? search.trim() : undefined,
+            status: newStatus !== "all" ? newStatus : undefined,
+            client_id: newClientId !== "all" ? newClientId : undefined,
+            page: 1,
+        });
+        router.get(route("documentation.exit-operators.index"), params as any, {
+            preserveState: true,
+            preserveScroll: true,
+        });
     };
 
     const handlePageChange = (pageNum: string | number) => {
-        applyFilters({ page: pageNum });
+        const params = pickBy({
+            search: search ? search.trim() : undefined,
+            status: status !== "all" ? status : undefined,
+            client_id: clientId !== "all" ? clientId : undefined,
+            page: pageNum,
+        });
+        router.get(route("documentation.exit-operators.index"), params as any, {
+            preserveState: true,
+            preserveScroll: true,
+        });
     };
 
     return (
@@ -160,7 +214,7 @@ export default function Index({
                 {/* Filters & Actions */}
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col lg:flex-row justify-between items-center gap-4">
                     <form
-                        onSubmit={handleSearch}
+                        onSubmit={handleSearchSubmit}
                         className="relative w-full lg:w-96"
                     >
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -168,16 +222,39 @@ export default function Index({
                         </div>
                         <input
                             type="text"
-                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-shadow"
-                            placeholder="Buscar por nombre, línea, placas..."
+                            className="block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-shadow"
+                            placeholder="Buscar por nombre, línea, placas, cliente..."
                             value={search}
-                            onChange={(
-                                e: React.ChangeEvent<HTMLInputElement>,
-                            ) => setSearch(e.target.value)}
+                            onChange={handleSearchChange}
                         />
+                        {search && (
+                            <button
+                                type="button"
+                                onClick={handleClearSearch}
+                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+                                title="Limpiar búsqueda"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        )}
                     </form>
 
                     <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+                        <select
+                            value={clientId}
+                            onChange={(
+                                e: React.ChangeEvent<HTMLSelectElement>,
+                            ) => handleFilterChange("client_id", e.target.value)}
+                            className="block w-full sm:w-64 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-lg"
+                        >
+                            <option value="all">Todos los Clientes</option>
+                            {clients?.map((client) => (
+                                <option key={client.id} value={client.id}>
+                                    {client.business_name}
+                                </option>
+                            ))}
+                        </select>
+
                         <select
                             value={status}
                             onChange={(
@@ -185,6 +262,7 @@ export default function Index({
                             ) => handleFilterChange("status", e.target.value)}
                             className="block w-full sm:w-48 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-lg"
                         >
+                            <option value="all">Todos los Estados</option>
                             <option value="active">Activos</option>
                             <option value="vetoed">Vetados</option>
                         </select>

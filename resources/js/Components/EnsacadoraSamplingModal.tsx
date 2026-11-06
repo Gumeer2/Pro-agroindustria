@@ -668,8 +668,8 @@ export default function EnsacadoraSamplingModal({
             }
             Swal.fire({
                 icon: "success",
-                title: "¡Muestreo Completado y Guardado!",
-                html: "Se han guardado las <b>80 muestras</b> en la base de datos con éxito.<br/><br/>Muestreo finalizado y certificado.",
+                title: "¡Muestreo Completado y Proceso Finalizado!",
+                html: "Se han guardado las <b>80 muestras</b> en la base de datos con éxito.<br/><br/>El proceso de carga ha finalizado correctamente y la unidad ya puede <b>destarar en báscula</b>.",
                 confirmButtonColor: "#16a34a",
                 confirmButtonText: "Aceptar",
             });

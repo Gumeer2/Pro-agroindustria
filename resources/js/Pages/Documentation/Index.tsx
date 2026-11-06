@@ -21,10 +21,10 @@ export default function Index({ auth }: { auth: any }) {
             hover: "hover:border-amber-500",
         },
         {
-            name: "Operadores de Salida",
+            name: "Registro de Operadores de Salida",
             icon: Anchor, // or another icon like Users
             href: route("documentation.exit-operators.index"),
-            description: "Registro de operadores de salida, lista de operadores y qr de operadores.",
+            description: "Asignación de cliente a operador, lista de operadores y QR de operadores.",
             color: "bg-indigo-50 text-indigo-600",
             hover: "hover:border-indigo-500",
         },

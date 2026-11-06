@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Gestión de la Producción</title>
-    <link rel="icon" type="image/png" href="{{ '/Proagro.png' }}">
-    <link rel="shortcut icon" type="image/png" href="{{ '/Proagro.png' }}">
-    <link rel="apple-touch-icon" href="{{ '/Proagro.png' }}">
+    <link rel="icon" type="image/png" href="{{ asset('Proagro.png') }}">
+    <link rel="shortcut icon" type="image/png" href="{{ asset('Proagro.png') }}">
+    <link rel="apple-touch-icon" href="{{ asset('Proagro.png') }}">
     <!-- Fonts & Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -1125,25 +1125,27 @@
     <div class="shell">
     <header class="hero">
         <div class="hero-brand">
-            <img src="{{ '/Proagro.png' }}" alt="Proagroindustria">
+            <img src="{{ asset('Proagro.png') }}" alt="Proagroindustria">
             <div>
                 <p class="hero-kicker">Módulo operativo · APT</p>
                 <h1>Gestión de la producción</h1>
             </div>
         </div>
-        <div class="hero-meta">
-            <span class="chip chip-solid">Generación de lote</span>
-        </div>
     </header>
     @php
-        $selectedLots = ($registration?->lots?->isNotEmpty()
+        $allAssignedLots = ($registration?->lots?->isNotEmpty()
             ? $registration->lots
             : ($registration?->lot ? collect([$registration->lot]) : collect()))
-            ->filter()
+            ->filter();
+
+        // Mostrar únicamente los lotes que NO han sido finalizados en este turno
+        $selectedLots = $allAssignedLots
+            ->filter(fn ($lot) => ($lot->pivot?->status ?? 'open') !== 'closed' && empty($lot->pivot?->closed_at))
             ->sortBy(fn ($lot) => (string) $lot->folio)
             ->values();
+
         $requestedLotId = (string) ($selectedLotId ?? request('lot_id', ''));
-        $activeLot = $selectedLots->firstWhere('id', $requestedLotId) ?: ($selectedLots->count() === 1 ? $selectedLots->first() : null);
+        $activeLot = $selectedLots->firstWhere('id', $requestedLotId) ?: ($selectedLots->isNotEmpty() ? $selectedLots->first() : null);
         $hasActiveLot = ($registration && $selectedLots->isNotEmpty());
     @endphp
 
@@ -1616,35 +1618,58 @@
         });
 
         const finishShiftButton = document.querySelector('[data-finish-shift]');
-        finishShiftButton?.addEventListener('click', () => {
-            if (!activityLot) return;
+        finishShiftButton?.addEventListener('click', async () => {
+            if (!activityLot || !activityLot.value) {
+                showProductionToast('No hay un lote seleccionado para finalizar.', 'error');
+                return;
+            }
 
-            const validOptions = Array.from(activityLot.options).filter(opt => opt.value !== '');
-            const pendingLotOption = validOptions.find(opt => (opt.dataset.status || 'open') !== 'closed');
+            const currentFolio = activityLot.options[activityLot.selectedIndex]?.textContent?.trim() || 'este lote';
+            if (typeof askProductionConfirmation === 'function') {
+                if (!(await askProductionConfirmation(`¿Deseas finalizar el turno para el lote "${currentFolio}"?`, 'Finalizar turno', 'Confirmar fin de turno'))) {
+                    return;
+                }
+            }
 
-            if (pendingLotOption) {
-                activityLot.value = pendingLotOption.value;
-                syncActivityLot();
-                activityLot.dispatchEvent(new Event('change'));
-                activityLot.focus();
-                activityLot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            finishShiftButton.disabled = true;
+            const originalBtnHtml = finishShiftButton.innerHTML;
+            finishShiftButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Finalizando...';
 
-                const folio = pendingLotOption.textContent.trim();
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const currentPath = window.location.pathname.replace(/\/apt\/(management|production)\/activity\/?$/, '');
+            const closeUrl = `${currentPath}/apt/management/activity/lot/${encodeURIComponent(shiftId)}/${encodeURIComponent(activityLot.value)}/close`;
+
+            try {
+                const response = await fetch(closeUrl, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-TOKEN': csrf,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(result.message || `No se pudo finalizar el lote (${response.status}).`);
+                }
+
                 showProductionToast(
-                    `El lote "${folio}" aún se encuentra abierto. Primero se necesita tener cerrado los lotes para poder finalizar el turno.`,
-                    'error',
-                    'Lote pendiente'
-                );
-            } else {
-                showProductionToast(
-                    'Todos los lotes del turno han sido cerrados correctamente. Finalizando turno y redirigiendo al inicio...',
+                    `Lote "${currentFolio}" finalizado correctamente. Actualizando...`,
                     'success',
                     'Turno finalizado'
                 );
 
                 setTimeout(() => {
-                    window.location.href = "{{ route('dashboard') }}";
-                }, 1000);
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('lot_id');
+                    window.location.href = url.toString();
+                }, 700);
+            } catch (err) {
+                finishShiftButton.disabled = false;
+                finishShiftButton.innerHTML = originalBtnHtml;
+                showProductionToast(err.message || 'Error al finalizar el turno.', 'error');
             }
         });
 
