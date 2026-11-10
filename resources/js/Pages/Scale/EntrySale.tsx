@@ -220,12 +220,14 @@ export default function EntrySale({
 
         } catch (error: any) {
             console.error("Search error:", error);
+            const errorTitle =
+                error.response?.data?.title || "Búsqueda Fallida";
             const errorMessage =
                 error.response?.data?.error || "Orden no encontrada.";
 
             Swal.fire({
                 icon: "warning",
-                title: "Búsqueda Fallida",
+                title: errorTitle,
                 text: errorMessage,
                 confirmButtonColor: "#4f46e5",
             });

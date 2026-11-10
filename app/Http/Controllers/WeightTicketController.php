@@ -473,11 +473,23 @@ class WeightTicketController extends Controller
         $activeLots = \App\Models\Lot::where('status', 'open')->orderBy('created_at', 'desc')->get(['id', 'folio', 'observations']);
         $documenters = \App\Models\User::role('Documentador')->where('is_blocked', false)->orderBy('name')->get(['id', 'name']);
 
+        $packagingTypes = \App\Models\ExitOperatorType::orderBy('name')->pluck('name')->filter()->values()->toArray();
+        $defaultTypes = ['PRO-AGRO', 'FERTINAL'];
+        foreach ($defaultTypes as $dt) {
+            if (!in_array($dt, $packagingTypes)) {
+                $packagingTypes[] = $dt;
+            }
+        }
+        if (!empty($order->weight_ticket->packaging_type) && $order->weight_ticket->packaging_type !== 'N/A' && !in_array($order->weight_ticket->packaging_type, $packagingTypes)) {
+            $packagingTypes[] = $order->weight_ticket->packaging_type;
+        }
+
         return Inertia::render('Scale/Tickets/Edit', [
             'ticket' => $order->weight_ticket,
             'order' => $order,
             'active_lots' => $activeLots,
-            'documenters' => $documenters
+            'documenters' => $documenters,
+            'packaging_types' => $packagingTypes,
         ]);
     }
 
@@ -709,8 +721,35 @@ class WeightTicketController extends Controller
             $q->where('weighing_status', '!=', 'cancelled');
         })
             ->where('status', '!=', 'cancelled')
+            ->whereHas('accessLogs', function ($q) {
+                $q->where(function ($sq) {
+                    $sq->where('access_logs.status', 'in_plant')
+                       ->orWhereNotNull('access_logs.entry_at');
+                })
+                ->whereNull('access_logs.exit_at')
+                ->whereNotNull('access_logs.subject_id');
+            })
+            ->with(['accessLogs' => function ($q) {
+                $q->where(function ($sq) {
+                    $sq->where('access_logs.status', 'in_plant')
+                       ->orWhereNotNull('access_logs.entry_at');
+                })
+                ->whereNull('access_logs.exit_at')
+                ->whereNotNull('access_logs.subject_id')
+                ->with('subject')
+                ->latest('access_logs.id');
+            }])
             ->orderBy('created_at', 'desc')
-            ->get(['id', 'folio', 'operator_name']);
+            ->get()
+            ->map(function ($order) {
+                $assignedOp = $order->accessLogs->first()?->subject;
+                $opName = $order->operator_name ?: ($assignedOp?->name ?? 'S/A');
+                return [
+                    'id' => $order->id,
+                    'folio' => $order->folio,
+                    'operator_name' => $opName,
+                ];
+            });
 
         return Inertia::render('Scale/EntrySale', [
             'active_scale_id' => (int) $scaleId,
@@ -781,6 +820,106 @@ class WeightTicketController extends Controller
                 ?? $order->lot?->warehouse
                 ?? 'N/A';
 
+            // Presentation resolution
+            $presentation = $order->shipment_order?->presentation
+                ?? $order->presentation
+                ?? 'GRANEL';
+
+            // Find linked ClientOperatorAssignment or ExitOperator to obtain 'type' for ENVASADO
+            $linkedSalesOrderId = $order->sales_order_id ?? $order->shipment_order?->sales_order_id;
+            $candidateOperatorIds = [];
+            if ($order->exit_operator_id) {
+                $candidateOperatorIds[] = $order->exit_operator_id;
+            }
+            $opNames = array_filter([
+                $order->operator_name,
+                $order->shipment_order?->operator_name,
+                $order->driver?->name,
+            ]);
+            foreach ($opNames as $name) {
+                $ids = \App\Models\ExitOperator::where('name', $name)->pluck('id')->toArray();
+                foreach ($ids as $idVal) {
+                    if (!in_array($idVal, $candidateOperatorIds)) {
+                        $candidateOperatorIds[] = $idVal;
+                    }
+                }
+            }
+            $cleanPlate = preg_replace('/[^A-Za-z0-9]/', '', $order->tractor_plate ?? $order->shipment_order?->tractor_plate ?? '');
+            if (!empty($cleanPlate)) {
+                $plateIds = \App\Models\ExitOperator::whereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') = ?", [$cleanPlate])->pluck('id')->toArray();
+                foreach ($plateIds as $pid) {
+                    if (!in_array($pid, $candidateOperatorIds)) {
+                        $candidateOperatorIds[] = $pid;
+                    }
+                }
+            }
+
+            $assignment = null;
+            if (!empty($order->id)) {
+                $assignment = \App\Models\ClientOperatorAssignment::where('loading_order_id', $order->id)->first();
+            }
+            if (!$assignment && $linkedSalesOrderId) {
+                $assignmentQuery = \App\Models\ClientOperatorAssignment::where('sales_order_id', $linkedSalesOrderId);
+                if (!empty($candidateOperatorIds)) {
+                    $assignmentQuery->whereIn('operator_id', $candidateOperatorIds);
+                }
+                $assignment = (clone $assignmentQuery)
+                    ->where(function ($q) use ($order) {
+                        $q->whereNull('destare_status')
+                          ->orWhere('destare_status', 'pending')
+                          ->orWhere('loading_order_id', $order->id);
+                    })
+                    ->latest('updated_at')
+                    ->first();
+
+                if (!$assignment) {
+                    $assignment = $assignmentQuery->latest('updated_at')->first();
+                }
+            }
+            if (!$assignment && !empty($candidateOperatorIds)) {
+                $assignment = \App\Models\ClientOperatorAssignment::whereIn('operator_id', $candidateOperatorIds)
+                    ->latest('updated_at')
+                    ->first();
+            }
+
+            if ($presentation === 'GRANEL' && !empty($assignment?->presentation)) {
+                $presentation = $assignment->presentation;
+            } elseif ($presentation === 'GRANEL' && !empty($candidateOperatorIds)) {
+                $opPres = \App\Models\ExitOperator::whereIn('id', $candidateOperatorIds)->whereNotNull('presentation')->value('presentation');
+                if ($opPres) {
+                    $presentation = $opPres;
+                }
+            }
+
+            $isEnvasado = mb_strtoupper(trim($presentation), 'UTF-8') === 'ENVASADO';
+
+            // Detected packaging type from assignment / operator
+            $detectedType = null;
+            if ($isEnvasado) {
+                $detectedType = $assignment?->type;
+                if (!$detectedType && !empty($candidateOperatorIds)) {
+                    $detectedType = \App\Models\ExitOperator::whereIn('id', $candidateOperatorIds)
+                        ->whereNotNull('type')
+                        ->where('type', '!=', '')
+                        ->latest('updated_at')
+                        ->value('type');
+                }
+                if (!$detectedType) {
+                    $obsToScan = ($order->observations ?? '') . ' ' . ($order->shipment_order?->observations ?? '');
+                    if (preg_match('/TIPO DE SACO:\s*([^,\r\n;\s]+)/i', $obsToScan, $matches)) {
+                        $detectedType = trim($matches[1]);
+                    }
+                }
+            }
+
+            // Determine packaging_type for orderData
+            $packagingType = 'N/A';
+            if (!empty($order->weight_ticket?->packaging_type) && $order->weight_ticket->packaging_type !== 'N/A') {
+                $packagingType = $order->weight_ticket->packaging_type;
+            } elseif ($isEnvasado && !empty($detectedType)) {
+                $packagingType = $detectedType;
+            }
+
             $orderData = [
                 'id' => $order->id,
                 'folio' => $order->folio,
@@ -802,7 +941,8 @@ class WeightTicketController extends Controller
                 'consignee' => $order->consignee ?? ($order->consigned_to ?? ''),
                 'programmed_weight' => $progWeight,
                 'type' => $order->shipment_order_id ? 'sale' : 'vessel',
-                'presentation' => $order->shipment_order?->presentation ?? 'GRANEL', // Crucial for dynamic validation
+                'presentation' => $presentation,
+                'packaging_type' => $packagingType,
                 'programmed_tons' => $order->shipment_order->programmed_tons ?? 0,
                 'oe_folio' => $order->shipment_order?->folio ?? null,
                 'observations' => $order->observations ?? '',
@@ -828,11 +968,23 @@ class WeightTicketController extends Controller
 
         $scaleId = $request->input('scale_id') ?? $request->cookie('selected_scale_id') ?? 1;
 
+        $packagingTypes = \App\Models\ExitOperatorType::orderBy('name')->pluck('name')->filter()->values()->toArray();
+        $defaultTypes = ['PRO-AGRO', 'FERTINAL'];
+        foreach ($defaultTypes as $dt) {
+            if (!in_array($dt, $packagingTypes)) {
+                $packagingTypes[] = $dt;
+            }
+        }
+        if (!empty($packagingType) && $packagingType !== 'N/A' && !in_array($packagingType, $packagingTypes)) {
+            $packagingTypes[] = $packagingType;
+        }
+
         return Inertia::render('Scale/ExitMP', [
             'order' => $orderData,
             'active_scale_id' => (int) $scaleId,
             'active_lots' => $activeLots,
             'documenters' => $documenters,
+            'packaging_types' => $packagingTypes,
         ]);
     }
 
@@ -859,6 +1011,32 @@ class WeightTicketController extends Controller
             return response()->json(['error' => 'Esta orden ya tiene un ticket de báscula activo generado.'], 403);
         }
 
+        // VALIDATION: Must be scanned and assigned to an operator in Surveillance
+        $activeAccessLog = $order->accessLogs()
+            ->where(function ($q) {
+                $q->where('access_logs.status', 'in_plant')
+                  ->orWhereNotNull('access_logs.entry_at');
+            })
+            ->whereNull('access_logs.exit_at')
+            ->whereNotNull('access_logs.subject_id')
+            ->with('subject')
+            ->latest('access_logs.id')
+            ->first();
+
+        if (!$activeAccessLog || !$activeAccessLog->subject) {
+            return response()->json([
+                'title' => 'Sin Entrada en Vigilancia',
+                'error' => "ALERTA: La orden de embarque '{$order->folio}' no se puede tarar porque aún no ha sido escaneada ni asignada a un operador en Vigilancia. Debe registrar su entrada en Vigilancia antes de realizar el pesaje de tara."
+            ], 422);
+        }
+
+        if (isset($activeAccessLog->subject->status) && $activeAccessLog->subject->status === 'vetoed') {
+            return response()->json([
+                'title' => 'Operador Vetado',
+                'error' => "ALERTA: El operador '{$activeAccessLog->subject->name}' asignado a esta orden en Vigilancia se encuentra VETADO."
+            ], 403);
+        }
+
         // Calculate Programmed Weight and Product from Items or Direct Columns
         $programmedWeight = 0;
 
@@ -879,31 +1057,42 @@ class WeightTicketController extends Controller
 
         $productId = $order->items->first()?->product_id;
 
-        // Flexible matching for ExitOperator
-        $operatorName = trim($order->operator_name);
-        $tractorPlate = preg_replace('/[^A-Za-z0-9]/', '', $order->tractor_plate);
+        // Operator resolution: prioritize operator assigned in Vigilancia
+        $exitOperator = null;
+        if ($activeAccessLog->subject instanceof \App\Models\ExitOperator) {
+            $exitOperator = $activeAccessLog->subject;
+        }
 
-        $exitOperator = \App\Models\ExitOperator::where('name', 'like', "%{$operatorName}%")
-            ->get()
-            ->filter(function ($op) use ($tractorPlate) {
-                $opPlate = preg_replace('/[^A-Za-z0-9]/', '', $op->tractor_plate);
-                return $opPlate === $tractorPlate;
-            })
-            ->first();
+        if (!$exitOperator) {
+            $operatorName = trim($order->operator_name);
+            $tractorPlate = preg_replace('/[^A-Za-z0-9]/', '', $order->tractor_plate);
+
+            $exitOperator = \App\Models\ExitOperator::where('name', 'like', "%{$operatorName}%")
+                ->get()
+                ->filter(function ($op) use ($tractorPlate) {
+                    $opPlate = preg_replace('/[^A-Za-z0-9]/', '', $op->tractor_plate);
+                    return $opPlate === $tractorPlate;
+                })
+                ->first();
+        }
 
         $operatorId = $exitOperator?->id;
-        $transportLine = $exitOperator?->real_transport_line ?? ($order->transport_company ?? ($order->transporter->name ?? 'N/A'));
+        $operatorName = $exitOperator?->name ?? ($order->operator_name ?: 'N/A');
+        $tractorPlate = $exitOperator?->tractor_plate ?? ($order->tractor_plate ?: 'N/A');
+        $trailerPlate = $exitOperator?->trailer_plate ?? ($order->trailer_plate ?: 'N/A');
+        $transportLine = $exitOperator?->real_transport_line ?? ($exitOperator?->transport_line ?? ($order->transport_company ?? ($order->transporter->name ?? 'N/A')));
+        $economicNumber = $exitOperator?->economic_number ?? ($order->economic_number ?? 'N/A');
 
         return response()->json([
             'id' => $order->id,
             'folio' => $order->folio,
             'provider' => $order->client->business_name ?? ($order->client->name ?? 'N/A'),
-            'driver' => $order->operator_name ?? 'N/A',
-            'vehicle_plate' => $order->tractor_plate ?? 'N/A',
-            'trailer_plate' => $order->trailer_plate ?? 'N/A',
-            'vehicle_type' => $order->unit_type ?? 'N/A',
+            'driver' => $operatorName,
+            'vehicle_plate' => $tractorPlate,
+            'trailer_plate' => $trailerPlate,
+            'vehicle_type' => $order->unit_type ?? ($exitOperator?->unit_type ?? 'N/A'),
             'transport_line' => $transportLine,
-            'economic_number' => $order->economic_number ?? 'N/A',
+            'economic_number' => $economicNumber,
             'product' => $productName,
             'product_id' => $productId,
             'exit_operator_id' => $operatorId,
@@ -915,7 +1104,7 @@ class WeightTicketController extends Controller
             'withdrawal_letter' => $order->sale_order_folio ?? '',
             'presentation' => $order->presentation ?? 'GRANEL', // Crucial for dynamic validation
             'programmed_weight' => $programmedWeight,
-            'unit_type' => $order->unit_type ?? 'N/A', // Unified for frontend
+            'unit_type' => $order->unit_type ?? ($exitOperator?->unit_type ?? 'N/A'), // Unified for frontend
             'linked_full_info' => \App\Models\WeightTicket::where('companion_shipment_order_id', $order->id)
                 ->where('weighing_status', '!=', 'cancelled')
                 ->latest()
@@ -1148,10 +1337,61 @@ class WeightTicketController extends Controller
             'full_part' => 'nullable|string|in:primera,segunda',
         ]);
 
-        try {
-            DB::transaction(function () use ($validated) {
-                $shipmentOrderId = !empty($validated['shipment_order_id']) ? $validated['shipment_order_id'] : null;
+        $shipmentOrderId = !empty($validated['shipment_order_id']) ? $validated['shipment_order_id'] : null;
+        $shipmentOrder = null;
 
+        if ($shipmentOrderId) {
+            $shipmentOrder = \App\Models\ShipmentOrder::find($shipmentOrderId);
+            if ($shipmentOrder) {
+                // Check if already has an active ticket
+                $existingTicket = \App\Models\WeightTicket::where('shipment_order_id', $shipmentOrderId)
+                    ->where('weighing_status', '!=', 'cancelled')
+                    ->exists();
+                if ($existingTicket) {
+                    return back()->withErrors(['error' => "OPERACIÓN BLOQUEADA: La orden de embarque '{$shipmentOrder->folio}' ya cuenta con un ticket de báscula activo."]);
+                }
+
+                // Check Surveillance scan & operator assignment
+                $hasSurveillanceAccess = $shipmentOrder->accessLogs()
+                    ->where(function ($q) {
+                        $q->where('access_logs.status', 'in_plant')
+                           ->orWhereNotNull('access_logs.entry_at');
+                    })
+                    ->whereNull('access_logs.exit_at')
+                    ->whereNotNull('access_logs.subject_id')
+                    ->exists();
+
+                if (!$hasSurveillanceAccess) {
+                    return back()->withErrors([
+                        'error' => "OPERACIÓN BLOQUEADA: La orden de embarque '{$shipmentOrder->folio}' no puede tararse porque aún no ha sido escaneada ni asignada a un operador en Vigilancia."
+                    ]);
+                }
+            }
+        }
+
+        $companionShipmentOrderId = !empty($validated['companion_shipment_order_id']) ? $validated['companion_shipment_order_id'] : null;
+        if ($companionShipmentOrderId) {
+            $companionOrder = \App\Models\ShipmentOrder::find($companionShipmentOrderId);
+            if ($companionOrder) {
+                $hasCompanionAccess = $companionOrder->accessLogs()
+                    ->where(function ($q) {
+                        $q->where('access_logs.status', 'in_plant')
+                           ->orWhereNotNull('access_logs.entry_at');
+                    })
+                    ->whereNull('access_logs.exit_at')
+                    ->whereNotNull('access_logs.subject_id')
+                    ->exists();
+
+                if (!$hasCompanionAccess) {
+                    return back()->withErrors([
+                        'error' => "OPERACIÓN BLOQUEADA: La orden complementaria '{$companionOrder->folio}' no puede tararse porque aún no ha sido escaneada ni asignada a un operador en Vigilancia."
+                    ]);
+                }
+            }
+        }
+
+        try {
+            DB::transaction(function () use ($validated, $shipmentOrderId, $shipmentOrder) {
                 // Retrieve Sales Order ID from Shipment Order if possible
                 $salesOrderId = null;
                 if ($shipmentOrderId) {
@@ -1165,6 +1405,30 @@ class WeightTicketController extends Controller
                 $scaleId = !empty($validated['scale_id']) ? $validated['scale_id'] : ($request->cookie('selected_scale_id') ? (int) $request->cookie('selected_scale_id') : 1);
                 $exitOperatorId = !empty($validated['exit_operator_id']) ? $validated['exit_operator_id'] : null;
                 $vesselOperatorId = !empty($validated['vessel_operator_id']) ? $validated['vessel_operator_id'] : null;
+
+                if (!$exitOperatorId && !empty($validated['driver'])) {
+                    $exitOperatorId = \App\Models\ExitOperator::where('name', $validated['driver'])->value('id');
+                }
+                if (!$exitOperatorId && $shipmentOrderId) {
+                    $soOpName = \App\Models\ShipmentOrder::where('id', $shipmentOrderId)->value('operator_name');
+                    if ($soOpName) {
+                        $exitOperatorId = \App\Models\ExitOperator::where('name', $soOpName)->value('id');
+                    }
+                    if (!$exitOperatorId && isset($shipmentOrder)) {
+                        $activeAccessLog = $shipmentOrder->accessLogs()
+                            ->where(function ($q) {
+                                $q->where('access_logs.status', 'in_plant')
+                                   ->orWhereNotNull('access_logs.entry_at');
+                            })
+                            ->whereNull('access_logs.exit_at')
+                            ->whereNotNull('access_logs.subject_id')
+                            ->latest('access_logs.id')
+                            ->first();
+                        if ($activeAccessLog && ($activeAccessLog->subject_type === 'App\Models\ExitOperator' || $activeAccessLog->subject instanceof \App\Models\ExitOperator)) {
+                            $exitOperatorId = $activeAccessLog->subject_id;
+                        }
+                    }
+                }
 
                 $vessel = $vesselId ? Vessel::find($vesselId) : null;
                 $isBurreo = $vessel && $vessel->apt_operation_type === 'burreo';
@@ -1392,6 +1656,21 @@ class WeightTicketController extends Controller
                     $targetOperatorId = $order->exit_operator_id;
                     if (!$targetOperatorId && !empty($order->operator_name)) {
                         $targetOperatorId = \App\Models\ExitOperator::where('name', $order->operator_name)->value('id');
+                    }
+                    if (!$targetOperatorId && !empty($order->driver?->name)) {
+                        $targetOperatorId = \App\Models\ExitOperator::where('name', $order->driver->name)->value('id');
+                    }
+                    if (!$targetOperatorId && !empty($order->shipment_order?->operator_name)) {
+                        $targetOperatorId = \App\Models\ExitOperator::where('name', $order->shipment_order->operator_name)->value('id');
+                    }
+                    if (!$targetOperatorId) {
+                        $cleanPlate = preg_replace('/[^A-Za-z0-9]/', '', $order->tractor_plate ?? $order->shipment_order?->tractor_plate ?? '');
+                        if (!empty($cleanPlate)) {
+                            $targetOperatorId = \App\Models\ExitOperator::whereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') = ?", [$cleanPlate])->latest()->value('id');
+                        }
+                    }
+                    if ($targetOperatorId && !$order->exit_operator_id) {
+                        $order->update(['exit_operator_id' => $targetOperatorId]);
                     }
 
                     $assignmentQuery = \App\Models\ClientOperatorAssignment::where('sales_order_id', $linkedSalesOrderId)

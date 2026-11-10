@@ -308,9 +308,7 @@ export default function Create({
         }
 
         // Validar que el operador tenga algún cliente asignado para permitir su escaneo
-        const hasAnyClient =
-            (found.clients && found.clients.length > 0) ||
-            (Array.isArray(found.client_ids) && found.client_ids.length > 0);
+        const hasAnyClient = Boolean(found.clients && found.clients.length > 0);
 
         if (!hasAnyClient) {
             const errorMsg = `El operador "${found.name}" no tiene ningún cliente asignado y no puede ser escaneado. Debe tener al menos un cliente asignado.`;
@@ -338,9 +336,7 @@ export default function Create({
         if (isFromClients && isClientOnlyUser) {
             if (clients && clients.length === 1) {
                 const currentClient = clients[0];
-                const isAssigned =
-                    found.clients?.some((c) => c.id === currentClient.id) ||
-                    (Array.isArray(found.client_ids) && found.client_ids.includes(currentClient.id));
+                const isAssigned = found.clients?.some((c) => c.id === currentClient.id);
                 if (!isAssigned) {
                     const errorMsg = `El operador "${found.name}" no está asignado a su empresa (${currentClient.business_name}). Solo se pueden validar operadores asignados a su cliente.`;
                     setScanError(`⛔ ${errorMsg}`);
@@ -457,9 +453,7 @@ export default function Create({
             clientForm.setError("operator_id", "Este operador se encuentra vetado y no puede ser seleccionado.");
             return;
         }
-        const hasAnyClient =
-            (op?.clients && op.clients.length > 0) ||
-            (Array.isArray(op?.client_ids) && op.client_ids.length > 0);
+        const hasAnyClient = Boolean(op?.clients && op.clients.length > 0);
         if (!hasAnyClient) {
             clientForm.setError("operator_id", "El operador no tiene ningún cliente asignado y no puede ser asignado.");
             return;

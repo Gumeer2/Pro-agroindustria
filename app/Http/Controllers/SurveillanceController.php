@@ -574,9 +574,22 @@ class SurveillanceController extends Controller
 
         // Validación: si el operador de salida no se vinculó a ninguna orden de venta, no permitir el acceso
         if ($type === 'App\Models\ExitOperator' || $subject instanceof ExitOperator) {
-            $hasAssignment = ClientOperatorAssignment::where('operator_id', $subject->id)
+            $candidateOperatorIds = [$subject->id];
+            $opName = trim($subject->name ?? '');
+            $cleanPlate = preg_replace('/[^A-Za-z0-9]/', '', $subject->tractor_plate ?? '');
+
+            if (!empty($opName)) {
+                $sameNameIds = ExitOperator::where('name', $opName)->pluck('id')->toArray();
+                $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $sameNameIds));
+            }
+            if (!empty($cleanPlate)) {
+                $samePlateIds = ExitOperator::whereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') = ?", [$cleanPlate])->pluck('id')->toArray();
+                $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $samePlateIds));
+            }
+
+            $hasAssignment = ClientOperatorAssignment::whereIn('operator_id', $candidateOperatorIds)
                 ->whereNotNull('sales_order_id')
-                ->exists() || !empty($subject->sales_order_id);
+                ->exists();
 
             if (!$hasAssignment) {
                 return response()->json([
@@ -670,9 +683,22 @@ class SurveillanceController extends Controller
 
         if ($request->authorized) {
             if (($log->subject_type === 'App\Models\ExitOperator' || $log->subject instanceof ExitOperator) && $log->subject) {
-                $hasAssignment = ClientOperatorAssignment::where('operator_id', $log->subject->id)
+                $candidateOperatorIds = [$log->subject->id];
+                $opName = trim($log->subject->name ?? '');
+                $cleanPlate = preg_replace('/[^A-Za-z0-9]/', '', $log->subject->tractor_plate ?? '');
+
+                if (!empty($opName)) {
+                    $sameNameIds = ExitOperator::where('name', $opName)->pluck('id')->toArray();
+                    $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $sameNameIds));
+                }
+                if (!empty($cleanPlate)) {
+                    $samePlateIds = ExitOperator::whereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') = ?", [$cleanPlate])->pluck('id')->toArray();
+                    $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $samePlateIds));
+                }
+
+                $hasAssignment = ClientOperatorAssignment::whereIn('operator_id', $candidateOperatorIds)
                     ->whereNotNull('sales_order_id')
-                    ->exists() || !empty($log->subject->sales_order_id);
+                    ->exists();
 
                 if (!$hasAssignment) {
                     return back()->with('error', 'El operador no cuenta con asignación.');

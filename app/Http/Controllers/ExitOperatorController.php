@@ -105,7 +105,10 @@ class ExitOperatorController extends Controller
         }
 
         $clients = $clientMatch ? collect([$clientMatch]) : Client::orderBy('business_name')->get(['id', 'business_name', 'rfc']);
-        $operators = ExitOperator::with('clients')->orderBy('name')->get();
+        $operators = ExitOperator::with('clients')->orderBy('name')->get()->map(function ($op) {
+            $op->client_ids = $op->clients->pluck('id')->values()->toArray();
+            return $op;
+        });
 
         $salesOrdersQuery = SalesOrder::with(['client', 'product'])
             ->whereIn('status', ['created', 'open']);

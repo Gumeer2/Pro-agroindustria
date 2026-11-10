@@ -13,12 +13,14 @@ export default function Edit({
     order,
     active_lots = [],
     documenters = [],
+    packaging_types = ['PRO-AGRO', 'FERTINAL'],
 }: {
     auth: any;
     ticket: any;
     order: any;
     active_lots: any[];
     documenters: any[];
+    packaging_types?: string[];
 }) {
     const isSale = !!order.shipment_order_id || !order.vessel_id;
 
@@ -290,8 +292,13 @@ export default function Edit({
                                             className={`mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm font-bold ${(ticket.presentation || order.presentation) === 'GRANEL' ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'}`}
                                         >
                                             <option value="N/A">N/A</option>
-                                            <option value="PRO-AGRO">PRO-AGRO</option>
-                                            <option value="FERTINAL">FERTINAL</option>
+                                            {Array.from(new Set([
+                                                ...(packaging_types || ['PRO-AGRO', 'FERTINAL']),
+                                                ...(data.packaging_type && data.packaging_type !== 'N/A' ? [data.packaging_type] : []),
+                                                ...(ticket?.packaging_type && ticket.packaging_type !== 'N/A' ? [ticket.packaging_type] : [])
+                                            ])).filter(Boolean).map((type) => (
+                                                <option key={type} value={type}>{type}</option>
+                                            ))}
                                         </select>
                                         <InputError
                                             message={errors.packaging_type}

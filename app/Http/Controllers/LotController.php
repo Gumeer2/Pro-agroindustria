@@ -197,7 +197,16 @@ class LotController extends Controller
 
     public function destroy(Lot $lot)
     {
-        $lot->delete();
-        return redirect()->back()->with('success', 'Lote eliminado.');
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($lot) {
+                \Illuminate\Support\Facades\DB::table('production_shift_start_lot')->where('lot_id', $lot->id)->delete();
+                \Illuminate\Support\Facades\DB::table('production_shift_starts')->where('lot_id', $lot->id)->update(['lot_id' => null]);
+                \Illuminate\Support\Facades\DB::table('production_shift_activities')->where('lot_id', $lot->id)->update(['lot_id' => null]);
+                $lot->delete();
+            });
+            return redirect()->back()->with('success', 'Lote eliminado.');
+        } catch (\Exception $e) {
+            return redirect()->back()->withErrors(['error' => 'No se pudo eliminar el lote: ' . $e->getMessage()]);
+        }
     }
 }

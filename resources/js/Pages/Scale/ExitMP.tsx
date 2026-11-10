@@ -35,12 +35,14 @@ export default function ExitMP({
     active_scale_id = 1,
     active_lots = [],
     documenters = [],
+    packaging_types = ['PRO-AGRO', 'FERTINAL'],
 }: {
     auth: any;
     order?: any;
     active_scale_id?: number;
     active_lots?: any[];
     documenters?: any[];
+    packaging_types?: string[];
 }) {
     // State for Search
     const [qrValue, setQrValue] = useState("");
@@ -82,12 +84,16 @@ export default function ExitMP({
         ? parseInt(localStorage.getItem("selected_scale_id")!)
         : (active_scale_id || 1);
 
+    const initialPackagingType = (order?.presentation === 'ENVASADO' && order?.packaging_type && order.packaging_type !== 'N/A')
+        ? order.packaging_type
+        : (order?.packaging_type || "N/A");
+
     const { data, setData, post, processing, errors } = useForm({
         shipment_order_id: order?.id || "",
         weight: "", // Second Weight
         scale_id: initialScaleId, // Exit Scale
         lot_id: order?.lot_id ? order.lot_id.toString() : "",
-        packaging_type: "N/A",
+        packaging_type: initialPackagingType,
         warehouse: order?.is_external_warehouse 
             ? (order?.warehouse && order.warehouse !== "N/A" ? order.warehouse : "ALMACÉN CLIENTE")
             : (order?.warehouse && order.warehouse !== "N/A" ? order.warehouse : ""),
@@ -95,6 +101,14 @@ export default function ExitMP({
         reference: order?.reference || "",
         documenter_id: "",
     });
+
+    const availablePackagingTypes = Array.from(
+        new Set([
+            ...(packaging_types || ['PRO-AGRO', 'FERTINAL']),
+            ...(data.packaging_type && data.packaging_type !== 'N/A' ? [data.packaging_type] : []),
+            ...(order?.packaging_type && order.packaging_type !== 'N/A' ? [order.packaging_type] : [])
+        ])
+    ).filter(Boolean);
 
     useEffect(() => {
         const saved = localStorage.getItem("selected_scale_id");
@@ -119,17 +133,22 @@ export default function ExitMP({
                 lot_id: order.lot_id ? order.lot_id.toString() : "",
                 warehouse: order.is_external_warehouse 
                     ? (order.warehouse && order.warehouse !== "N/A" ? order.warehouse : "ALMACÉN CLIENTE")
-                    : (order.warehouse && order.warehouse !== "N/A" ? order.warehouse : "")
+                    : (order.warehouse && order.warehouse !== "N/A" ? order.warehouse : ""),
+                packaging_type: order.presentation === 'ENVASADO'
+                    ? (order.packaging_type && order.packaging_type !== 'N/A' ? order.packaging_type : prev.packaging_type)
+                    : (order.presentation === 'GRANEL' ? 'N/A' : prev.packaging_type)
             }));
         }
-    }, [order?.id]);
+    }, [order?.id, order?.presentation, order?.packaging_type]);
 
     // --- Dynamic Envase Logic ---
     useEffect(() => {
         if (order?.presentation === 'GRANEL') {
             setData("packaging_type", "N/A");
+        } else if (order?.presentation === 'ENVASADO' && order?.packaging_type && order.packaging_type !== 'N/A') {
+            setData("packaging_type", order.packaging_type);
         }
-    }, [order?.presentation]);
+    }, [order?.presentation, order?.packaging_type]);
 
     // Handle Errors
     useEffect(() => {
@@ -692,14 +711,6 @@ export default function ExitMP({
                                                         <option key={lot.id} value={lot.id?.toString()}>{lot.folio}</option>
                                                     ))}
                                                 </select>
-                                                {(() => {
-                                                    const currentLot = active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString()) || (order?.lot_observations ? { observations: order.lot_observations } : null);
-                                                    return currentLot?.observations ? (
-                                                        <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1 mt-1">
-                                                            <span className="font-bold">Obs. del Lote:</span> {currentLot.observations}
-                                                        </p>
-                                                    ) : null;
-                                                })()}
                                             </div>
 
                                             <div className="space-y-1">
@@ -729,12 +740,13 @@ export default function ExitMP({
                                                 <select
                                                     value={data.packaging_type}
                                                     onChange={e => setData("packaging_type", e.target.value)}
-                                                    disabled={order?.presentation === 'GRANEL'}
-                                                    className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${order?.presentation === 'GRANEL' ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white'}`}
+                                                    disabled={true}
+                                                    className="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold bg-gray-50 text-gray-400 cursor-not-allowed"
                                                 >
                                                     <option value="N/A">N/A</option>
-                                                    <option value="PRO-AGRO">PRO-AGRO</option>
-                                                    <option value="FERTINAL">FERTINAL</option>
+                                                    {availablePackagingTypes.map((type) => (
+                                                        <option key={type} value={type}>{type}</option>
+                                                    ))}
                                                 </select>
                                             </div>
 
