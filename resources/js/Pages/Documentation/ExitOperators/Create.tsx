@@ -34,6 +34,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import Swal from "sweetalert2";
 import QrScannerModal from "@/Components/QrScannerModal";
 import TransportLineDropdown from "@/Components/TransportLineDropdown";
+import UnitTypeDropdown from "@/Components/UnitTypeDropdown";
 import ClientMultiSelect, { ClientItem } from "@/Components/ClientMultiSelect";
 import TypeDropdown, { ExitOperatorTypeItem } from "@/Components/TypeDropdown";
 
@@ -1659,25 +1660,12 @@ export default function Create({
                                     </div>
 
                                     {/* Tipo de unidad */}
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-700 mb-1">Tipo de unidad:</label>
-                                        <div className="relative">
-                                            <select
-                                                value={data.unit_type}
-                                                onChange={(e) => setData("unit_type", e.target.value)}
-                                                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 pl-10 uppercase"
-                                                required
-                                            >
-                                                <option value="VOLTEO">VOLTEO</option>
-                                                <option value="TORTON">TORTON</option>
-                                                <option value="CAMIONETA">CAMIONETA</option>
-                                                <option value="TRACTOCAMION">TRACTOCAMION</option>
-                                                <option value="FULL">FULL</option>
-                                            </select>
-                                            <Truck className="w-5 h-5 text-gray-400 absolute left-3 top-2" />
-                                        </div>
-                                        {errors.unit_type && <p className="text-red-500 text-xs mt-1">{errors.unit_type}</p>}
-                                    </div>
+                                    <UnitTypeDropdown
+                                        value={data.unit_type}
+                                        onChange={(val) => setData("unit_type", val)}
+                                        label="Tipo de unidad:"
+                                        error={errors.unit_type}
+                                    />
 
                                     {/* Marca y modelo */}
                                     <div>
@@ -1715,7 +1703,7 @@ export default function Create({
                                     <div>
                                         <label className="block text-sm font-bold text-gray-700 mb-1">
                                             Placa remolque:{" "}
-                                            {["VOLTEO", "TORTON", "CAMIONETA"].includes(data.unit_type) && (
+                                            {!(data.unit_type && (data.unit_type.includes("FULL") || data.unit_type.includes("TRACTO"))) && (
                                                 <span className="text-xs text-gray-400 font-normal">(Opcional para esta unidad)</span>
                                             )}
                                         </label>
@@ -1725,7 +1713,7 @@ export default function Create({
                                                 value={data.trailer_plate}
                                                 onChange={(e) => setData("trailer_plate", e.target.value)}
                                                 className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 pl-10 uppercase"
-                                                required={!["VOLTEO", "TORTON", "CAMIONETA"].includes(data.unit_type)}
+                                                required={!!(data.unit_type && (data.unit_type.includes("FULL") || data.unit_type.includes("TRACTO")))}
                                             />
                                             <FileText className="w-5 h-5 text-gray-400 absolute left-3 top-2" />
                                         </div>

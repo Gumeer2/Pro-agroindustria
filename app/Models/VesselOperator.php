@@ -27,6 +27,11 @@ class VesselOperator extends Model
         return $this->belongsTo(Vessel::class);
     }
 
+    public function accessLogs()
+    {
+        return $this->morphMany(AccessLog::class, 'subject');
+    }
+
     public function vetoLogs()
     {
         return $this->morphMany(OperatorVetoLog::class, 'operator');

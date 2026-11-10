@@ -14,6 +14,7 @@ import {
     CheckCircle,
 } from "lucide-react";
 import TransportLineDropdown from "@/Components/TransportLineDropdown";
+import UnitTypeDropdown from "@/Components/UnitTypeDropdown";
 import ClientMultiSelect, { ClientItem } from "@/Components/ClientMultiSelect";
 
 interface Operator {
@@ -133,39 +134,12 @@ export default function Edit({ auth, operator, clients = [] }: { auth: any; oper
                                 </div>
 
                                 {/* Tipo de unidad */}
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">Tipo de unidad:</label>
-                                    <div className="relative">
-                                        <select
-                                            value={data.unit_type}
-                                            onChange={(e) => setData("unit_type", e.target.value)}
-                                            className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 pl-10"
-                                            required
-                                        >
-                                            <option value="VOLTEO">VOLTEO</option>
-                                            <option value="CONTENEDOR">CONTENEDOR</option>
-                                            <option value="CAMIONETA">CAMIONETA</option>
-                                            <option value="CISTERNA">CISTERNA</option>
-                                            <option value="FULL CAJA SECA">FULL CAJA SECA</option>
-                                            <option value="FULL ENCORTINADO">FULL ENCORTINADO</option>
-                                            <option value="FULL GONDOLA">FULL GONDOLA</option>
-                                            <option value="FULL JAULA">FULL JAULA</option>
-                                            <option value="FULL PIPA">FULL PIPA</option>
-                                            <option value="FULL PLATAFORMA">FULL PLATAFORMA</option>
-                                            <option value="FULL TOLVA">FULL TOLVA</option>
-                                            <option value="PIPA">PIPA</option>
-                                            <option value="SENCILLO JAULA">SENCILLO JAULA</option>
-                                            <option value="SENCILLO CAJA SECA">SENCILLO CAJA SECA</option>
-                                            <option value="SENCILLO GONDOLA">SENCILLO GONDOLA</option>
-                                            <option value="SENCILLO PIPA">SENCILLO PIPA</option>
-                                            <option value="SENCILLO PLATAFORMA">SENCILLO PLATAFORMA</option>
-                                            <option value="SENCILLO TOLVA">SENCILLO TOLVA</option>
-                                            <option value="TORTON">TORTON</option>
-                                        </select>
-                                        <Box className="w-5 h-5 text-gray-400 absolute left-3 top-2" />
-                                    </div>
-                                    {errors.unit_type && <p className="text-red-500 text-xs mt-1">{errors.unit_type}</p>}
-                                </div>
+                                <UnitTypeDropdown
+                                    value={data.unit_type}
+                                    onChange={(val) => setData("unit_type", val)}
+                                    label="Tipo de unidad:"
+                                    error={errors.unit_type}
+                                />
 
                                 {/* Marca / Modelo */}
                                 <div>
@@ -185,7 +159,12 @@ export default function Edit({ auth, operator, clients = [] }: { auth: any; oper
 
                                 {/* Remolque */}
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">Remolque:</label>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">
+                                        Remolque:{" "}
+                                        {!(data.unit_type && (data.unit_type.includes("FULL") || data.unit_type.includes("TRACTO"))) && (
+                                            <span className="text-xs text-gray-400 font-normal">(Opcional para esta unidad)</span>
+                                        )}
+                                    </label>
                                     <div className="relative">
                                         <input
                                             type="text"
@@ -193,7 +172,7 @@ export default function Edit({ auth, operator, clients = [] }: { auth: any; oper
                                             onChange={(e) => setData("trailer_plate", e.target.value)}
                                             className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 pl-10 uppercase font-mono"
                                             placeholder="Placa Remolque"
-                                            disabled={["VOLTEO", "TORTON", "CAMIONETA"].includes(data.unit_type)}
+                                            disabled={!(data.unit_type && (data.unit_type.includes("FULL") || data.unit_type.includes("TRACTO")))}
                                         />
                                         <CreditCard className="w-5 h-5 text-gray-400 absolute left-3 top-2" />
                                     </div>

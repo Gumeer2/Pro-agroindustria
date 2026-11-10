@@ -191,6 +191,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/transport-lines', [\App\Http\Controllers\TransportLineController::class, 'store'])->name('transport-lines.store');
         Route::put('/transport-lines/{transportLine}', [\App\Http\Controllers\TransportLineController::class, 'update'])->name('transport-lines.update');
         Route::delete('/transport-lines/{transportLine}', [\App\Http\Controllers\TransportLineController::class, 'destroy'])->name('transport-lines.destroy');
+
+        // Unit Types Catalogue
+        Route::get('/unit-types', [\App\Http\Controllers\UnitTypeController::class, 'index'])->name('unit-types.index');
+        Route::post('/unit-types', [\App\Http\Controllers\UnitTypeController::class, 'store'])->name('unit-types.store');
+        Route::put('/unit-types/{unitType}', [\App\Http\Controllers\UnitTypeController::class, 'update'])->name('unit-types.update');
+        Route::delete('/unit-types/{unitType}', [\App\Http\Controllers\UnitTypeController::class, 'destroy'])->name('unit-types.destroy');
         // Print Routes
         Route::get('/documentation/shipment-orders/{id}/print', [\App\Http\Controllers\DocumentationController::class , 'printOrder'])->name('documentation.orders.print');
         Route::get('/documentation/shipment-orders/{id}/print-instruction', [\App\Http\Controllers\DocumentationController::class , 'printInstruction'])->name('documentation.orders.print-instruction');

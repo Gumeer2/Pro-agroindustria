@@ -147,6 +147,39 @@ class SurveillanceController extends Controller
                 ->delete();
         }
 
+        // 1.1 Clean up phantom / orphan pending access logs that have no orders and no valid operator
+        $pendingLogsWithoutOrders = AccessLog::whereIn('status', ['pending', 'in_plant'])
+            ->whereNull('exit_at')
+            ->whereDoesntHave('shipmentOrders')
+            ->get();
+
+        foreach ($pendingLogsWithoutOrders as $pLog) {
+            $subj = $pLog->subject;
+            $name = strtoupper(trim($subj?->operator_name ?? $subj?->name ?? ''));
+            $plate = strtoupper(trim($subj?->tractor_plate ?? ''));
+            if (empty($name) || in_array($name, ['N/A', 'S/P'])) {
+                if (empty($plate) || in_array($plate, ['S/P', 'N/A', 'S/N'])) {
+                    $pLog->shipmentOrders()->detach();
+                    $pLog->delete();
+                    if ($subj && $subj instanceof ExitOperator) {
+                        if (!$subj->clientAssignments()->exists() && !ShipmentOrder::where('operator_name', $subj->name)->exists()) {
+                            $subj->clients()->detach();
+                            $subj->delete();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clean up orphan ExitOperators that have no name, dummy plate S/P, and no assignments/orders
+        ExitOperator::where(function ($q) {
+            $q->whereNull('name')->orWhereIn('name', ['N/A', 'S/P', '']);
+        })->where(function ($q) {
+            $q->whereNull('tractor_plate')->orWhereIn('tractor_plate', ['S/P', 'N/A', 'S/N', '']);
+        })->whereDoesntHave('clientAssignments')
+          ->whereDoesntHave('accessLogs')
+          ->delete();
+
         // 2. Find all active in-plant logs
         $inPlantLogs = AccessLog::with(['subject', 'shipmentOrders'])
             ->where('status', 'in_plant')
@@ -294,11 +327,19 @@ class SurveillanceController extends Controller
             return $log;
         });
 
-        // Ensure 1 unique entry per operator log
+        // Ensure 1 unique entry per operator log (and exclude phantom entries without orders or valid operator)
         $uniqueLogs = $mappedLogs->unique(function ($log) {
             $name = strtoupper(trim($log->subject?->operator_name ?? $log->subject?->name ?? ''));
             $plate = strtoupper(trim($log->subject?->tractor_plate ?? ''));
             return !empty($name) ? ($name . '|' . $plate) : ('LOG_' . $log->id);
+        })->filter(function ($log) {
+            $hasOrders = !empty($log->shipment_orders_data) && count($log->shipment_orders_data) > 0;
+            $name = strtoupper(trim($log->subject?->operator_name ?? $log->subject?->name ?? ''));
+            $plate = strtoupper(trim($log->subject?->tractor_plate ?? ''));
+            if (!$hasOrders && (empty($name) || in_array($name, ['N/A', 'S/P'])) && (empty($plate) || in_array($plate, ['S/P', 'N/A', 'S/N']))) {
+                return false;
+            }
+            return true;
         })->values();
 
         // Also identify active documented orders whose operators have not entered yet ("Por Ingresar")
@@ -493,6 +534,70 @@ class SurveillanceController extends Controller
     }
 
     /**
+     * Valida si un operador de salida cuenta con asignaciones válidas pendientes de destare.
+     * Si todas sus asignaciones ya están destaradas y cuenta con salida en vigilancia,
+     * no se permite el ingreso. Si tiene más de una asignación y alguna aún no está destarada,
+     * se permite el ingreso.
+     *
+     * @param ExitOperator|mixed $subject
+     * @return string|null Mensaje de error si está bloqueado, o null si está permitido
+     */
+    private function validateOperatorAssignmentsForEntry($subject): ?string
+    {
+        if (!$subject) {
+            return null;
+        }
+
+        $candidateOperatorIds = [$subject->id];
+        $opName = trim($subject->name ?? '');
+        $cleanPlate = preg_replace('/[^A-Za-z0-9]/', '', $subject->tractor_plate ?? '');
+
+        if (!empty($opName)) {
+            $sameNameIds = ExitOperator::where('name', $opName)->pluck('id')->toArray();
+            $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $sameNameIds));
+        }
+        if (!empty($cleanPlate)) {
+            $samePlateIds = ExitOperator::whereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') = ?", [$cleanPlate])->pluck('id')->toArray();
+            $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $samePlateIds));
+        }
+
+        $assignments = ClientOperatorAssignment::whereIn('operator_id', $candidateOperatorIds)
+            ->whereNotNull('sales_order_id')
+            ->get();
+
+        if ($assignments->isEmpty()) {
+            return 'El operador no cuenta con asignación.';
+        }
+
+        // Revisar si el operador tiene al menos UNA asignación pendiente de destarar
+        $hasPendingAssignment = $assignments->contains(function ($assignment) {
+            $status = strtolower(trim((string)($assignment->destare_status ?? '')));
+            return empty($status) || $status === 'pending';
+        });
+
+        // Si tiene al menos una asignación sin destarar, SE PERMITE el ingreso
+        if ($hasPendingAssignment) {
+            return null;
+        }
+
+        // Si todas sus asignaciones ya están destaradas, verificar si ya se le marcó salida en vigilancia
+        $hasMarkedExit = AccessLog::whereIn('subject_id', $candidateOperatorIds)
+            ->where(function ($q) {
+                $q->where('subject_type', 'App\Models\ExitOperator')
+                  ->orWhere('subject_type', 'like', '%ExitOperator%');
+            })
+            ->whereNotNull('exit_at')
+            ->exists();
+
+        // Si ya cuenta con salida en vigilancia o todas sus asignaciones fueron destaradas
+        if ($hasMarkedExit || $assignments->isNotEmpty()) {
+            return 'Acceso no permitido: La asignación del operador ya fue destarada y cuenta con salida registrada en vigilancia. No cuenta con asignaciones pendientes por cargar.';
+        }
+
+        return null;
+    }
+
+    /**
      * API to get available orders for an existing AccessLog (used in Salidas submodule)
      */
     public function getAvailableOrders($logId)
@@ -572,28 +677,12 @@ class SurveillanceController extends Controller
             return response()->json(['error' => "ESTE OPERADOR SE ENCUENTRA VETADO."], 403);
         }
 
-        // Validación: si el operador de salida no se vinculó a ninguna orden de venta, no permitir el acceso
+        // Validación: si el operador de salida no cuenta con asignación válida o sus asignaciones ya fueron destaradas y cuenta con salida
         if ($type === 'App\Models\ExitOperator' || $subject instanceof ExitOperator) {
-            $candidateOperatorIds = [$subject->id];
-            $opName = trim($subject->name ?? '');
-            $cleanPlate = preg_replace('/[^A-Za-z0-9]/', '', $subject->tractor_plate ?? '');
-
-            if (!empty($opName)) {
-                $sameNameIds = ExitOperator::where('name', $opName)->pluck('id')->toArray();
-                $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $sameNameIds));
-            }
-            if (!empty($cleanPlate)) {
-                $samePlateIds = ExitOperator::whereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') = ?", [$cleanPlate])->pluck('id')->toArray();
-                $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $samePlateIds));
-            }
-
-            $hasAssignment = ClientOperatorAssignment::whereIn('operator_id', $candidateOperatorIds)
-                ->whereNotNull('sales_order_id')
-                ->exists();
-
-            if (!$hasAssignment) {
+            $assignmentError = $this->validateOperatorAssignmentsForEntry($subject);
+            if ($assignmentError) {
                 return response()->json([
-                    'error' => 'El operador no cuenta con asignación.'
+                    'error' => $assignmentError
                 ], 422);
             }
         }
@@ -682,26 +771,10 @@ class SurveillanceController extends Controller
         }
 
         if ($request->authorized) {
-            if (($log->subject_type === 'App\Models\ExitOperator' || $log->subject instanceof ExitOperator) && $log->subject) {
-                $candidateOperatorIds = [$log->subject->id];
-                $opName = trim($log->subject->name ?? '');
-                $cleanPlate = preg_replace('/[^A-Za-z0-9]/', '', $log->subject->tractor_plate ?? '');
-
-                if (!empty($opName)) {
-                    $sameNameIds = ExitOperator::where('name', $opName)->pluck('id')->toArray();
-                    $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $sameNameIds));
-                }
-                if (!empty($cleanPlate)) {
-                    $samePlateIds = ExitOperator::whereRaw("REPLACE(REPLACE(tractor_plate, '-', ''), ' ', '') = ?", [$cleanPlate])->pluck('id')->toArray();
-                    $candidateOperatorIds = array_unique(array_merge($candidateOperatorIds, $samePlateIds));
-                }
-
-                $hasAssignment = ClientOperatorAssignment::whereIn('operator_id', $candidateOperatorIds)
-                    ->whereNotNull('sales_order_id')
-                    ->exists();
-
-                if (!$hasAssignment) {
-                    return back()->with('error', 'El operador no cuenta con asignación.');
+            if ($log->subject && ($log->subject_type === 'App\Models\ExitOperator' || $log->subject instanceof ExitOperator)) {
+                $assignmentError = $this->validateOperatorAssignmentsForEntry($log->subject);
+                if ($assignmentError) {
+                    return back()->with('error', $assignmentError);
                 }
             }
 

@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Head, usePage, router, Link } from "@inertiajs/react";
 import InstructionTemplate from "@/Components/Print/InstructionTemplate";
-import WeightVerificationTemplate from "@/Components/Print/WeightVerificationTemplate";
-import StowageNoteTemplate from '@/Components/Print/StowageNoteTemplate';
 import { ArrowLeft, Printer } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -678,30 +676,9 @@ th, td {
 
 
                 {/* --- PAGE 3: INSTRUCTION (Always Printed Once) --- */}
-                {/* 
-                    If presentation is "ENVASADO", this printed on front of last sheet, and we force page break.
-                    If presentation is "GRANEL", this is the last page.
-                */}
                 {!isOvAmo && (
-                    <div className="page-instruction pt-8" style={{ pageBreakAfter: (order.presentation?.toUpperCase().includes('ENVASADO') ? 'always' : 'auto') }}>
+                    <div className="page-instruction pt-8" style={{ pageBreakAfter: 'auto' }}>
                         <InstructionTemplate order={order} />
-                    </div>
-                )}
-
-                {/* --- PAGE 4: WEIGHT VERIFICATION (Conditional: Envasado Only) --- */}
-                {order.presentation?.toUpperCase().includes('ENVASADO') && !isOvAmo && (
-                    <div className="page-weight-verification pt-8" style={{ pageBreakAfter: 'always' }}>
-                        <WeightVerificationTemplate order={order} />
-                    </div>
-                )}
-
-                {/* --- PAGE 5: STOWAGE NOTE (Conditional: Envasado Only AND NOT SADER) --- */}
-                {order.presentation?.toUpperCase().includes('ENVASADO') && !isSader && !isOvAmo && (
-                    <div className="stowage-page-wrapper">
-                        {/* We use a specific inner container for the rotation */}
-                        <div className="rotate-landscape-v2">
-                            <StowageNoteTemplate order={order} />
-                        </div>
                     </div>
                 )}
 
