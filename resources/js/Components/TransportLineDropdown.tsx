@@ -36,11 +36,10 @@ export default function TransportLineDropdown({ value, onChange, label = "Línea
     const fetchLines = async () => {
         setLoading(true);
         try {
-            const response = await axios.get('/transport-lines');
-            setLines(response.data);
-            
-            // If the parent has an ID but we need its name to match or vice versa?
-            // Actually, we'll return the name (string) because the 'exit_operators' table expects a string.
+            const response = await axios.get(route('transport-lines.index'));
+            if (Array.isArray(response.data)) {
+                setLines(response.data);
+            }
         } catch (error) {
             console.error("Error fetching transport lines:", error);
         } finally {
@@ -57,12 +56,12 @@ export default function TransportLineDropdown({ value, onChange, label = "Línea
         setIsSaving(true);
         try {
             if (editingLine) {
-                await axios.put(`/transport-lines/${editingLine.id}`, { name: newName });
+                await axios.put(route('transport-lines.update', editingLine.id), { name: newName.trim() });
             } else {
-                const resp = await axios.post('/transport-lines', { name: newName });
-                // If nothing is selected, we could auto-select the new one
-                // if (!value) onChange(resp.data.name); 
-                // But let's leave that to the user unless explicit.
+                const resp = await axios.post(route('transport-lines.store'), { name: newName.trim() });
+                if (resp.data?.name) {
+                    onChange(resp.data.name);
+                }
             }
             await fetchLines();
             closeDialog();
@@ -77,7 +76,7 @@ export default function TransportLineDropdown({ value, onChange, label = "Línea
         e.stopPropagation();
         if (!confirm(`¿Estás seguro de eliminar "${line.name}"?`)) return;
         try {
-            await axios.delete(`/transport-lines/${line.id}`);
+            await axios.delete(route('transport-lines.destroy', line.id));
             if (value === line.name) {
                 onChange("");
             }

@@ -14,7 +14,7 @@ import {
     Layers,
     Sparkles,
 } from "lucide-react";
-import { FormEventHandler, useEffect } from "react";
+import { FormEventHandler, useEffect, useState } from "react";
 import InputLabel from "@/Components/InputLabel";
 import InputError from "@/Components/InputError";
 import TextInput from "@/Components/TextInput";
@@ -78,6 +78,8 @@ export default function Create({
         return `PA${year}-${plantCode}-${aptCode}-${prodCode}${cellsPart}-${cons}`;
     };
 
+    const [isManual, setIsManual] = useState(false);
+
     const { data, setData, post, processing, errors } = useForm({
         folio: calculateFolio(initialProduct, initialPlant, initialWarehouse, initialCeldas, initialCreatedAt),
         warehouse: initialWarehouse,
@@ -89,19 +91,21 @@ export default function Create({
         created_at: initialCreatedAt,
     });
 
-    // Keep folio updated if inputs change
+    // Keep folio updated if inputs change and the user hasn't manually edited it
     useEffect(() => {
-        const autoFolio = calculateFolio(
-            data.product,
-            data.plant_origin,
-            data.warehouse,
-            data.celdas,
-            data.created_at
-        );
-        if (data.folio !== autoFolio) {
-            setData("folio", autoFolio);
+        if (!isManual) {
+            const autoFolio = calculateFolio(
+                data.product,
+                data.plant_origin,
+                data.warehouse,
+                data.celdas,
+                data.created_at
+            );
+            if (data.folio !== autoFolio) {
+                setData("folio", autoFolio);
+            }
         }
-    }, [data.product, data.plant_origin, data.warehouse, data.celdas, data.created_at, consecutives]);
+    }, [data.product, data.plant_origin, data.warehouse, data.celdas, data.created_at, consecutives, isManual]);
 
     const updateProduct = (newProduct: string) => {
         const isImport = isImportProduct(newProduct);
@@ -112,7 +116,7 @@ export default function Create({
             product: newProduct,
             plant_origin: newPlant,
             celdas: newCeldas,
-            folio: calculateFolio(newProduct, newPlant, prev.warehouse, newCeldas, prev.created_at),
+            folio: isManual ? prev.folio : calculateFolio(newProduct, newPlant, prev.warehouse, newCeldas, prev.created_at),
         }));
     };
 
@@ -120,7 +124,7 @@ export default function Create({
         setData((prev) => ({
             ...prev,
             plant_origin: newPlant,
-            folio: calculateFolio(prev.product, newPlant, prev.warehouse, prev.celdas, prev.created_at),
+            folio: isManual ? prev.folio : calculateFolio(prev.product, newPlant, prev.warehouse, prev.celdas, prev.created_at),
         }));
     };
 
@@ -128,7 +132,7 @@ export default function Create({
         setData((prev) => ({
             ...prev,
             warehouse: newWarehouse,
-            folio: calculateFolio(prev.product, prev.plant_origin, newWarehouse, prev.celdas, prev.created_at),
+            folio: isManual ? prev.folio : calculateFolio(prev.product, prev.plant_origin, newWarehouse, prev.celdas, prev.created_at),
         }));
     };
 
@@ -136,7 +140,7 @@ export default function Create({
         setData((prev) => ({
             ...prev,
             celdas: newCeldas,
-            folio: calculateFolio(prev.product, prev.plant_origin, prev.warehouse, newCeldas, prev.created_at),
+            folio: isManual ? prev.folio : calculateFolio(prev.product, prev.plant_origin, prev.warehouse, newCeldas, prev.created_at),
         }));
     };
 
@@ -144,8 +148,20 @@ export default function Create({
         setData((prev) => ({
             ...prev,
             created_at: newDate,
-            folio: calculateFolio(prev.product, prev.plant_origin, prev.warehouse, prev.celdas, newDate),
+            folio: isManual ? prev.folio : calculateFolio(prev.product, prev.plant_origin, prev.warehouse, prev.celdas, newDate),
         }));
+    };
+
+    const resetToAutomatic = () => {
+        setIsManual(false);
+        const auto = calculateFolio(
+            data.product,
+            data.plant_origin,
+            data.warehouse,
+            data.celdas,
+            data.created_at
+        );
+        setData("folio", auto);
     };
 
     const submit: FormEventHandler = (e) => {
@@ -207,29 +223,18 @@ export default function Create({
                             </div>
 
                             <div>
-                                <div className="flex items-center justify-between mb-1">
-                                    <InputLabel value="Nombre del Lote / Folio" className="text-gray-700 font-bold" />
-                                    {isImportProduct(data.product) ? (
-                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                            <Sparkles className="w-3 h-3 text-amber-500" />
-                                            Lote N/A ({data.warehouse})
-                                        </span>
-                                    ) : (
-                                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                            <Sparkles className="w-3 h-3 text-indigo-500" />
-                                            Automático ({getConsecutive(data.warehouse, data.product)})
-                                        </span>
-                                    )}
-                                </div>
+                                <InputLabel value="Nombre del Lote / Folio" className="mb-1 text-gray-700 font-bold" />
                                 <div className="relative">
                                     <TextInput
                                         value={data.folio}
-                                        readOnly
-                                        tabIndex={-1}
-                                        className="w-full pl-10 font-bold font-mono text-indigo-950 bg-gray-100 border-gray-300 cursor-not-allowed select-all focus:border-gray-300 focus:ring-0 shadow-sm"
-                                        placeholder="Generando folio automáticamente..."
+                                        onChange={(e) => {
+                                            setIsManual(true);
+                                            setData("folio", e.target.value);
+                                        }}
+                                        className="w-full pl-10 font-bold font-mono text-indigo-950 bg-white border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 shadow-sm"
+                                        placeholder="Folio automático o personalizado..."
                                     />
-                                    <Hash className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
+                                    <Hash className="w-5 h-5 text-gray-400 absolute left-3 top-2.5 pointer-events-none" />
                                 </div>
                                 <InputError message={errors.folio} className="mt-2" />
                             </div>

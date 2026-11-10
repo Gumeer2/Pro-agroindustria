@@ -207,8 +207,26 @@ class WeightTicketController extends Controller
                 }
 
                 $canDestare = true;
+                $destareBlockTitle = null;
+                $destareBlockMessage = null;
+                $destareBadgeText = 'Pendiente Carga';
+
                 if ($order->shipment_order_id && $order->shipment_order) {
-                    $canDestare = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
+                    $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
+                    if (!$hasLoadedFinished) {
+                        $canDestare = false;
+                        $destareBlockTitle = "Carga No Finalizada";
+                        $destareBlockMessage = "<p class='text-sm'>La orden de embarque <b>" . ($order->shipment_order->folio ?? $order->folio) . "</b> aún no ha sido marcada como finalizada en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class='text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200'>Debe darse por finalizada la carga en el proceso de embarques antes de poder realizar el destare.</p>";
+                    }
+
+                    // Candado estricto: Para producto envasado, requerir 80 muestras validadas y guardadas
+                    $samplingCheck = $this->checkOrderSamplingValidation($order);
+                    if ($samplingCheck['is_envasado'] && !$samplingCheck['is_completed']) {
+                        $canDestare = false;
+                        $destareBadgeText = "Muestreo Incompleto (" . $samplingCheck['samples_count'] . "/80)";
+                        $destareBlockTitle = "Muestreo de Ensacadora Incompleto";
+                        $destareBlockMessage = "<p class='text-sm'>La orden de embarque <b>" . ($order->shipment_order->folio ?? $order->folio) . "</b> requiere que se hayan <b>validado y guardado las 80 muestras de ensacadora</b> en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class='text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200'>Actualmente cuenta con <b>" . $samplingCheck['samples_count'] . " de 80 muestras</b>. Mientras no se completen las 80 muestras y se presione 'Guardado (80/80) - Salir', no se puede destarar.</p>";
+                    }
                 }
 
                 return [
@@ -232,6 +250,10 @@ class WeightTicketController extends Controller
                     'oe_folio' => $order->shipment_order?->folio ?? 'N/A',
                     'can_destare' => $canDestare,
                     'has_loaded_finished' => $canDestare,
+                    'destare_badge_text' => $destareBadgeText,
+                    'destare_block_title' => $destareBlockTitle,
+                    'destare_block_message' => $destareBlockMessage,
+                    'samples_count' => $samplingCheck['samples_count'] ?? 0,
                     'real_transport_line' => $order->shipment_order_id
                         ? ($order->exit_operator->real_transport_line ?? (\App\Models\ExitOperator::where('name', $order->operator_name)->where('tractor_plate', $order->tractor_plate)->value('real_transport_line') ?? $order->transport_company))
                         : ($order->vessel_operator->transporter_line ?? (\App\Models\VesselOperator::where('operator_name', $order->operator_name)->where('tractor_plate', $order->tractor_plate)->value('transporter_line') ?? $order->transport_company)),
@@ -767,8 +789,18 @@ class WeightTicketController extends Controller
             $order = LoadingOrder::with(['client', 'product', 'driver', 'vehicle', 'transporter', 'weight_ticket', 'shipment_order.lot', 'vessel', 'lot'])
                 ->findOrFail($id);
 
-            // VALIDATION: For Sales / Shipment Orders, block destare if not finalized in Shipment Process module
+            // VALIDATION: For Sales / Shipment Orders, block destare if not finalized in Shipment Process module or sampling incomplete
             if ($order->shipment_order_id && $order->shipment_order) {
+                // Candado estricto: Para producto envasado, requerir 80 muestras validadas y guardadas
+                $samplingCheck = $this->checkOrderSamplingValidation($order);
+                if ($samplingCheck['is_envasado'] && !$samplingCheck['is_completed']) {
+                    return redirect()->route('scale.index', [
+                        'scale_id' => $request->input('scale_id', 1),
+                        'view' => 'table',
+                        'tab' => 'sale',
+                    ])->with('error', 'ALERTA: Operación Bloqueada. La orden de embarque (' . ($order->shipment_order->folio ?? $order->folio) . ') no puede destarar hasta que se hayan validado y guardado las 80 muestras de ensacadora (lleva ' . $samplingCheck['samples_count'] . '/80). Mientras no se completen las 80 muestras no se puede destarar.');
+                }
+
                 $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
                 if (!$hasLoadedFinished) {
                     return redirect()->route('scale.index', [
@@ -1547,15 +1579,21 @@ class WeightTicketController extends Controller
         try {
             DB::transaction(function () use ($validated) {
                 // Find LoadingOrder (Unified Flow)
-                $order = LoadingOrder::with('weight_ticket')->findOrFail($validated['shipment_order_id']);
+                $order = LoadingOrder::with(['weight_ticket', 'shipment_order'])->findOrFail($validated['shipment_order_id']);
                 $ticket = $order->weight_ticket;
 
                 if (!$ticket) {
                     throw new \Exception("Esta orden no tiene ticket de entrada.");
                 }
 
-                // VALIDATION: For Sales / Shipment Orders, block destare if not finalized in Shipment Process module
+                // VALIDATION: For Sales / Shipment Orders, block destare if not finalized in Shipment Process module or sampling incomplete
                 if ($order->shipment_order_id && $order->shipment_order) {
+                    // Candado estricto: Para producto envasado, requerir 80 muestras validadas y guardadas
+                    $samplingCheck = $this->checkOrderSamplingValidation($order);
+                    if ($samplingCheck['is_envasado'] && !$samplingCheck['is_completed']) {
+                        throw new \Exception("ALERTA: Operación Bloqueada. La orden de embarque (" . ($order->shipment_order->folio ?? $order->folio) . ") no puede destarar hasta que se hayan validado y guardado las 80 muestras de ensacadora (lleva " . $samplingCheck['samples_count'] . "/80). Mientras no se completen las 80 muestras no se puede destarar.");
+                    }
+
                     $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
                     if (!$hasLoadedFinished) {
                         throw new \Exception("ALERTA: Operación Bloqueada. La orden de embarque (" . ($order->shipment_order->folio ?? $order->folio) . ") no ha finalizado su proceso en el módulo de Gestión de Proceso de Embarques.");
@@ -2044,5 +2082,83 @@ class WeightTicketController extends Controller
         }
 
         return response()->json($res);
+    }
+
+    /**
+     * Check if an order requires 80 sampling records (Envasado) and if they are fully validated and saved.
+     */
+    private function checkOrderSamplingValidation($loadingOrder): array
+    {
+        $shipmentOrder = $loadingOrder->shipment_order ?? null;
+        if (!$shipmentOrder && $loadingOrder->shipment_order_id) {
+            $shipmentOrder = \App\Models\ShipmentOrder::find($loadingOrder->shipment_order_id);
+        }
+
+        if (!$shipmentOrder) {
+            return [
+                'is_envasado' => false,
+                'is_completed' => true,
+                'samples_count' => 0,
+            ];
+        }
+
+        $history = \App\Models\ShipmentProcessHistory::where('shipment_order_id', $shipmentOrder->id)
+            ->latest()
+            ->first();
+
+        // Check if order is Envasado
+        $presentation = strtoupper($shipmentOrder->presentation ?? $loadingOrder->presentation ?? '');
+        $productText = strtoupper(
+            ($shipmentOrder->product ?? '') . ' ' .
+            ($loadingOrder->product?->name ?? '') . ' ' .
+            ($shipmentOrder->items?->first()?->product?->name ?? '') . ' ' .
+            ($history?->product_text ?? '')
+        );
+
+        $isEnvasado = str_contains($presentation, 'ENVAS') ||
+                      str_contains($presentation, 'SACO') ||
+                      str_contains($productText, 'ENVAS') ||
+                      str_contains($productText, 'SACO') ||
+                      str_contains($productText, '25KG') ||
+                      str_contains($productText, '50KG') ||
+                      str_contains($productText, '25 KG') ||
+                      str_contains($productText, '50 KG') ||
+                      (!empty($shipmentOrder->stowage_count) && (int)$shipmentOrder->stowage_count > 0) ||
+                      ($history && !empty($history->stowage_count) && (int)$history->stowage_count > 0) ||
+                      (!empty($shipmentOrder->sacks_count) && (int)$shipmentOrder->sacks_count > 0);
+
+        if (!$isEnvasado) {
+            return [
+                'is_envasado' => false,
+                'is_completed' => true,
+                'samples_count' => 0,
+            ];
+        }
+
+        // It is Envasado: check samples count and saved completion
+        $samples = $shipmentOrder->samples ?? [];
+        if (empty($samples) && $history) {
+            $samples = $history->samples ?? [];
+        }
+        if (is_string($samples)) {
+            $samples = json_decode($samples, true) ?: [];
+        }
+        $samplesCount = is_array($samples) ? count($samples) : 0;
+        if ($history && is_array($history->samples) && count($history->samples) > $samplesCount) {
+            $samplesCount = count($history->samples);
+        }
+
+        $isSavedAndCompleted = (
+            ($shipmentOrder->sampling_status === 'completed' && !empty($shipmentOrder->sampling_completed_at)) ||
+            ($history && $history->sampling_status === 'completed' && !empty($history->sampling_completed_at))
+        );
+
+        $isCompleted = ($samplesCount >= 80) && $isSavedAndCompleted;
+
+        return [
+            'is_envasado' => true,
+            'is_completed' => $isCompleted,
+            'samples_count' => $samplesCount,
+        ];
     }
 }

@@ -38,7 +38,7 @@ export default function SalesOrderTemplate({ order }: SalesOrderTemplateProps) {
             {/* =========================================================================
                 PÁGINA 1: ANVERSO (Formato de Orden de Venta)
             ========================================================================= */}
-            <div className="print-sheet-front bg-white p-6 md:p-8 print:p-0 mx-auto max-w-[20.5cm] print:max-w-none print:w-full border border-gray-300 shadow-xl print:border-none print:shadow-none mb-10 print:mb-0 box-border flex flex-col justify-between print:min-h-[252mm]">
+            <div className="print-sheet-front bg-white p-6 md:p-8 print:p-0 mx-auto max-w-[20.5cm] print:max-w-none print:w-full border border-gray-300 shadow-xl print:border-none print:shadow-none mb-10 print:mb-0 box-border flex flex-col justify-between print:block">
                 <div>
                     {/* Header Section */}
                     <div className="flex justify-between items-start mb-4 print:mb-3 w-full">
@@ -257,7 +257,7 @@ export default function SalesOrderTemplate({ order }: SalesOrderTemplateProps) {
             {/* =========================================================================
                 PÁGINA 2: REVERSO (Términos y Condiciones + Aviso de Privacidad)
             ========================================================================= */}
-            <div className="print-sheet-back bg-white p-6 md:p-8 print:p-0 mx-auto max-w-[20.5cm] print:max-w-none print:w-full border border-gray-300 shadow-xl print:border-none print:shadow-none mb-10 print:mb-0 box-border print:min-h-[252mm] flex flex-col justify-between">
+            <div className="print-sheet-back bg-white p-6 md:p-8 print:p-0 mx-auto max-w-[20.5cm] print:max-w-none print:w-full border border-gray-300 shadow-xl print:border-none print:shadow-none mb-10 print:mb-0 box-border print:block flex flex-col justify-between">
                 <div>
                     <div className="text-center print:hidden mb-4">
                         <span className="bg-gray-100 text-gray-600 text-xs font-semibold px-3 py-1 rounded-full border border-gray-300 uppercase tracking-wider">

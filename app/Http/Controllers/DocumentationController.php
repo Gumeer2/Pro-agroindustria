@@ -2409,6 +2409,28 @@ class DocumentationController extends Controller
             return response()->json(['message' => 'Orden o registro no encontrado.'], 404);
         }
 
+        // CANDADO ESTRICTO DE ENVASADO: No permitir finalizar sin 80 muestras validadas y guardadas
+        $textToCheck = mb_strtoupper(($order?->product ?? '') . ' ' . ($order?->presentation ?? '') . ' ' . ($history?->product_text ?? '') . ' ' . ($order?->sacks_count ?? ''));
+        $isEnvasado = str_contains($textToCheck, 'ENVAS') || str_contains($textToCheck, 'SACO') || str_contains($textToCheck, '25KG') || str_contains($textToCheck, '50KG') || str_contains($textToCheck, '25 KG') || str_contains($textToCheck, '50 KG') || ((int)($order?->stowage_count ?? 0) > 0) || ((int)($history?->stowage_count ?? 0) > 0);
+
+        if ($isEnvasado) {
+            $samples = $history?->samples ?? $order?->samples ?? [];
+            if (!is_array($samples)) {
+                $samples = is_string($samples) ? json_decode($samples, true) : [];
+            }
+            $sampleCount = count($samples);
+            $hasSamplingCompleted = $sampleCount >= 80 && (
+                (!empty($order?->sampling_completed_at) && $order?->sampling_status === 'completed') ||
+                (!empty($history?->sampling_completed_at) && $history?->sampling_status === 'completed')
+            );
+
+            if (!$hasSamplingCompleted) {
+                return response()->json([
+                    'message' => "Candado Activo: No se puede finalizar la orden (" . ($order?->folio ?? 'N/A') . ") porque requiere que se hayan validado y guardado las 80 muestras de ensacadora (lleva {$sampleCount}/80 muestras).",
+                ], 422);
+            }
+        }
+
         $now = now();
         if ($order) {
             $order->update([

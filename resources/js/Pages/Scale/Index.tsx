@@ -575,17 +575,17 @@ export default function Index({
                                                                 onClick={() => {
                                                                     Swal.fire({
                                                                         icon: "warning",
-                                                                        title: "Proceso No Finalizado",
-                                                                        html: `<p class="text-sm">La orden de embarque <b>${order.oe_folio || order.folio}</b> aún no ha sido marcada como finalizada en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200">Debe darse por finalizada la carga en el proceso de embarques antes de poder realizar el destare.</p>`,
+                                                                        title: order.destare_block_title || "Proceso No Finalizado",
+                                                                        html: order.destare_block_message || `<p class="text-sm">La orden de embarque <b>${order.oe_folio || order.folio}</b> aún no ha sido marcada como finalizada en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200">Debe darse por finalizada la carga en el proceso de embarques antes de poder realizar el destare.</p>`,
                                                                         confirmButtonColor: "#4f46e5",
                                                                         confirmButtonText: "Entendido",
                                                                     });
                                                                 }}
-                                                                className="inline-flex items-center justify-center px-3 py-1.5 bg-gray-100 text-gray-400 border border-gray-200 rounded-lg font-bold text-xs uppercase cursor-not-allowed hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition"
-                                                                title="Inhabilitado: Pendiente de finalizar en Gestión de Proceso de Embarques"
+                                                                className="inline-flex items-center justify-center px-3 py-1.5 bg-gray-100 text-gray-500 border border-gray-200 rounded-lg font-bold text-xs uppercase cursor-not-allowed hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition"
+                                                                title={order.destare_badge_text || "Inhabilitado: Pendiente de finalizar en Gestión de Proceso de Embarques"}
                                                             >
                                                                 <Lock className="w-3.5 h-3.5 mr-1 text-gray-400" />
-                                                                Pendiente Carga
+                                                                {order.destare_badge_text || "Pendiente Carga"}
                                                             </button>
                                                         )}
                                                     </td>
@@ -688,16 +688,17 @@ export default function Index({
                                                     onClick={() => {
                                                         Swal.fire({
                                                             icon: "warning",
-                                                            title: "Proceso No Finalizado",
-                                                            html: `<p class="text-sm">La orden de embarque <b>${order.oe_folio || order.folio}</b> aún no ha sido marcada como finalizada en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200">Debe darse por finalizada la carga en el proceso de embarques antes de poder realizar el destare.</p>`,
+                                                            title: order.destare_block_title || "Proceso No Finalizado",
+                                                            html: order.destare_block_message || `<p class="text-sm">La orden de embarque <b>${order.oe_folio || order.folio}</b> aún no ha sido marcada como finalizada en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200">Debe darse por finalizada la carga en el proceso de embarques antes de poder realizar el destare.</p>`,
                                                             confirmButtonColor: "#4f46e5",
                                                             confirmButtonText: "Entendido",
                                                         });
                                                     }}
-                                                    className="mt-2 w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-400 border border-gray-200 rounded-lg font-bold text-sm uppercase cursor-not-allowed"
+                                                    className="mt-2 w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-500 border border-gray-200 rounded-lg font-bold text-sm uppercase cursor-not-allowed"
+                                                    title={order.destare_badge_text || "Inhabilitado: Pendiente de finalizar en Gestión de Proceso de Embarques"}
                                                 >
                                                     <Lock className="w-4 h-4 mr-2 text-gray-400" />
-                                                    Pendiente Carga
+                                                    {order.destare_badge_text || "Pendiente Carga"}
                                                 </button>
                                             )}
                                         </div>
