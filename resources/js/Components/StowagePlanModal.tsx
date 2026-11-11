@@ -6,12 +6,11 @@ import axios from "axios";
 import {
     X,
     Save,
-    Check,
     Lock,
     Unlock,
     RotateCcw,
-    CheckSquare,
-    Square,
+    Plus,
+    CheckCircle2,
 } from "lucide-react";
 
 interface Props {
@@ -19,6 +18,8 @@ interface Props {
     onClose: () => void;
     order: any;
     onSaved?: (updatedHistory?: any) => void;
+    isEstibadorUser?: boolean;
+    verifiers?: Array<{ id: number; name: string }>;
 }
 
 export default function StowagePlanModal({
@@ -26,6 +27,8 @@ export default function StowagePlanModal({
     onClose,
     order,
     onSaved,
+    isEstibadorUser = false,
+    verifiers = [],
 }: Props) {
     const safeOrder = order || {};
 
@@ -55,8 +58,8 @@ export default function StowagePlanModal({
         return "N/A";
     };
 
-    // State for the 24 tachado boxes (boolean for each 1..24)
-    const [tachados, setTachados] = useState<boolean[]>(Array(24).fill(false));
+    // State for the 24 stowage boxes (number of sacks per estiba, or legacy 'X')
+    const [stowages, setStowages] = useState<string[]>(Array(24).fill(""));
     const [shift, setShift] = useState<string>("1");
     const [hour, setHour] = useState<string>("");
     const [supervisor, setSupervisor] = useState<string>("");
@@ -68,6 +71,8 @@ export default function StowagePlanModal({
     const [line3, setLine3] = useState<string>("");
     const [line4, setLine4] = useState<string>("");
     const [comments, setComments] = useState<string>("");
+    const [avgUnitWeight, setAvgUnitWeight] = useState<string>("");
+    const [netWeight, setNetWeight] = useState<string>("");
     const [isSaving, setIsSaving] = useState<boolean>(false);
 
     // Initialize data from order when opened
@@ -100,14 +105,15 @@ export default function StowagePlanModal({
         );
 
         if (Array.isArray(plan.stowages) && plan.stowages.length === 24) {
-            setTachados(
-                plan.stowages.map((v: any) =>
-                    v === "X" || v === "x" || v === true || v === 1 || v === "1" || (typeof v === "number" && v > 0)
-                )
+            setStowages(
+                plan.stowages.map((v: any) => {
+                    if (v === null || v === undefined || v === "") return "";
+                    if (v === "X" || v === "x" || v === true) return "X";
+                    return String(v);
+                })
             );
         } else {
-            // By default blank
-            setTachados(Array(24).fill(false));
+            setStowages(Array(24).fill(""));
         }
 
         setAdjustment(plan.adjustment !== undefined ? String(plan.adjustment) : "");
@@ -118,35 +124,201 @@ export default function StowagePlanModal({
         setLine3(plan.line_3 !== undefined ? String(plan.line_3) : "");
         setLine4(plan.line_4 !== undefined ? String(plan.line_4) : "");
         setComments(plan.comments !== undefined ? String(plan.comments) : (order.observations || ""));
+        setAvgUnitWeight(plan.avg_unit_weight !== undefined && plan.avg_unit_weight !== null ? String(plan.avg_unit_weight) : "");
+        setNetWeight(plan.net_weight !== undefined && plan.net_weight !== null ? String(plan.net_weight) : "");
     }, [isOpen, order]);
 
-    // Toggle individual box tachado
-    const toggleTachado = (index: number) => {
-        setTachados((prev) => {
+    const handleCellChange = (index: number, raw: string) => {
+        const cleaned = raw.replace(/[^0-9]/g, "");
+        setStowages((prev) => {
             const next = [...prev];
-            next[index] = !next[index];
+            next[index] = cleaned;
             return next;
         });
     };
 
-    // Quick helpers
-    const handleTacharTodas = () => {
-        setTachados(Array(24).fill(true));
+    const handleAddStowageBatch = async () => {
+        const usedCount = stowages.filter((v) => v.trim() !== "").length;
+        const remaining = 24 - usedCount;
+        if (remaining <= 0) {
+            Swal.fire({
+                icon: "info",
+                title: "Capacidad Completa",
+                text: "Ya están ocupadas las 24 estibas disponibles.",
+                confirmButtonColor: "#16a34a",
+            });
+            return;
+        }
+
+        const expectedSacksNum = parseInt(calculateSacks(), 10);
+        const validExpectedSacks = !isNaN(expectedSacksNum) && expectedSacksNum > 0 ? expectedSacksNum : 0;
+        const currentCaptured = stowages.reduce((acc, v) => {
+            const n = Number(v);
+            return !isNaN(n) && n > 0 ? acc + n : acc;
+        }, 0);
+        const remainingSacks = validExpectedSacks > 0 ? Math.max(0, validExpectedSacks - currentCaptured) : null;
+
+        if (validExpectedSacks > 0 && remainingSacks !== null && remainingSacks <= 0) {
+            Swal.fire({
+                icon: "info",
+                title: "Sacos Completados",
+                html: `Ya se completaron los <b>${validExpectedSacks} sacos</b> programados para esta orden.<br/><span class="text-xs text-gray-500">Si desea modificar, limpie o edite las estibas existentes.</span>`,
+                confirmButtonColor: "#16a34a",
+            });
+            return;
+        }
+
+        const sacksBannerHtml = validExpectedSacks > 0
+            ? `<div class="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex items-center justify-between">
+                    <span>Programados: <b>${validExpectedSacks} sacos</b></span>
+                    <span>Capturados: <b>${currentCaptured}</b></span>
+                    <span class="font-extrabold text-emerald-700">Restan: ${remainingSacks} sacos</span>
+               </div>`
+            : "";
+
+        const { value: formValues } = await Swal.fire({
+            title: "Agregar Estibas y Sacos",
+            html: `
+                <div class="text-left space-y-3">
+                    <p class="text-xs text-gray-600">Se asignará consecutivamente a partir del lugar <b>#${usedCount + 1}</b> (máximo ${remaining} estiba(s) disponible(s)).</p>
+                    ${sacksBannerHtml}
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Cantidad de estibas</label>
+                        <input id="swal-estiba-count" type="number" min="1" max="${remaining}" class="swal2-input !m-0 !w-full" placeholder="Ej: 9 (o 1 para el lugar ${usedCount + 1})" autofocus />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Número de sacos por estiba</label>
+                        <input id="swal-estiba-sacks" type="number" min="1" ${remainingSacks !== null ? `max="${remainingSacks}"` : ""} class="swal2-input !m-0 !w-full" placeholder="Ej: 120" />
+                    </div>
+                </div>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: "Agregar",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#16a34a",
+            preConfirm: () => {
+                const cnt = parseInt((document.getElementById("swal-estiba-count") as HTMLInputElement)?.value || "0", 10);
+                const sck = parseInt((document.getElementById("swal-estiba-sacks") as HTMLInputElement)?.value || "0", 10);
+                if (!cnt || cnt < 1 || cnt > remaining) {
+                    Swal.showValidationMessage(`Ingrese una cantidad de estibas entre 1 y ${remaining}.`);
+                    return false;
+                }
+                if (!sck || sck < 1) {
+                    Swal.showValidationMessage("Ingrese un número válido de sacos.");
+                    return false;
+                }
+                const addedSacks = cnt * sck;
+                if (validExpectedSacks > 0 && remainingSacks !== null && addedSacks > remainingSacks) {
+                    Swal.showValidationMessage(
+                        `El subtotal a agregar (${cnt} × ${sck} = ${addedSacks} sacos) excede los ${remainingSacks} sacos restantes de la orden (Total programado: ${validExpectedSacks} sacos).`
+                    );
+                    return false;
+                }
+                return { cnt, sck };
+            },
+        });
+
+        if (formValues) {
+            setStowages((prev) => {
+                const next = [...prev];
+                let added = 0;
+                for (let i = 0; i < 24 && added < formValues.cnt; i++) {
+                    if (!next[i] || next[i].trim() === "") {
+                        next[i] = String(formValues.sck);
+                        added++;
+                    }
+                }
+                return next;
+            });
+        }
     };
 
     const handleLimpiarTodas = () => {
-        setTachados(Array(24).fill(false));
+        setStowages(Array(24).fill(""));
     };
 
-    const countTachados = useMemo(() => {
-        return tachados.filter(Boolean).length;
-    }, [tachados]);
+    const countOccupied = useMemo(() => {
+        return stowages.filter((v) => v.trim() !== "").length;
+    }, [stowages]);
+
+    const capturedTotalSacks = useMemo(() => {
+        return stowages.reduce((acc, v) => {
+            const n = Number(v);
+            return !isNaN(n) && n > 0 ? acc + n : acc;
+        }, 0);
+    }, [stowages]);
+
+    const totalSacksDisplay = useMemo(() => {
+        if (capturedTotalSacks > 0) return String(capturedTotalSacks);
+        return calculateSacks();
+    }, [capturedTotalSacks, safeOrder]);
+
+    const computedNetWeightDisplay = useMemo(() => {
+        const numericTotalSacks = parseFloat(String(totalSacksDisplay));
+        const orderSamples = Array.isArray(safeOrder.samples) ? safeOrder.samples : [];
+        const completedSamples = orderSamples.filter((s: any) => Number(s?.weight) > 0);
+        const targetCount = Number(safeOrder.target_samples_count) || 80;
+        const isSamplingComplete =
+            completedSamples.length >= targetCount ||
+            safeOrder.sampling_status === "completed" ||
+            Boolean(safeOrder.sampling_completed_at);
+
+        if (isSamplingComplete && !isNaN(numericTotalSacks) && numericTotalSacks > 0) {
+            const avg =
+                completedSamples.length > 0
+                    ? completedSamples.reduce((acc: number, s: any) => acc + Number(s.weight), 0) / completedSamples.length
+                    : Number(safeOrder.sampling_avg || safeOrder.stowage_plan?.avg_unit_weight || 0);
+            if (avg > 0) {
+                return `${((avg * numericTotalSacks) / 1000).toFixed(3)} TM`;
+            }
+        }
+
+        if (isSamplingComplete && netWeight.trim()) {
+            return netWeight;
+        }
+
+        return "";
+    }, [totalSacksDisplay, safeOrder, netWeight, avgUnitWeight]);
 
     const isPlanCompleted = order?.stowage_plan_status === "completed";
+    const isVoBoApproved = (safeOrder.vobo_status || safeOrder.stowage_plan?.vobo_status) === "approved";
 
     const borderClass = "border border-green-800";
     const bgColor = "bg-green-200";
     const accentColor = "bg-green-100";
+
+    const handleApproveVoBoInModal = async () => {
+        const targetId = order?.id || order?.shipment_order_id || order?.history_id;
+        if (!targetId) return;
+        setIsSaving(true);
+        try {
+            const response = await axios.post(
+                route("documentation.shipment-orders.vobo-stowage-plan", targetId)
+            );
+            Swal.fire({
+                icon: "success",
+                title: "¡VoBo Autorizado!",
+                html: response.data?.message || "Se ha registrado el VoBo de la Nota de Estiba. El personal estibador ya puede iniciar la toma de muestras.",
+                confirmButtonColor: "#16a34a",
+                confirmButtonText: "Entendido",
+            });
+            if (onSaved && response.data?.item) {
+                onSaved(response.data.item);
+            }
+            onClose();
+        } catch (error: any) {
+            const msg = error.response?.data?.message || "Ocurrió un error al otorgar el VoBo.";
+            Swal.fire({
+                icon: "error",
+                title: "Error",
+                text: msg,
+                confirmButtonColor: "#4f46e5",
+            });
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const handleSave = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
@@ -155,6 +327,29 @@ export default function StowagePlanModal({
                 icon: "error",
                 title: "Error",
                 text: "No se encontró el identificador de la orden.",
+            });
+            return;
+        }
+
+        const expectedSacksNum = parseInt(calculateSacks(), 10);
+        const adjNum = parseInt(adjustment || "0", 10);
+        const validExpectedSacks = !isNaN(expectedSacksNum) && expectedSacksNum > 0
+            ? expectedSacksNum + (!isNaN(adjNum) ? adjNum : 0)
+            : 0;
+        const hasNumericStowages = stowages.some((v) => {
+            const n = Number(v.trim());
+            return !isNaN(n) && n > 0;
+        });
+
+        if (validExpectedSacks > 0 && hasNumericStowages && capturedTotalSacks !== validExpectedSacks) {
+            const diff = validExpectedSacks - capturedTotalSacks;
+            Swal.fire({
+                icon: "warning",
+                title: diff > 0 ? "Sacos Incompletos" : "Exceso de Sacos",
+                html: diff > 0
+                    ? `La suma de sacos en las estibas es de <b>${capturedTotalSacks} sacos</b>, pero la orden requiere <b>${validExpectedSacks} sacos</b>.<br/><br/>Faltan <b>${diff} sacos</b> por asignar.`
+                    : `La suma de sacos en las estibas es de <b>${capturedTotalSacks} sacos</b>, lo cual excede los <b>${validExpectedSacks} sacos</b> programados para la orden por <b>${Math.abs(diff)} sacos</b>.`,
+                confirmButtonColor: "#16a34a",
             });
             return;
         }
@@ -169,7 +364,14 @@ export default function StowagePlanModal({
                 shift,
                 hour,
                 supervisor,
-                stowages: tachados.map((t) => (t ? "X" : null)),
+                stowages: stowages.map((v) => {
+                    const trimmed = v.trim();
+                    if (!trimmed) return null;
+                    if (trimmed.toUpperCase() === "X") return "X";
+                    const num = Number(trimmed);
+                    return !isNaN(num) && num > 0 ? num : null;
+                }),
+                stowage_groups: safeOrder.stowage_plan?.stowage_groups || null,
                 adjustment,
                 justification,
                 verifier,
@@ -178,12 +380,18 @@ export default function StowagePlanModal({
                 line_3: line3,
                 line_4: line4,
                 comments,
+                avg_unit_weight: avgUnitWeight ? parseFloat(avgUnitWeight) : null,
+                net_weight: computedNetWeightDisplay || netWeight || null,
                 warehouse: assignedWarehouse,
+                vobo_status: safeOrder.vobo_status || safeOrder.stowage_plan?.vobo_status || "pending",
+                vobo_by: safeOrder.vobo_by || safeOrder.stowage_plan?.vobo_by || null,
+                vobo_at: safeOrder.vobo_at || safeOrder.stowage_plan?.vobo_at || null,
             },
             shipment_order_id: order.shipment_order_id || order.id,
             history_id: order.history_id,
             folio: order.folio,
             warehouse: assignedWarehouse,
+            is_estibadores: isEstibadorUser ? 1 : 0,
         };
 
         try {
@@ -195,8 +403,9 @@ export default function StowagePlanModal({
             Swal.fire({
                 icon: "success",
                 title: "¡Nota de Estiba Guardada!",
-                html: `Se ha guardado la <b>Nota de Estiba (GLS-AP-FO-002)</b> con <b>${countTachados} de 24 estibas tachadas</b>.<br/><br/>
-                <span class="text-emerald-700 font-bold">Candado liberado</span>: Ahora es posible capturar las muestras de ensacadora.`,
+                html: isVoBoApproved
+                    ? `Se ha guardado la <b>Nota de Estiba (GLS-AP-FO-002)</b> con <b>${countOccupied} de 24 estibas</b> (${totalSacksDisplay} sacos).<br/><br/><span class="text-emerald-700 font-bold">VoBo Autorizado ✓</span>: Puede continuar con la toma de muestras.`
+                    : `Se ha guardado la <b>Nota de Estiba (GLS-AP-FO-002)</b> con <b>${countOccupied} de 24 estibas</b> (${totalSacksDisplay} sacos).<br/><br/><span class="text-amber-700 font-bold">Estado: Pendiente de VoBo</span> por parte de Supervisión PROAGRO para habilitar la toma de muestras.`,
                 confirmButtonColor: "#16a34a",
                 confirmButtonText: "Entendido",
             });
@@ -265,20 +474,20 @@ export default function StowagePlanModal({
 
                                     <div className="flex items-center gap-3">
                                         <div className="flex items-center gap-1.5 bg-black/20 px-2.5 py-1 rounded-lg border border-white/10 text-xs font-bold">
-                                            <span>Estibas tachadas:</span>
-                                            <span className="text-emerald-300 font-extrabold text-sm">{countTachados}</span>
+                                            <span>Estibas:</span>
+                                            <span className="text-emerald-300 font-extrabold text-sm">{countOccupied}</span>
                                             <span className="text-gray-300">/ 24</span>
                                         </div>
 
-                                        {isPlanCompleted ? (
+                                        {isVoBoApproved ? (
                                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
                                                 <Unlock className="w-3 h-3 text-emerald-300" />
-                                                Candado Liberado
+                                                VoBo Autorizado ✓
                                             </span>
                                         ) : (
                                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-200 border border-amber-400/30 animate-pulse">
                                                 <Lock className="w-3 h-3 text-amber-300" />
-                                                Candado Activo
+                                                Pendiente de VoBo
                                             </span>
                                         )}
 
@@ -292,19 +501,19 @@ export default function StowagePlanModal({
                                     </div>
                                 </div>
 
-                                {/* Quick action bar for tachar */}
+                                {/* Quick action bar for estibas / sacos */}
                                 <div className="bg-emerald-50 px-5 py-2 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
                                     <div className="flex items-center gap-2 text-xs text-emerald-950 font-semibold">
-                                        <span>✍️ Instrucción: <b>Haga clic en los cuadros del 1 al 24</b> para ir tachándolos con una <b>X</b> a medida que se estiba la carga.</span>
+                                        <span>✍️ Captura de sacos por estiba: <b>Ingrese o agregue el número de sacos en los cuadros del 1 al 24</b> (ej. 120, 180).</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
                                             type="button"
-                                            onClick={handleTacharTodas}
+                                            onClick={handleAddStowageBatch}
                                             className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-md text-xs font-bold transition shadow-xs"
                                         >
-                                            <CheckSquare className="w-3.5 h-3.5" />
-                                            Tachar Todas (1 al 24)
+                                            <Plus className="w-3.5 h-3.5" />
+                                            Agregar Estibas / Sacos
                                         </button>
                                         <button
                                             type="button"
@@ -312,7 +521,7 @@ export default function StowagePlanModal({
                                             className="inline-flex items-center gap-1 px-3 py-1 bg-white hover:bg-red-50 text-red-700 border border-red-200 rounded-md text-xs font-bold transition shadow-xs"
                                         >
                                             <RotateCcw className="w-3.5 h-3.5 text-red-500" />
-                                            Limpiar marcas
+                                            Limpiar
                                         </button>
                                     </div>
                                 </div>
@@ -499,16 +708,16 @@ export default function StowagePlanModal({
                                             </div>
                                         </div>
 
-                                        {/* --- GRID E- (24 CUADROS PARA IR TAXANDO/TACHANDO CON X) --- */}
+                                        {/* --- GRID E- (24 CUADROS CON NÚMERO DE SACOS) + TM PROGRAMADA + PESO NETO --- */}
                                         <div className="w-full mb-1 flex items-end">
                                             {/* Table Container */}
-                                            <div className="w-[90%] flex flex-col">
+                                            <div className="w-[82%] flex flex-col">
                                                 <div className="flex items-center justify-between mb-0.5 px-1">
                                                     <span className="text-center font-black text-sm leading-none text-emerald-950">
                                                         E- (ESTIBAS DEL 1 AL 24)
                                                     </span>
                                                     <span className="text-[9px] text-gray-500 font-bold">
-                                                        * Toque cada cuadro para tachar con una X
+                                                        * Cantidad de sacos por cada estiba
                                                     </span>
                                                 </div>
                                                 <table className="w-full border-collapse border border-green-800 text-center">
@@ -527,27 +736,26 @@ export default function StowagePlanModal({
                                                     <tbody>
                                                         <tr className="h-12 bg-white">
                                                             {gridCols.map((col) => {
-                                                                const isTachado = tachados[col - 1];
+                                                                const cellVal = stowages[col - 1] ?? "";
+                                                                const hasValue = cellVal.trim() !== "";
                                                                 return (
                                                                     <td
                                                                         key={`cell-${col}`}
-                                                                        onClick={() => toggleTachado(col - 1)}
-                                                                        className={`border border-green-800 font-black text-center cursor-pointer select-none transition ${
-                                                                            isTachado
-                                                                                ? "bg-emerald-100/60 hover:bg-emerald-200/70"
-                                                                                : "hover:bg-slate-100"
+                                                                        className={`border border-green-800 p-0 text-center transition ${
+                                                                            hasValue
+                                                                                ? "bg-emerald-50/70"
+                                                                                : "bg-white hover:bg-slate-50"
                                                                         }`}
-                                                                        title={`Estiba E-${col}: Haga clic para ${isTachado ? "destachar" : "tachar con X"}`}
+                                                                        title={`Estiba E-${col}: Número de sacos`}
                                                                     >
-                                                                        {isTachado ? (
-                                                                            <span className="text-red-700 font-black text-xl sm:text-2xl leading-none inline-block transform hover:scale-110 transition">
-                                                                                X
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="text-gray-300 text-[9px] font-normal hover:text-gray-500">
-                                                                                +
-                                                                            </span>
-                                                                        )}
+                                                                        <input
+                                                                            type="text"
+                                                                            inputMode="numeric"
+                                                                            value={cellVal}
+                                                                            onChange={(e) => handleCellChange(col - 1, e.target.value)}
+                                                                            className="w-full h-12 p-0 text-center font-black text-[10px] border-0 focus:ring-1 focus:ring-emerald-600 bg-transparent text-gray-900"
+                                                                            placeholder="-"
+                                                                        />
                                                                     </td>
                                                                 );
                                                             })}
@@ -556,13 +764,23 @@ export default function StowagePlanModal({
                                                 </table>
                                             </div>
 
-                                            {/* Box Container on Right with TM Programada */}
-                                            <div className="w-[10%] flex flex-col items-center pl-1">
+                                            {/* Box Container on Right with TM Programada & Peso Neto */}
+                                            <div className="w-[9%] flex flex-col items-center pl-1">
                                                 <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
                                                     TM Programada
                                                 </span>
-                                                <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[11px] text-gray-900 shadow-2xs">
+                                                <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[10.5px] text-gray-900 shadow-2xs">
                                                     {safeOrder.programmed_tons ? Number(safeOrder.programmed_tons).toFixed(1) : "0.0"}
+                                                </div>
+                                            </div>
+                                            <div className="w-[9%] flex flex-col items-center pl-1">
+                                                <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
+                                                    Peso Neto
+                                                </span>
+                                                <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[9.5px] text-emerald-900 shadow-2xs px-0.5 text-center leading-tight">
+                                                    {computedNetWeightDisplay || (
+                                                        <span className="text-[8px] font-semibold text-gray-400">Pendiente</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -573,7 +791,7 @@ export default function StowagePlanModal({
                                                 { label: "CÓDIGO", width: "15%", value: safeOrder.product?.code || safeOrder.product_code || "N/A" },
                                                 { label: "DESCRIPCIÓN DEL PRODUCTO", width: "40%", value: safeOrder.product_text || safeOrder.product?.name || safeOrder.product || "UREA INDUSTRIAL" },
                                                 { label: "NO. DE ALMACEN", width: "15%", value: safeOrder.warehouse ? safeOrder.warehouse.replace("Almacen ", "") : "2" },
-                                                { label: "TOTAL DE SACOS", width: "10%", value: calculateSacks() },
+                                                { label: "TOTAL DE SACOS", width: "10%", value: totalSacksDisplay },
                                             ].map((col, idx) => (
                                                 <div key={idx} className={`flex flex-col ${borderClass} border-r`} style={{ width: col.width }}>
                                                     <div className={`bg-gray-100 ${borderClass} border-b text-center font-bold text-[7px] p-0.5 uppercase h-3.5 flex items-center justify-center`}>
@@ -636,11 +854,19 @@ export default function StowagePlanModal({
                                                 <div className="flex-1 flex items-center justify-center px-1">
                                                     <input
                                                         type="text"
+                                                        list="stowage-verifiers-list"
                                                         value={verifier}
                                                         onChange={(e) => setVerifier(e.target.value)}
                                                         className="w-full text-center font-bold text-[8.5px] uppercase border-0 focus:ring-0 p-0 text-gray-800"
                                                         placeholder="Verificador..."
                                                     />
+                                                    {verifiers.length > 0 && (
+                                                        <datalist id="stowage-verifiers-list">
+                                                            {verifiers.map((v) => (
+                                                                <option key={v.id} value={v.name} />
+                                                            ))}
+                                                        </datalist>
+                                                    )}
                                                 </div>
                                             </div>
 
@@ -709,11 +935,15 @@ export default function StowagePlanModal({
                                 <div className="bg-white px-5 py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
                                     <div className="text-xs text-gray-600 flex items-center gap-2">
                                         <span className="font-semibold">
-                                            Estibas completadas: <b className="text-emerald-700">{countTachados} de 24</b>
+                                            Estibas completadas: <b className="text-emerald-700">{countOccupied} de 24</b> ({totalSacksDisplay} sacos)
                                         </span>
                                         <span>•</span>
                                         <span>
-                                            Al guardar se <b>desbloquea el candado</b> de muestreo.
+                                            {isVoBoApproved ? (
+                                                <span className="text-emerald-700 font-bold">VoBo autorizado por {safeOrder.vobo_by || safeOrder.stowage_plan?.vobo_by || "Supervisión PROAGRO"}</span>
+                                            ) : (
+                                                <span>Requiere <b>VoBo de Supervisión PROAGRO</b> para habilitar toma de muestras.</span>
+                                            )}
                                         </span>
                                     </div>
 
@@ -726,6 +956,18 @@ export default function StowagePlanModal({
                                         >
                                             Cancelar
                                         </button>
+
+                                        {!isEstibadorUser && !isVoBoApproved && (
+                                            <button
+                                                type="button"
+                                                onClick={handleApproveVoBoInModal}
+                                                disabled={isSaving}
+                                                className="px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white font-extrabold shadow-md hover:shadow-lg transition flex items-center gap-2 text-xs disabled:opacity-50"
+                                            >
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                <span>Botón: VoBo (Autorizar Nota de Estiba)</span>
+                                            </button>
+                                        )}
 
                                         <button
                                             type="button"

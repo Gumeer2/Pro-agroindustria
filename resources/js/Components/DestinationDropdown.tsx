@@ -116,7 +116,7 @@ export default function DestinationDropdown({ value, initialDestinations = [], o
         <div className="relative">
             {label && (
                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                    {label}
+                    {label} <span className="text-red-500">*</span>
                 </label>
             )}
 

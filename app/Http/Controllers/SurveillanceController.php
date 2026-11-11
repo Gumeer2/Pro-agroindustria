@@ -569,10 +569,23 @@ class SurveillanceController extends Controller
             return 'El operador no cuenta con asignación.';
         }
 
-        // Revisar si el operador tiene al menos UNA asignación pendiente de destarar
+        // Revisar si el operador tiene al menos UNA asignación pendiente de destarar / procesar
         $hasPendingAssignment = $assignments->contains(function ($assignment) {
             $status = strtolower(trim((string)($assignment->destare_status ?? '')));
-            return empty($status) || $status === 'pending';
+            if (!empty($status) && $status !== 'pending') {
+                return false;
+            }
+
+            // Verificar también si la OE vinculada a esta asignación ya fue destarada o cerrada
+            if (!empty($assignment->shipment_order_id)) {
+                $oe = ShipmentOrder::with(['weight_ticket', 'loadingOrders.weight_ticket'])
+                    ->find($assignment->shipment_order_id);
+                if ($oe && $oe->status !== 'cancelled' && $this->isOrderCompleted($oe)) {
+                    return false;
+                }
+            }
+
+            return true;
         });
 
         // Si tiene al menos una asignación sin destarar, SE PERMITE el ingreso
@@ -784,15 +797,6 @@ class SurveillanceController extends Controller
                 'checklist_passed' => true,
                 'user_id'          => auth()->id()
             ]);
-
-            // Auto-link active orders for this operator
-            if ($log->shipmentOrders()->count() === 0 && $log->subject) {
-                $autoOrders = $this->queryAvailableOrdersForOperator($log->subject, $log->subject_type);
-                $orderIds = collect($autoOrders)->pluck('id')->take(3)->toArray();
-                if (!empty($orderIds)) {
-                    $log->shipmentOrders()->sync($orderIds);
-                }
-            }
 
             return back()->with('success', 'Acceso autorizado correctamente.');
         } else {

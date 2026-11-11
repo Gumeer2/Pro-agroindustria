@@ -70,6 +70,8 @@ interface Operator {
     presentation?: string;
     programmed_tons?: string | number;
     sack?: string;
+    type?: string;
+    default_assignment_id?: number | string;
     sales_order?: {
         id: string;
         folio: string;
@@ -83,15 +85,20 @@ interface Operator {
     } | null;
     assignments?: Array<{
         id: number;
+        part_number?: number;
+        trailer_plate?: string;
         sales_order_id: string;
         presentation: string;
         tm: number | string;
         sack?: string;
+        type?: string;
         folio?: string;
         balance?: number | string;
         client_id?: number;
         client_name?: string;
         product_name?: string;
+        is_documented?: boolean;
+        documented_folio?: string;
     }>;
 }
 
@@ -109,6 +116,8 @@ export default function Create({
     sales_orders,
     default_folio,
     scale_operators,
+    auto_operator_id,
+    first_order_id,
 }: {
     auth: any;
     clients: Client[];
@@ -118,6 +127,8 @@ export default function Create({
     sales_orders: SalesOrder[];
     default_folio: string;
     scale_operators?: { id: number; name: string }[];
+    auto_operator_id?: string | number | null;
+    first_order_id?: string | null;
 }) {
     const { data, setData, post, processing, errors } = useForm({
         folio: default_folio || "",
@@ -168,14 +179,27 @@ export default function Create({
         scale_operator_id: "",
         economic_number: "",
         qr_fertinal: "",
+        assignment_id: "" as string | number,
+        first_order_id: first_order_id || "",
     });
 
     const [queryClient, setQueryClient] = useState("");
     const [qrInput, setQrInput] = useState(""); // Replaces queryOperator
     const [operatorAssignments, setOperatorAssignments] = useState<any[]>([]);
+    const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | number>("");
     const [showQrScanner, setShowQrScanner] = useState(false);
     const [isProcessingQr, setIsProcessingQr] = useState(false);
     const [cartaPorteWarning, setCartaPorteWarning] = useState<string | null>(null);
+    const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+
+    const clearClientError = (field: string) => {
+        setClientErrors((prev) => {
+            if (!prev[field]) return prev;
+            const next = { ...prev };
+            delete next[field];
+            return next;
+        });
+    };
 
     const isScanningRef = useRef(false);
     const lastScannedRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
@@ -289,25 +313,26 @@ export default function Create({
             if (selectedOperator.assignments && selectedOperator.assignments.length > 1) {
                 if (!Swal.isVisible()) {
                     const ovBadges = selectedOperator.assignments
-                        .map(
-                            (a) =>
-                                `<div style="background-color:#eef2ff; color:#312e81; font-weight:700; padding:8px 14px; border-radius:8px; border:1.5px solid #c7d2fe; font-size:15px; font-family:monospace; margin:5px 0; display:flex; align-items:center; justify-content:space-between;"><span>📦 ${a.folio || "OV"}</span> <span style="color:#047857; font-weight:800;">${Number(a.tm || 0).toFixed(2)} TM</span> <span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:4px; font-size:12px;">${a.presentation || "GRANEL"}</span></div>`
-                        )
+                        .map((a, idx) => {
+                            const pNum = a.part_number || idx + 1;
+                            const partLabel = `${pNum === 1 ? "1ra Parte" : `${pNum}da Parte`}${a.trailer_plate ? ` (Rem. ${a.trailer_plate})` : ""}`;
+                            const docBadge = a.is_documented
+                                ? `<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:800;">🔒 DOCUMENTADA (${a.documented_folio || "OE"})</span>`
+                                : `<span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:4px; font-size:12px;">${a.presentation || "GRANEL"}</span>`;
+                            return `<div style="background-color:${a.is_documented ? '#f1f5f9' : '#eef2ff'}; color:${a.is_documented ? '#64748b' : '#312e81'}; font-weight:700; padding:8px 14px; border-radius:8px; border:1.5px solid ${a.is_documented ? '#cbd5e1' : '#c7d2fe'}; font-size:15px; font-family:monospace; margin:5px 0; display:flex; align-items:center; justify-content:space-between; gap:8px;"><span>🚛 <strong>${partLabel}</strong> • 📦 ${a.folio || "OV"}</span> <span style="color:#047857; font-weight:800;">${Number(a.tm || 0).toFixed(2)} TM</span> ${docBadge}</div>`;
+                        })
                         .join("");
 
                     Swal.fire({
                         icon: "info",
-                        title: '<span style="font-size:24px; font-weight:800; color:#1e1b4b;">Múltiples Órdenes Asignadas</span>',
+                        title: '<span style="font-size:24px; font-weight:800; color:#1e1b4b;">Unidad FULL — Asignaciones Activas</span>',
                         html: `
                             <div style="text-align:left; color:#1f2937;">
                                 <p style="font-size:16px; line-height:1.5; margin-bottom:12px;">
-                                    El operador <strong>${selectedOperator.operator_name}</strong> tiene <strong>${selectedOperator.assignments.length} órdenes de venta</strong> asignadas:
+                                    El operador <strong>${selectedOperator.operator_name}</strong> tiene <strong>${selectedOperator.assignments.length} asignaciones activas</strong> ligadas a su QR:
                                 </p>
-                                <div style="background:#f8fafc; padding:10px; border-radius:10px; border:1px solid #e2e8f0; margin-bottom:14px;">
+                                <div style="background:#f8fafc; padding:10px; border-radius:10px; border:1px solid #e2e8f0;">
                                     ${ovBadges}
-                                </div>
-                                <div style="font-size:14px; color:#3730a3; background:#eef2ff; padding:12px 14px; border-radius:8px; border:1px solid #c7d2fe; line-height:1.45;">
-                                    ℹ️ <strong>Se autollenó con la orden más reciente.</strong> Puedes cambiarla en el menú desplegable de <strong>Vincular a Orden de Venta</strong> si requieres documentar otra.
                                 </div>
                             </div>
                         `,
@@ -360,6 +385,34 @@ export default function Create({
 
 
     // Removed specific Search Operators Effect as we scan on Enter now
+
+    // Si venimos de guardar la 1ra parte de un FULL, cargar en automático la 2da parte
+    useEffect(() => {
+        if (!auto_operator_id) return;
+        const loadSecondPartOperator = async () => {
+            try {
+                const response = await axios.get(route("documentation.operators.search"), {
+                    params: { q: String(auto_operator_id) },
+                });
+                const operators: Operator[] = response.data;
+                const exactMatch = operators.find((op) => String(op.id) === String(auto_operator_id));
+                const selectedOp = exactMatch || operators[0];
+                if (selectedOp) {
+                    handleOperatorSelect(selectedOp);
+                    setData((prev) => ({
+                        ...prev,
+                        folio: default_folio || prev.folio,
+                        carta_porte: "",
+                        first_order_id: first_order_id || prev.first_order_id,
+                    }));
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                }
+            } catch (err) {
+                console.error("Error auto-loading 2nd part operator:", err);
+            }
+        };
+        loadSecondPartOperator();
+    }, [auto_operator_id, default_folio, first_order_id]);
 
     useEffect(() => {
         if (errors.carta_porte) {
@@ -414,23 +467,37 @@ export default function Create({
     const handleOperatorSelect = (operator: Operator | null) => {
         if (!operator) return;
 
+        let defaultAsgId: string | number = "";
+        let undocumentedCount = 0;
+
         if (operator.assignments && operator.assignments.length > 0) {
             setOperatorAssignments(operator.assignments);
+            const firstUndocumented = operator.assignments.find((a) => !a.is_documented);
+            undocumentedCount = operator.assignments.filter((a) => !a.is_documented).length;
+            defaultAsgId = firstUndocumented?.id || operator.default_assignment_id || operator.assignments[0]?.id || "";
+            setSelectedAssignmentId(defaultAsgId);
         } else if (operator.sales_order_id) {
             setOperatorAssignments([
                 {
+                    id: "default",
                     sales_order_id: operator.sales_order_id,
                     presentation: operator.presentation,
                     tm: operator.programmed_tons,
                     sack: operator.sack,
                     folio: operator.sales_order?.folio,
+                    trailer_plate: operator.trailer_plate,
                 }
             ]);
+            defaultAsgId = "default";
+            setSelectedAssignmentId("default");
         } else {
             setOperatorAssignments([]);
+            setSelectedAssignmentId("");
         }
 
-        const autoFields: any = {};
+        const autoFields: any = {
+            assignment_id: defaultAsgId,
+        };
 
         // Auto-llenar campos si el operador tiene Orden de Venta asignada
         if (operator.sales_order_id) {
@@ -504,6 +571,40 @@ export default function Create({
         setQrInput(""); // Clear the search/scan field once selected
     };
 
+    const applyOperatorAssignment = (assignment: any) => {
+        if (!assignment || assignment.is_documented) return;
+        setSelectedAssignmentId(assignment.id || "");
+        const soId = assignment.sales_order_id?.toString() || "";
+        const so = sales_orders.find((s) => s.id.toString() === soId);
+        if (!so) return;
+
+        const vesselObs = so.vessel
+            ? `PRODUCTO PROPIEDAD DE ${so.client?.business_name || ""}, PROVENIENTE DEL BUQUE "${so.vessel.name}".`
+            : "";
+
+        const isEnvasado = (assignment.presentation || "").toUpperCase() === "ENVASADO";
+        const sackTypeVal = isEnvasado ? (assignment.type || assignment.sack || "") : "";
+        const sackObs = sackTypeVal ? `TIPO DE SACO: ${sackTypeVal.toUpperCase()}` : "";
+        const finalObservations = [vesselObs, sackObs].filter(Boolean).join(" ");
+
+        setData((prev) => ({
+            ...prev,
+            assignment_id: assignment.id || "",
+            sales_order_id: soId,
+            client_id: so.client_id.toString(),
+            client_name: so.client?.business_name || "",
+            rfc: so.client?.rfc || "",
+            address: so.client?.address || "",
+            product: so.product?.name || "",
+            balance: so.balance ? so.balance.toString() : "0",
+            observations: finalObservations,
+            presentation: assignment.presentation ? assignment.presentation.toUpperCase() : prev.presentation,
+            sack_type: assignment.sack ? assignment.sack.replace(/[^0-9]/g, "") : (isEnvasado ? prev.sack_type : ""),
+            programmed_tons: assignment.tm ? String(assignment.tm) : prev.programmed_tons,
+            trailer_plate: assignment.trailer_plate || prev.trailer_plate,
+        }));
+    };
+
     const handleSalesOrderSelect = (
         e: React.ChangeEvent<HTMLSelectElement>,
     ) => {
@@ -511,13 +612,20 @@ export default function Create({
         const so = sales_orders.find((s) => s.id.toString() === soId);
 
         if (so) {
+            const matchAssignment =
+                operatorAssignments.find(
+                    (a) => !a.is_documented && a.sales_order_id?.toString() === soId.toString()
+                ) ||
+                operatorAssignments.find(
+                    (a) => a.sales_order_id?.toString() === soId.toString()
+                );
+            if (matchAssignment?.id && !matchAssignment.is_documented) {
+                setSelectedAssignmentId(matchAssignment.id);
+            }
+
             const vesselObs = so.vessel
                 ? `PRODUCTO PROPIEDAD DE ${so.client?.business_name || ""}, PROVENIENTE DEL BUQUE "${so.vessel.name}".`
                 : "";
-
-            const matchAssignment = operatorAssignments.find(
-                (a) => a.sales_order_id?.toString() === soId.toString()
-            );
 
             const isEnvasado = matchAssignment ? (matchAssignment.presentation || "").toUpperCase() === "ENVASADO" : data.presentation === "ENVASADO";
             const sackTypeVal = isEnvasado ? (matchAssignment?.type || matchAssignment?.sack || "") : "";
@@ -526,6 +634,7 @@ export default function Create({
 
             setData((data) => ({
                 ...data,
+                assignment_id: matchAssignment?.id || data.assignment_id,
                 sales_order_id: soId,
                 client_id: so.client_id.toString(),
                 client_name: so.client?.business_name || "",
@@ -537,6 +646,7 @@ export default function Create({
                 presentation: matchAssignment?.presentation ? matchAssignment.presentation.toUpperCase() : data.presentation,
                 sack_type: matchAssignment?.sack ? matchAssignment.sack.replace(/[^0-9]/g, "") : data.sack_type,
                 programmed_tons: matchAssignment?.tm ? String(matchAssignment.tm) : (matchAssignment ? "" : data.programmed_tons),
+                trailer_plate: matchAssignment?.trailer_plate || data.trailer_plate,
             }));
         } else {
             setData((data) => ({
@@ -554,18 +664,22 @@ export default function Create({
         }
     };
 
-    // Solo mostrar las Órdenes de Venta que tiene asignadas el operador escaneado
+    // Solo mostrar las Órdenes de Venta que tiene asignadas (y pendientes de documentar) el operador escaneado
     const filteredSalesOrders = useMemo(() => {
         if (!data.operator_id) {
             return sales_orders;
         }
 
+        const activeAsgs = operatorAssignments.some((a) => !a.is_documented)
+            ? operatorAssignments.filter((a) => !a.is_documented)
+            : operatorAssignments;
+
         const list = sales_orders.filter((so) =>
-            operatorAssignments.some((a) => a.sales_order_id?.toString() === so.id.toString()) ||
+            activeAsgs.some((a) => a.sales_order_id?.toString() === so.id.toString()) ||
             (data.sales_order_id && so.id.toString() === data.sales_order_id.toString())
         );
 
-        operatorAssignments.forEach((a) => {
+        activeAsgs.forEach((a) => {
             if (a.sales_order_id && !list.some((so) => so.id.toString() === a.sales_order_id.toString())) {
                 list.push({
                     id: a.sales_order_id,
@@ -580,16 +694,152 @@ export default function Create({
         return list;
     }, [data.operator_id, data.sales_order_id, sales_orders, operatorAssignments]);
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    const validateForm = () => {
+        const missing: string[] = [];
+        const errorsMap: Record<string, string> = {};
 
+        // 1. Información General & Cliente
+        if (!data.sales_order_id) {
+            missing.push("Vincular a Orden de Venta (OV)");
+            errorsMap.sales_order_id = "Seleccione una Orden de Venta";
+        }
+        if (!data.client_id && !data.client_name) {
+            missing.push("Cliente");
+            errorsMap.client_name = "El cliente es obligatorio";
+        }
+        if (!data.consigned_to || !data.consigned_to.trim()) {
+            missing.push("Consignar a");
+            errorsMap.consigned_to = "El consignatario es obligatorio";
+        }
+
+        // 2. Datos del Transportista
+        if (!data.operator_name || !data.operator_name.trim()) {
+            missing.push("Nombre del Operador");
+            errorsMap.operator_name = "El nombre del operador es obligatorio";
+        }
+        if (!data.transport_company || !data.transport_company.trim()) {
+            missing.push("Empresa Transportista");
+            errorsMap.transport_company = "La empresa transportista es obligatoria";
+        }
+        if (!data.carta_porte || !data.carta_porte.trim()) {
+            missing.push("Carta Porte");
+            errorsMap.carta_porte = "La carta porte es obligatoria";
+        }
+        if (!data.unit_type || !data.unit_type.trim()) {
+            missing.push("Tipo de Unidad");
+            errorsMap.unit_type = "El tipo de unidad es obligatorio";
+        }
+        if (!data.tractor_plate || !data.tractor_plate.trim()) {
+            missing.push("Placas Tractor");
+            errorsMap.tractor_plate = "Las placas del tractor son obligatorias";
+        }
+        if (!data.trailer_plate || !data.trailer_plate.trim()) {
+            missing.push("Placas Remolque (o S/R)");
+            errorsMap.trailer_plate = "Las placas de remolque son obligatorias (indique placas o S/R)";
+        }
+        if (!data.economic_number || !data.economic_number.trim()) {
+            missing.push("Número Económico");
+            errorsMap.economic_number = "El número económico es obligatorio";
+        }
+        if (!data.license_number || !data.license_number.trim()) {
+            missing.push("Licencia");
+            errorsMap.license_number = "La licencia es obligatoria";
+        }
+        if (!data.unit_number || !data.unit_number.trim()) {
+            missing.push("Unidad / Marca");
+            errorsMap.unit_number = "La unidad / marca es obligatoria";
+        }
+
+        // 3. Detalle del Embarque
+        if (!data.product || !data.product.trim()) {
+            missing.push("Producto");
+            errorsMap.product = "El producto es obligatorio";
+        }
+        if (!data.presentation || !data.presentation.trim()) {
+            missing.push("Presentación");
+            errorsMap.presentation = "La presentación es obligatoria";
+        }
+        if (data.presentation === "ENVASADO" && (!data.sack_type || !data.sack_type.trim())) {
+            missing.push("Tamaño de Saco");
+            errorsMap.sack_type = "Seleccione el tamaño de saco";
+        }
+        if (!data.origin_id) {
+            missing.push("Origen");
+            errorsMap.origin_id = "Seleccione un origen";
+        }
+        if (!data.programmed_tons || isNaN(Number(data.programmed_tons)) || Number(data.programmed_tons) <= 0) {
+            missing.push("Ton. Programadas (mayor a 0)");
+            errorsMap.programmed_tons = "El tonelaje programado debe ser mayor a 0";
+        }
+        if (!data.destination_id && (!data.destination || !data.destination.trim())) {
+            missing.push("Destino");
+            errorsMap.destination_id = "Seleccione un destino";
+        }
+        if (!data.state || !data.state.trim()) {
+            missing.push("Estado");
+            errorsMap.state = "Seleccione el estado de destino";
+        }
+
+        return {
+            isValid: missing.length === 0,
+            missing,
+            errorsMap,
+            firstField: missing.length > 0 ? Object.keys(errorsMap)[0] : undefined,
+        };
+    };
+
+    const runSubmit = () => {
         // Strict Block: Do not allow submission if there's a duplicate Carta Porte warning
         if (cartaPorteWarning) {
-            alert("❌ Error: " + cartaPorteWarning + "\n\nDebe corregir la Carta Porte antes de guardar.");
+            Swal.fire({
+                icon: "error",
+                title: "Carta Porte Duplicada",
+                text: cartaPorteWarning + "\n\nDebe corregir la Carta Porte antes de guardar.",
+                confirmButtonColor: "#dc2626",
+            });
             return;
         }
 
+        const validation = validateForm();
+        if (!validation.isValid) {
+            setClientErrors(validation.errorsMap);
+            if (validation.firstField) {
+                const el = document.querySelector(`[name="${validation.firstField}"]`) as HTMLElement;
+                if (el) {
+                    el.focus();
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+            return;
+        }
+
+        setClientErrors({});
         post(route("documentation.store"));
+    };
+
+    const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+        if (e.key === 'Enter') {
+            const target = e.target as HTMLElement;
+            // Permitir Enter para saltos de línea dentro de textarea
+            if (target.tagName === 'TEXTAREA') {
+                return;
+            }
+            // Si el foco está en el input de escaneo QR, su propio onKeyDown (handleQrInputKeyDown) lo procesa
+            if (target.getAttribute('data-qr-input') === 'true' || target.id === 'qr-input') {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Al presionar Enter, validar que todo esté completo antes de enviar a imprimir
+            runSubmit();
+        }
+    };
+
+    const submit: FormEventHandler = (e) => {
+        e.preventDefault();
+        runSubmit();
     };
 
     return (
@@ -624,7 +874,7 @@ export default function Create({
                         </div>
                     </div>
 
-                    <form onSubmit={submit} className="p-8">
+                    <form onSubmit={submit} onKeyDown={handleFormKeyDown} className="p-8">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                             {/* SECTION: Información General */}
                             <div className="md:col-span-2">
@@ -636,33 +886,42 @@ export default function Create({
 
                             <div className="relative">
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Folio O.E.
+                                    Folio O.E. <span className="text-red-500">*</span>
                                 </label>
                                 <div className="relative">
                                     <input
+                                        name="folio"
                                         type="text"
                                         value={data.folio}
-                                        onChange={(e) => setData("folio", e.target.value)}
-                                        className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 font-bold ${errors.folio ? 'border-red-500 bg-red-50 text-red-900' : 'text-gray-700'}`}
+                                        onChange={(e) => {
+                                            setData("folio", e.target.value);
+                                            clearClientError("folio");
+                                        }}
+                                        className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 font-bold ${(clientErrors.folio || errors.folio) ? 'border-red-500 bg-red-50 text-red-900' : 'text-gray-700'}`}
                                     />
-                                    <Hash className={`w-5 h-5 absolute left-3 top-2.5 ${errors.folio ? 'text-red-400' : 'text-gray-400'}`} />
+                                    <Hash className={`w-5 h-5 absolute left-3 top-2.5 ${(clientErrors.folio || errors.folio) ? 'text-red-400' : 'text-gray-400'}`} />
                                 </div>
-                                {errors.folio && <span className="text-xs text-red-500 mt-1 block font-bold">{errors.folio}</span>}
+                                {(clientErrors.folio || errors.folio) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.folio || errors.folio}</span>}
                             </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Fecha
+                                    Fecha <span className="text-red-500">*</span>
                                 </label>
                                 <div className="relative">
                                     <input
+                                        name="date"
                                         type="date"
                                         value={data.date}
-                                        onChange={(e) => setData("date", e.target.value)}
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10"
+                                        onChange={(e) => {
+                                            setData("date", e.target.value);
+                                            clearClientError("date");
+                                        }}
+                                        className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 ${(clientErrors.date || errors.date) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                     />
                                     <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>
+                                {(clientErrors.date || errors.date) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.date || errors.date}</span>}
                             </div>
 
                             <div className="md:col-span-2">
@@ -672,31 +931,110 @@ export default function Create({
                                     </label>
                                     {operatorAssignments.length > 1 && (
                                         <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                                            <span>📦</span> {operatorAssignments.length} órdenes asignadas
+                                            <span>📦</span> {operatorAssignments.length} asignaciones activas
                                         </span>
                                     )}
                                 </div>
-                                <div className="relative">
-                                                    <select
-                                                        required
-                                                        value={data.sales_order_id}
-                                                        onChange={handleSalesOrderSelect}
-                                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white font-bold"
+
+                                {operatorAssignments.length > 1 && (
+                                    <div className="mb-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+                                        <span className="text-xs font-extrabold text-indigo-900 uppercase block">
+                                            Seleccione la parte / asignación a documentar (Unidad FULL):
+                                        </span>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {operatorAssignments.map((asg, idx) => {
+                                                const isDocumented = Boolean(asg.is_documented);
+                                                const isActiveAsg = !isDocumented && String(selectedAssignmentId) === String(asg.id);
+                                                const pNum = asg.part_number || idx + 1;
+                                                const partLabel = pNum === 1 ? "Asignación 1 (1ra Parte)" : `Asignación ${pNum} (${pNum}da Parte)`;
+                                                return (
+                                                    <button
+                                                        key={asg.id || idx}
+                                                        type="button"
+                                                        disabled={isDocumented}
+                                                        onClick={() => {
+                                                            if (!isDocumented) {
+                                                                applyOperatorAssignment(asg);
+                                                            }
+                                                        }}
+                                                        className={`p-2.5 rounded-lg border text-left transition-all flex flex-col justify-between gap-1 ${
+                                                            isDocumented
+                                                                ? "bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed opacity-75"
+                                                                : isActiveAsg
+                                                                    ? "bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-300"
+                                                                    : "bg-white text-gray-800 border-indigo-200 hover:bg-indigo-100/60"
+                                                        }`}
                                                     >
-                                                        <option value="">
-                                                            {data.operator_id && filteredSalesOrders.length === 0
-                                                                ? "-- Operador sin órdenes asignadas --"
-                                                                : "-- Seleccionar OV Obligatorio --"}
-                                                        </option>
-                                                        {filteredSalesOrders.map((so) => (
-                                                            <option key={so.id} value={so.id}>
-                                                                {so.folio}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                        <div className="flex items-center justify-between gap-2 text-xs font-black uppercase">
+                                                            <span>{isDocumented ? "🔒" : "🚛"} {partLabel}</span>
+                                                            <div className="flex items-center gap-1">
+                                                                {isDocumented && (
+                                                                    <span className="font-mono px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold">
+                                                                        YA DOCUMENTADA {asg.documented_folio ? `(${asg.documented_folio})` : ""}
+                                                                    </span>
+                                                                )}
+                                                                {asg.trailer_plate && (
+                                                                    <span
+                                                                        className={`font-mono px-1.5 py-0.5 rounded text-[10.5px] ${
+                                                                            isDocumented
+                                                                                ? "bg-gray-200 text-gray-600 border border-gray-300"
+                                                                                : isActiveAsg
+                                                                                    ? "bg-white/20 text-white"
+                                                                                    : "bg-indigo-50 text-indigo-900 border border-indigo-200"
+                                                                        }`}
+                                                                    >
+                                                                        Rem: {asg.trailer_plate}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center justify-between gap-2 text-xs font-semibold">
+                                                            <span className="font-mono">OV: {asg.folio || "OV"}</span>
+                                                            <span
+                                                                className={
+                                                                    isDocumented
+                                                                        ? "text-gray-500 font-bold"
+                                                                        : isActiveAsg
+                                                                            ? "text-emerald-200 font-black"
+                                                                            : "text-emerald-700 font-black"
+                                                                }
+                                                            >
+                                                                {asg.presentation || "GRANEL"} • {Number(asg.tm || 0).toFixed(2)} TM
+                                                            </span>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="relative">
+                                    <select
+                                        name="sales_order_id"
+                                        required
+                                        value={data.sales_order_id}
+                                        onChange={(e) => {
+                                            handleSalesOrderSelect(e);
+                                            clearClientError("sales_order_id");
+                                            clearClientError("client_name");
+                                            clearClientError("product");
+                                        }}
+                                        className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-white font-bold ${(clientErrors.sales_order_id || errors.sales_order_id) ? 'border-red-500 bg-red-50 text-red-900 ring-1 ring-red-500' : 'border-gray-300'}`}
+                                    >
+                                        <option value="">
+                                            {data.operator_id && filteredSalesOrders.length === 0
+                                                ? "-- Operador sin órdenes asignadas --"
+                                                : "-- Seleccionar OV Obligatorio --"}
+                                        </option>
+                                        {filteredSalesOrders.map((so) => (
+                                            <option key={so.id} value={so.id}>
+                                                {so.folio}
+                                            </option>
+                                        ))}
+                                    </select>
                                     <ShoppingCart className="w-5 h-5 text-indigo-400 absolute left-3 top-2.5" />
                                 </div>
-                                {errors.sales_order_id && <span className="text-xs text-red-500 mt-1 block">{errors.sales_order_id}</span>}
+                                {(clientErrors.sales_order_id || errors.sales_order_id) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.sales_order_id || errors.sales_order_id}</span>}
                             </div>
 
                             {/* SECTION: Datos del Cliente */}
@@ -709,23 +1047,28 @@ export default function Create({
 
                             <div className="md:col-span-1">
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Cliente
+                                    Cliente <span className="text-red-500">*</span>
                                 </label>
                                 {data.sales_order_id ? (
                                     <div className="relative">
                                         <input
+                                            name="client_name"
                                             type="text"
                                             value={data.client_name}
                                             readOnly
-                                            className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-gray-100 font-bold text-gray-700 cursor-not-allowed"
+                                            className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-gray-100 font-bold text-gray-700 cursor-not-allowed ${(clientErrors.client_name || errors.client_name) ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-300'}`}
                                         />
                                         <User className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                     </div>
                                 ) : (
-                                    <Combobox onChange={handleClientSelect}>
+                                    <Combobox onChange={(client) => {
+                                        handleClientSelect(client);
+                                        clearClientError("client_name");
+                                    }}>
                                         <div className="relative">
-                                            <div className="relative w-full cursor-default overflow-hidden rounded-lg border border-gray-300 bg-white text-left shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm">
+                                            <div className={`relative w-full cursor-default overflow-hidden rounded-lg border bg-white text-left shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm ${(clientErrors.client_name || errors.client_name) ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-300'}`}>
                                                 <Combobox.Input
+                                                    name="client_name"
                                                     className="w-full border-none py-2.5 pl-10 pr-10 text-sm leading-5 text-gray-900 focus:ring-0"
                                                     onChange={(event) => setQueryClient(event.target.value)}
                                                     displayValue={() => data.client_name}
@@ -755,6 +1098,7 @@ export default function Create({
                                         </div>
                                     </Combobox>
                                 )}
+                                {(clientErrors.client_name || errors.client_name) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.client_name || errors.client_name}</span>}
                             </div>
 
                             <div className="md:col-span-1">
@@ -762,13 +1106,18 @@ export default function Create({
                                     Consignar a <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="consigned_to"
                                     type="text"
                                     required
                                     value={data.consigned_to}
-                                    onChange={(e) => setData("consigned_to", e.target.value)}
+                                    onChange={(e) => {
+                                        setData("consigned_to", e.target.value);
+                                        clearClientError("consigned_to");
+                                    }}
                                     placeholder="Nombre del consignatario"
-                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase"
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${(clientErrors.consigned_to || errors.consigned_to) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.consigned_to || errors.consigned_to) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.consigned_to || errors.consigned_to}</span>}
                             </div>
 
                             {/* REMOVED FROM VIEW: RFC and ADDRESS */}
@@ -798,6 +1147,8 @@ export default function Create({
                                 <div className="relative">
                                     <div className="relative">
                                         <input
+                                            id="qr-input"
+                                            data-qr-input="true"
                                             type="text"
                                             value={qrInput}
                                             onKeyDown={handleQrInputKeyDown}
@@ -807,6 +1158,7 @@ export default function Create({
                                                 // If operator is NOT selected, update operator_name directly as they type
                                                 if (!data.operator_id) {
                                                     setData("operator_name", val);
+                                                    clearClientError("operator_name");
                                                 } else {
                                                     // If operator IS selected, clearing it resets the selection
                                                     if (val === "") {
@@ -884,30 +1236,41 @@ export default function Create({
                                 </label>
                                 <div className="relative">
                                     <input
+                                        name="operator_name"
                                         type="text"
                                         required
                                         value={data.operator_name}
                                         readOnly={!!data.operator_id}
-                                        onChange={(e) => setData("operator_name", e.target.value.toUpperCase())}
+                                        onChange={(e) => {
+                                            setData("operator_name", e.target.value.toUpperCase());
+                                            clearClientError("operator_name");
+                                        }}
                                         placeholder="Nombre completo del chofer"
-                                        className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 uppercase font-bold transition-all ${data.operator_id ? 'bg-gray-100 cursor-not-allowed text-gray-700' : 'bg-white'}`}
+                                        className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 uppercase font-bold transition-all ${data.operator_id ? 'bg-gray-100 cursor-not-allowed text-gray-700' : 'bg-white'} ${(clientErrors.operator_name || errors.operator_name) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                     />
                                     <User className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                 </div>
-                                {errors.operator_name && <span className="text-xs text-red-500 mt-1 block font-bold">{errors.operator_name}</span>}
+                                {(clientErrors.operator_name || errors.operator_name) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.operator_name || errors.operator_name}</span>}
                             </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Empresa Transportista
+                                    Empresa Transportista <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="transport_company"
                                     type="text"
+                                    required
                                     value={data.transport_company}
                                     readOnly={!!data.operator_id}
-                                    onChange={(e) => setData("transport_company", e.target.value)}
-                                    className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''}`}
+                                    onChange={(e) => {
+                                        setData("transport_company", e.target.value);
+                                        clearClientError("transport_company");
+                                    }}
+                                    placeholder="Nombre de la línea fletera"
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.transport_company || errors.transport_company) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.transport_company || errors.transport_company) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.transport_company || errors.transport_company}</span>}
                             </div>
 
                             <div>
@@ -915,15 +1278,27 @@ export default function Create({
                                     Carta Porte <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="carta_porte"
                                     type="text"
                                     required
                                     value={data.carta_porte}
-                                    onChange={(e) => setData("carta_porte", e.target.value)}
+                                    onChange={(e) => {
+                                        setData("carta_porte", e.target.value);
+                                        clearClientError("carta_porte");
+                                    }}
+                                    placeholder="Folio de carta porte"
                                     className={`w-full rounded-lg shadow-sm py-2.5 px-3 ${cartaPorteWarning
                                         ? 'border-yellow-400 focus:border-yellow-500 bg-yellow-50'
+                                        : (clientErrors.carta_porte || errors.carta_porte)
+                                        ? 'border-red-500 bg-red-50 focus:border-red-500'
                                         : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500'
                                         }`}
                                 />
+                                {(clientErrors.carta_porte || errors.carta_porte) && (
+                                    <p className="text-red-500 text-xs mt-1 font-bold">
+                                        {clientErrors.carta_porte || errors.carta_porte}
+                                    </p>
+                                )}
                                 {cartaPorteWarning && (
                                     <p className="text-yellow-700 text-xs mt-1 font-bold animate-pulse">
                                         {cartaPorteWarning}
@@ -933,80 +1308,122 @@ export default function Create({
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Tipo de Unidad
+                                    Tipo de Unidad <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="unit_type"
                                     type="text"
+                                    required
                                     value={data.unit_type}
                                     readOnly={!!data.operator_id}
-                                    onChange={(e) => setData("unit_type", e.target.value)}
-                                    className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''}`}
+                                    onChange={(e) => {
+                                        setData("unit_type", e.target.value);
+                                        clearClientError("unit_type");
+                                    }}
+                                    placeholder="TOLVA, VOLTEO, CAJA..."
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.unit_type || errors.unit_type) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.unit_type || errors.unit_type) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.unit_type || errors.unit_type}</span>}
                             </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Placas Tractor
+                                    Placas Tractor <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="tractor_plate"
                                     type="text"
+                                    required
                                     value={data.tractor_plate}
                                     readOnly={!!data.operator_id}
-                                    onChange={(e) => setData("tractor_plate", e.target.value)}
-                                    className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''}`}
+                                    onChange={(e) => {
+                                        setData("tractor_plate", e.target.value);
+                                        clearClientError("tractor_plate");
+                                    }}
+                                    placeholder="Placas tractor"
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.tractor_plate || errors.tractor_plate) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.tractor_plate || errors.tractor_plate) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.tractor_plate || errors.tractor_plate}</span>}
                             </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Placas Remolque
+                                    Placas Remolque <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="trailer_plate"
                                     type="text"
+                                    required
                                     value={data.trailer_plate}
                                     readOnly={!!data.operator_id}
-                                    onChange={(e) => setData("trailer_plate", e.target.value)}
-                                    className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''}`}
+                                    onChange={(e) => {
+                                        setData("trailer_plate", e.target.value);
+                                        clearClientError("trailer_plate");
+                                    }}
+                                    placeholder="Placas remolque o S/R"
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.trailer_plate || errors.trailer_plate) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.trailer_plate || errors.trailer_plate) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.trailer_plate || errors.trailer_plate}</span>}
                             </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Económico
+                                    Económico <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="economic_number"
                                     type="text"
+                                    required
                                     value={data.economic_number}
                                     readOnly={!!data.operator_id}
-                                    onChange={(e) => setData("economic_number", e.target.value)}
-                                    className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''}`}
+                                    onChange={(e) => {
+                                        setData("economic_number", e.target.value);
+                                        clearClientError("economic_number");
+                                    }}
+                                    placeholder="No. Económico"
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.economic_number || errors.economic_number) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.economic_number || errors.economic_number) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.economic_number || errors.economic_number}</span>}
                             </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Licencia
+                                    Licencia <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="license_number"
                                     type="text"
+                                    required
                                     value={data.license_number}
                                     readOnly={!!data.operator_id}
-                                    onChange={(e) => setData("license_number", e.target.value)}
-                                    className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''}`}
+                                    onChange={(e) => {
+                                        setData("license_number", e.target.value);
+                                        clearClientError("license_number");
+                                    }}
+                                    placeholder="No. de Licencia"
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.license_number || errors.license_number) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.license_number || errors.license_number) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.license_number || errors.license_number}</span>}
                             </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Unidad / Marca
+                                    Unidad / Marca <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="unit_number"
                                     type="text"
+                                    required
                                     value={data.unit_number}
                                     readOnly={!!data.operator_id}
-                                    onChange={(e) => setData("unit_number", e.target.value)}
-                                    className={`w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''}`}
+                                    onChange={(e) => {
+                                        setData("unit_number", e.target.value);
+                                        clearClientError("unit_number");
+                                    }}
+                                    placeholder="KENWORTH, FREIGHTLINER..."
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.unit_number || errors.unit_number) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
+                                {(clientErrors.unit_number || errors.unit_number) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.unit_number || errors.unit_number}</span>}
                             </div>
 
                             {/* SECTION: Detalle del Embarque */}
@@ -1019,23 +1436,28 @@ export default function Create({
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Producto
+                                    Producto <span className="text-red-500">*</span>
                                 </label>
                                 {data.sales_order_id ? (
                                     <div className="relative">
                                         <input
+                                            name="product"
                                             type="text"
                                             value={data.product}
                                             readOnly
-                                            className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-gray-100 font-bold text-gray-700 cursor-not-allowed"
+                                            className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 bg-gray-100 font-bold text-gray-700 cursor-not-allowed ${(clientErrors.product || errors.product) ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-300'}`}
                                         />
                                         <Box className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                     </div>
                                 ) : (
                                     <select
+                                        name="product"
                                         value={data.product}
-                                        onChange={(e) => setData("product", e.target.value)}
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3"
+                                        onChange={(e) => {
+                                            setData("product", e.target.value);
+                                            clearClientError("product");
+                                        }}
+                                        className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 ${(clientErrors.product || errors.product) ? 'border-red-500 bg-red-50 text-red-900' : 'border-gray-300'}`}
                                     >
                                         <option value="">Seleccione...</option>
                                         {products.map((p) => (
@@ -1045,6 +1467,7 @@ export default function Create({
                                         ))}
                                     </select>
                                 )}
+                                {(clientErrors.product || errors.product) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.product || errors.product}</span>}
                             </div>
 
                             <div>
@@ -1061,10 +1484,11 @@ export default function Create({
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Presentación
+                                    Presentación <span className="text-red-500">*</span>
                                 </label>
                                 {data.sales_order_id ? (
                                     <input
+                                        name="presentation"
                                         type="text"
                                         value={data.presentation}
                                         readOnly
@@ -1072,26 +1496,35 @@ export default function Create({
                                     />
                                 ) : (
                                     <select
+                                        name="presentation"
                                         value={data.presentation}
-                                        onChange={(e) => setData("presentation", e.target.value)}
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase"
+                                        onChange={(e) => {
+                                            setData("presentation", e.target.value);
+                                            clearClientError("presentation");
+                                        }}
+                                        className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${(clientErrors.presentation || errors.presentation) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                     >
                                         <option value="GRANEL">GRANEL</option>
                                         <option value="ENVASADO">ENVASADO</option>
                                     </select>
                                 )}
+                                {(clientErrors.presentation || errors.presentation) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.presentation || errors.presentation}</span>}
                             </div>
 
                             {data.presentation === "ENVASADO" && (
                                 <>
                                     <div>
                                         <label className="block text-sm font-bold text-gray-700 mb-1">
-                                            Tamaño de Saco
+                                            Tamaño de Saco <span className="text-red-500">*</span>
                                         </label>
                                         <select
+                                            name="sack_type"
                                             value={data.sack_type}
-                                            onChange={(e) => setData("sack_type", e.target.value)}
-                                            className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 font-bold text-blue-800"
+                                            onChange={(e) => {
+                                                setData("sack_type", e.target.value);
+                                                clearClientError("sack_type");
+                                            }}
+                                            className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 font-bold text-blue-800 ${(clientErrors.sack_type || errors.sack_type) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                         >
                                             <option value="">Seleccione...</option>
                                             <option value="25">25 KG</option>
@@ -1100,6 +1533,7 @@ export default function Create({
                                             <option value="500">500 KG</option>
                                             <option value="1000">1000 KG</option>
                                         </select>
+                                        {(clientErrors.sack_type || errors.sack_type) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.sack_type || errors.sack_type}</span>}
                                     </div>
 
                                     {data.client_name?.toUpperCase().includes("AGROINDUSTRIAS DEL BALSAS") && data.consigned_to?.toUpperCase().includes("SADER") && (
@@ -1125,27 +1559,41 @@ export default function Create({
                                 </>
                             )}
 
-                            <OriginDropdown
-                                value={data.origin_id}
-                                initialOrigins={origins}
-                                onChange={(id) => setData("origin_id", id)}
-                                error={errors.origin_id}
-                            />
+                            <div>
+                                <OriginDropdown
+                                    value={data.origin_id}
+                                    initialOrigins={origins}
+                                    onChange={(id) => {
+                                        setData("origin_id", id);
+                                        clearClientError("origin_id");
+                                    }}
+                                    error={clientErrors.origin_id || errors.origin_id}
+                                />
+                                {(clientErrors.origin_id || errors.origin_id) && (
+                                    <span className="text-xs text-red-500 mt-1 block font-bold">
+                                        {clientErrors.origin_id || errors.origin_id}
+                                    </span>
+                                )}
+                            </div>
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
                                     Ton. Programadas <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="programmed_tons"
                                     type="number"
                                     step="0.01"
                                     required
                                     min="0.01"
                                     value={data.programmed_tons}
                                     onWheel={(e) => e.currentTarget.blur()}
-                                    onChange={(e) => setData("programmed_tons", e.target.value)}
+                                    onChange={(e) => {
+                                        setData("programmed_tons", e.target.value);
+                                        clearClientError("programmed_tons");
+                                    }}
                                     className={`w-full rounded-lg shadow-sm focus:ring-indigo-500 py-2.5 px-3 font-bold ${
-                                        data.programmed_tons !== "" && Number(data.programmed_tons) <= 0
+                                        (clientErrors.programmed_tons || errors.programmed_tons || (data.programmed_tons !== "" && Number(data.programmed_tons) <= 0))
                                             ? 'border-red-500 focus:border-red-500 bg-red-50'
                                             : Number(data.programmed_tons) > Number(data.balance)
                                             ? 'border-amber-400 focus:border-amber-500 bg-amber-50/40 text-amber-900'
@@ -1159,38 +1607,50 @@ export default function Create({
                                         <span>Excede el saldo de la OV ({data.balance} TM) — Se permitirá guardar para ajuste de peso posterior.</span>
                                     </p>
                                 )}
+                                {(clientErrors.programmed_tons || errors.programmed_tons) && (
+                                    <p className="text-red-500 text-xs mt-1 font-bold">{clientErrors.programmed_tons || errors.programmed_tons}</p>
+                                )}
                                 {data.programmed_tons !== "" && Number(data.programmed_tons) <= 0 && (
                                     <p className="text-red-600 text-[10px] mt-1 font-bold">
                                         ❌ El tonelaje debe ser mayor a 0
                                     </p>
                                 )}
-                                {errors.programmed_tons && (
-                                    <p className="text-red-500 text-xs mt-1">{errors.programmed_tons}</p>
+                            </div>
+
+                            <div>
+                                <DestinationDropdown
+                                    value={data.destination_id}
+                                    initialDestinations={destinations}
+                                    onChange={(id) => {
+                                        const match = destinations?.find((d: any) => d.id === id);
+                                        setData((prev) => ({
+                                            ...prev,
+                                            destination_id: id,
+                                            destination: match ? match.name : prev.destination,
+                                        }));
+                                        clearClientError("destination_id");
+                                    }}
+                                    error={clientErrors.destination_id || errors.destination_id}
+                                />
+                                {(clientErrors.destination_id || errors.destination_id) && (
+                                    <span className="text-xs text-red-500 mt-1 block font-bold">
+                                        {clientErrors.destination_id || errors.destination_id}
+                                    </span>
                                 )}
                             </div>
 
-                            <DestinationDropdown
-                                value={data.destination_id}
-                                initialDestinations={destinations}
-                                onChange={(id) => {
-                                    const match = destinations?.find((d: any) => d.id === id);
-                                    setData((prev) => ({
-                                        ...prev,
-                                        destination_id: id,
-                                        destination: match ? match.name : prev.destination,
-                                    }));
-                                }}
-                                error={errors.destination_id}
-                            />
-
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Estado
+                                    Estado <span className="text-red-500">*</span>
                                 </label>
                                 <select
+                                    name="state"
                                     value={data.state}
-                                    onChange={(e) => setData("state", e.target.value)}
-                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase"
+                                    onChange={(e) => {
+                                        setData("state", e.target.value);
+                                        clearClientError("state");
+                                    }}
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${(clientErrors.state || errors.state) ? 'border-red-500 bg-red-50 text-red-900 ring-1 ring-red-500' : 'border-gray-300'}`}
                                 >
                                     <option value="">Seleccione...</option>
                                     <option value="AGUASCALIENTES">AGUASCALIENTES</option>
@@ -1226,6 +1686,11 @@ export default function Create({
                                     <option value="YUCATAN">YUCATÁN</option>
                                     <option value="ZACATECAS">ZACATECAS</option>
                                 </select>
+                                {(clientErrors.state || errors.state) && (
+                                    <span className="text-xs text-red-500 mt-1 block font-bold">
+                                        {clientErrors.state || errors.state}
+                                    </span>
+                                )}
                             </div>
 
                             {/* SECTION: Observaciones */}

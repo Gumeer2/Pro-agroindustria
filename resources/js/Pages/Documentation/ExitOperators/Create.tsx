@@ -113,6 +113,7 @@ export interface ClientOperatorRecord {
     updated_balance?: number | string;
     destare_status?: string;
     destared_tm?: number | string;
+    part_number?: number | null;
     destared_at?: string;
     original_tm?: number | string;
     updated_at?: string;
@@ -163,6 +164,7 @@ export default function Create({
     const todayOpDate = current_operational_date || getClientOperationalDate(new Date().toISOString());
     const [selectedDate, setSelectedDate] = useState<string>(urlParams?.get("date") || "");
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [mustCompleteSecondFullPart, setMustCompleteSecondFullPart] = useState(false);
     const [tableSearch, setTableSearch] = useState("");
     const [qrInput, setQrInput] = useState("");
     const [showCameraModal, setShowCameraModal] = useState(false);
@@ -178,10 +180,73 @@ export default function Create({
         tm: "",
         sack: "",
         type: "",
+        part_number: "" as number | string,
         from: "clients",
     });
 
     const selectedOp = operators.find((op) => op.id === Number(clientForm.data.operator_id));
+    const isSelectedOpFull = Boolean(selectedOp?.unit_type && selectedOp.unit_type.toUpperCase().includes("FULL"));
+    const selectedOpTrailerParts = useMemo(() => {
+        if (!selectedOp?.trailer_plate) return [];
+        return selectedOp.trailer_plate
+            .split("/")
+            .map((p) => p.trim())
+            .filter(Boolean);
+    }, [selectedOp?.trailer_plate]);
+
+    // Asignaciones activas (pendientes de destarar) del operador seleccionado
+    const selectedOpPendingAssignments = useMemo(() => {
+        if (!selectedOp) return [];
+        return (client_operators || [])
+            .filter(
+                (item) =>
+                    Number(item.operator_id || item.id) === Number(selectedOp.id) &&
+                    item.destare_status !== "completed"
+            )
+            .sort((a, b) => Number(a.id) - Number(b.id));
+    }, [client_operators, selectedOp]);
+
+    // Otras asignaciones activas del mismo operador (excluyendo la que se está editando, si aplica)
+    const selectedOpOtherActiveAssignments = useMemo(() => {
+        return selectedOpPendingAssignments.filter(
+            (item) => String(item.id) !== String(clientForm.data.assignment_id || "")
+        );
+    }, [selectedOpPendingAssignments, clientForm.data.assignment_id]);
+
+    // Número de parte actual para operador FULL (1 = 1ra Parte / Remolque 1, 2 = 2da Parte / Remolque 2)
+    const currentFullPartNumber = useMemo(() => {
+        if (!isSelectedOpFull) return 1;
+        if (clientForm.data.part_number) {
+            return Number(clientForm.data.part_number);
+        }
+        if (clientForm.data.assignment_id) {
+            const editingRow = selectedOpPendingAssignments.find(
+                (item) => String(item.id) === String(clientForm.data.assignment_id)
+            );
+            if (editingRow?.part_number) {
+                return Number(editingRow.part_number);
+            }
+            const idx = selectedOpPendingAssignments.findIndex(
+                (item) => String(item.id) === String(clientForm.data.assignment_id)
+            );
+            return idx >= 0 ? idx + 1 : 1;
+        }
+        const usedParts = selectedOpOtherActiveAssignments.map((item, idx) =>
+            item.part_number ? Number(item.part_number) : idx + 1
+        );
+        return !usedParts.includes(1) ? 1 : 2;
+    }, [
+        isSelectedOpFull,
+        clientForm.data.part_number,
+        clientForm.data.assignment_id,
+        selectedOpPendingAssignments,
+        selectedOpOtherActiveAssignments,
+    ]);
+
+    const isMandatorySecondPart = Boolean(
+        mustCompleteSecondFullPart ||
+            (isSelectedOpFull && !clientForm.data.assignment_id && selectedOpOtherActiveAssignments.length === 1)
+    );
 
     // Para el rol Clientes se muestran únicamente las OVs de su cliente; para otros roles (Admin, etc.) se permite asignar cualquier OV
     const operatorOVs = isClientOnlyUser
@@ -372,6 +437,7 @@ export default function Create({
             tm: "",
             sack: "",
             type: "",
+            part_number: "",
             from: "clients",
         });
         setQrInput("");
@@ -388,6 +454,7 @@ export default function Create({
             tm: "",
             sack: "",
             type: "",
+            part_number: "",
             from: "clients",
         });
         setQrInput("");
@@ -483,11 +550,56 @@ export default function Create({
             return;
         }
 
+        const wasCreatingFirstFullPart =
+            isSelectedOpFull &&
+            !clientForm.data.assignment_id &&
+            selectedOpOtherActiveAssignments.length === 0;
+        const savedOperatorId = clientForm.data.operator_id;
+        const savedOvId = clientForm.data.sales_order_id;
+        const savedPresentation = clientForm.data.presentation;
+        const savedSack = clientForm.data.sack;
+        const savedType = clientForm.data.type;
+        const nextMissingPart = currentFullPartNumber === 1 ? 2 : 1;
+
+        clientForm.transform((formData) => ({
+            ...formData,
+            part_number: isSelectedOpFull ? currentFullPartNumber : "",
+        }));
+
         clientForm.post(route("documentation.exit-operators.store"), {
             onSuccess: () => {
-                clientForm.reset();
-                setQrInput("");
-                setIsModalOpen(false);
+                if (wasCreatingFirstFullPart && savedOperatorId) {
+                    setMustCompleteSecondFullPart(true);
+                    clientForm.clearErrors();
+                    clientForm.setData({
+                        assignment_id: "",
+                        operator_id: savedOperatorId,
+                        sales_order_id: savedOvId || "",
+                        presentation: savedPresentation || "GRANEL",
+                        tm: "",
+                        sack: savedSack || "",
+                        type: savedType || "",
+                        part_number: nextMissingPart,
+                        from: "clients",
+                    });
+                    setIsModalOpen(true);
+
+                    Swal.fire({
+                        icon: "success",
+                        title: `Asignación ${currentFullPartNumber} (${currentFullPartNumber === 1 ? "1ra Parte" : "2da Parte"}) guardada`,
+                        html: `Se registró la <strong>${currentFullPartNumber === 1 ? "1ra Parte (Remolque 1)" : "2da Parte (Remolque 2)"}</strong> del operador <strong>${op?.name || ""}</strong>.<br/><br/>Es obligatorio registrar ahora la <strong>Asignación ${nextMissingPart} (${nextMissingPart === 1 ? "1ra Parte - Remolque 1" : "2da Parte - Remolque 2"})</strong> para este mismo operador.`,
+                        showCancelButton: false,
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        confirmButtonText: `Registrar ${nextMissingPart === 1 ? "1ra Parte" : "2da Parte"}`,
+                        confirmButtonColor: "#4f46e5",
+                    });
+                } else {
+                    setMustCompleteSecondFullPart(false);
+                    clientForm.reset();
+                    setQrInput("");
+                    setIsModalOpen(false);
+                }
             },
         });
     };
@@ -502,6 +614,7 @@ export default function Create({
             tm: op.tm ? String(op.tm) : "",
             sack: op.sack || (op.presentation === "ENVASADO" ? "25 KG" : ""),
             type: op.type || "",
+            part_number: op.part_number ? Number(op.part_number) : "",
             from: "clients",
         });
         setScanError(null);
@@ -583,6 +696,7 @@ export default function Create({
         brand_model: "",
         tractor_plate: "",
         trailer_plate: "",
+        trailer_plate_2: "",
         clients: [] as number[],
         from: isFromClients ? "clients" : "",
     });
@@ -813,6 +927,42 @@ export default function Create({
                                             const envaseText = isGranel ? "A GRANEL" : [op.sack || "25 KG", op.type].filter(Boolean).join(" - ");
                                             const tmNum = Number(op.tm || 0);
 
+                                            const isRowFull = Boolean(op.unit_type && op.unit_type.toUpperCase().includes("FULL"));
+                                            const sameOperatorActiveRows = isRowFull
+                                                ? client_operators
+                                                      .filter(
+                                                          (item) =>
+                                                              Number(item.operator_id || item.id) === Number(op.operator_id || op.id) &&
+                                                              (item.operational_date || getClientOperationalDate(item.updated_at)) ===
+                                                                  (op.operational_date || getClientOperationalDate(op.updated_at))
+                                                      )
+                                                      .sort((a, b) => Number(a.id) - Number(b.id))
+                                                : [];
+                                            const fullPartIdx = isRowFull
+                                                ? sameOperatorActiveRows.findIndex((item) => String(item.id) === String(op.id))
+                                                : -1;
+                                            const fullPartNum = op.part_number
+                                                ? Number(op.part_number)
+                                                : fullPartIdx >= 0
+                                                ? fullPartIdx + 1
+                                                : 1;
+                                            const missingFullPartNum = fullPartNum === 1 ? 2 : 1;
+                                            const trailerParts = (op.trailer_plate || "")
+                                                .split("/")
+                                                .map((p) => p.trim())
+                                                .filter(Boolean);
+                                            const displayTrailerPlate =
+                                                isRowFull && trailerParts.length > 1
+                                                    ? trailerParts[fullPartNum - 1] || op.trailer_plate
+                                                    : op.trailer_plate;
+                                            const pendingCountForThisFullOp = isRowFull
+                                                ? client_operators.filter(
+                                                      (item) =>
+                                                          Number(item.operator_id || item.id) === Number(op.operator_id || op.id) &&
+                                                          item.destare_status !== "completed"
+                                                  ).length
+                                                : 0;
+
                                             const soId = String(op.sales_order_id || op.sales_order?.id || "");
                                             const soMatch = sales_orders.find(
                                                 (s) => String(s.id) === soId
@@ -851,8 +1001,19 @@ export default function Create({
 
                                                     {/* 2. Operador */}
                                                     <td className="px-2.5 py-2">
-                                                        <div className="font-bold text-gray-900 uppercase text-[11px] leading-tight">
-                                                            {op.name}
+                                                        <div className="font-bold text-gray-900 uppercase text-[11px] leading-tight flex flex-wrap items-center gap-1.5">
+                                                            <span>{op.name}</span>
+                                                            {isRowFull && (
+                                                                <span
+                                                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase border ${
+                                                                        fullPartNum === 1
+                                                                            ? "bg-indigo-100 text-indigo-800 border-indigo-300"
+                                                                            : "bg-purple-100 text-purple-800 border-purple-300"
+                                                                    }`}
+                                                                >
+                                                                    FULL • {fullPartNum === 1 ? "1ra Parte" : `${fullPartNum}da Parte`}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         {op.clients && op.clients.length > 0 && (
                                                             <div className="flex flex-wrap gap-1 mt-0.5">
@@ -892,8 +1053,11 @@ export default function Create({
 
                                                     {/* 5. Remolque */}
                                                     <td className="px-1.5 py-2 whitespace-nowrap text-center">
-                                                        <span className="font-mono font-medium text-gray-700 bg-slate-50 px-1 py-0.5 rounded border border-slate-200 text-[10.5px]">
-                                                            {op.trailer_plate || "S/R"}
+                                                        <span
+                                                            className="font-mono font-medium text-gray-700 bg-slate-50 px-1 py-0.5 rounded border border-slate-200 text-[10.5px]"
+                                                            title={op.trailer_plate || "S/R"}
+                                                        >
+                                                            {displayTrailerPlate || "S/R"}
                                                         </span>
                                                     </td>
 
@@ -955,6 +1119,32 @@ export default function Create({
                                                     {/* 12. Acciones */}
                                                     <td className="px-2 py-2 whitespace-nowrap text-center">
                                                         <div className="flex items-center justify-center gap-1">
+                                                            {isRowFull && pendingCountForThisFullOp === 1 && op.destare_status !== "completed" && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        clientForm.clearErrors();
+                                                                        clientForm.setData({
+                                                                            assignment_id: "",
+                                                                            operator_id: op.operator_id || op.id,
+                                                                            sales_order_id: op.sales_order_id || "",
+                                                                            presentation: op.presentation || "GRANEL",
+                                                                            tm: "",
+                                                                            sack: op.sack || (op.presentation === "ENVASADO" ? "25 KG" : ""),
+                                                                            type: op.type || "",
+                                                                            part_number: missingFullPartNum,
+                                                                            from: "clients",
+                                                                        });
+                                                                        setScanError(null);
+                                                                        setIsModalOpen(true);
+                                                                    }}
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-purple-700 hover:text-white bg-purple-50 hover:bg-purple-600 border border-purple-200 transition-colors shadow-xs"
+                                                                    title={`Registrar Asignación ${missingFullPartNum} (${missingFullPartNum === 1 ? "1ra Parte" : "2da Parte"}) para este FULL`}
+                                                                >
+                                                                    <Plus className="w-3 h-3" />
+                                                                    <span>{missingFullPartNum === 1 ? "1ra Parte" : "2da Parte"}</span>
+                                                                </button>
+                                                            )}
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleEditOperator(op)}
@@ -1061,14 +1251,16 @@ export default function Create({
                                             </p>
                                         </div>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsModalOpen(false)}
-                                        className="p-1.5 text-indigo-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                                        title="Cerrar ventana"
-                                    >
-                                        <X className="w-5 h-5" />
-                                    </button>
+                                    {!isMandatorySecondPart && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsModalOpen(false)}
+                                            className="p-1.5 text-indigo-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                            title="Cerrar ventana"
+                                        >
+                                            <X className="w-5 h-5" />
+                                        </button>
+                                    )}
                                 </div>
 
                                 {/* Cuerpo del Formulario */}
@@ -1160,15 +1352,17 @@ export default function Create({
                                                             {selectedOp.name}
                                                         </h4>
                                                     </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleClearOperator}
-                                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300 shadow-sm transition-all"
-                                                        title="Escanear otro operador"
-                                                    >
-                                                        <RefreshCw className="w-3.5 h-3.5" />
-                                                        Cambiar / Escanear otro
-                                                    </button>
+                                                    {!isMandatorySecondPart && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleClearOperator}
+                                                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300 shadow-sm transition-all"
+                                                            title="Escanear otro operador"
+                                                        >
+                                                            <RefreshCw className="w-3.5 h-3.5" />
+                                                            Cambiar / Escanear otro
+                                                        </button>
+                                                    )}
                                                 </div>
 
                                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3 text-xs">
@@ -1220,6 +1414,77 @@ export default function Create({
                                                         {operatorOVs.length} OV(s) disponible(s)
                                                     </span>
                                                 </div>
+
+                                                {/* Indicador de Asignación 1 (1ra Parte) y Asignación 2 (2da Parte) para unidades FULL */}
+                                                {isSelectedOpFull && (
+                                                    <div className="mt-3 pt-3 border-t border-indigo-200/80 space-y-2">
+                                                        <div
+                                                            className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+                                                                currentFullPartNumber === 1
+                                                                    ? "bg-indigo-600/10 border-indigo-300 text-indigo-950"
+                                                                    : "bg-purple-600/10 border-purple-300 text-purple-950"
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <Truck className="w-4 h-4 text-indigo-700 flex-shrink-0" />
+                                                                <div>
+                                                                    <span className="font-black uppercase tracking-wide block">
+                                                                        UNIDAD FULL — ASIGNACIÓN {currentFullPartNumber} (
+                                                                        {currentFullPartNumber === 1 ? "1ra Parte" : `${currentFullPartNumber}da Parte`})
+                                                                    </span>
+                                                                    <span className="text-[11px] font-medium text-gray-700">
+                                                                        {currentFullPartNumber === 1
+                                                                            ? "Configure la OV, presentación y TM del primer remolque."
+                                                                            : "Configure la OV (puede ser la misma u otra distinta), presentación y TM del segundo remolque."}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <span className="inline-flex items-center px-5 py-2.5 rounded-xl font-mono font-black text-base sm:text-lg bg-white border-2 border-indigo-300 text-indigo-950 shadow-sm whitespace-nowrap tracking-wide">
+                                                                Remolque {currentFullPartNumber}:{" "}
+                                                                {selectedOpTrailerParts[currentFullPartNumber - 1] ||
+                                                                    selectedOp.trailer_plate ||
+                                                                    "S/R"}
+                                                            </span>
+                                                        </div>
+
+                                                        {selectedOpOtherActiveAssignments.length > 0 && (
+                                                            <div className="p-2.5 bg-white/90 rounded-xl border border-emerald-200 text-xs space-y-1">
+                                                                <span className="font-extrabold text-emerald-800 uppercase text-[10.5px] block">
+                                                                    ✓ Asignaciones activas ligadas a este mismo operador (mismo QR):
+                                                                </span>
+                                                                {selectedOpOtherActiveAssignments.map((asg, idx) => {
+                                                                    const asgPartNum = asg.part_number ? Number(asg.part_number) : idx + 1;
+                                                                    return (
+                                                                        <div
+                                                                            key={asg.id}
+                                                                            className="flex flex-wrap items-center justify-between gap-2 px-2 py-1 rounded bg-emerald-50/70 text-gray-800 font-semibold"
+                                                                        >
+                                                                            <span>
+                                                                                <strong>{asgPartNum === 1 ? "1ra Parte" : `${asgPartNum}da Parte`}</strong>
+                                                                                {selectedOpTrailerParts[asgPartNum - 1]
+                                                                                    ? ` (Remolque: ${selectedOpTrailerParts[asgPartNum - 1]})`
+                                                                                    : ""}
+                                                                                {" — "}
+                                                                                OV:{" "}
+                                                                                <strong className="text-indigo-900 font-mono">
+                                                                                    {asg.sales_order?.folio || "OV"}
+                                                                                </strong>
+                                                                            </span>
+                                                                            <span className="font-mono font-black text-emerald-700">
+                                                                                {asg.presentation || "GRANEL"} •{" "}
+                                                                                {Number(asg.tm || 0).toLocaleString("es-MX", {
+                                                                                    minimumFractionDigits: 2,
+                                                                                    maximumFractionDigits: 2,
+                                                                                })}{" "}
+                                                                                TM
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1495,7 +1760,10 @@ export default function Create({
                                     <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
                                         <button
                                             type="button"
-                                            onClick={() => setIsModalOpen(false)}
+                                            onClick={() => {
+                                                setMustCompleteSecondFullPart(false);
+                                                setIsModalOpen(false);
+                                            }}
                                             className="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold text-sm hover:bg-gray-50 transition-colors"
                                         >
                                             Cancelar
@@ -1662,7 +1930,16 @@ export default function Create({
                                     {/* Tipo de unidad */}
                                     <UnitTypeDropdown
                                         value={data.unit_type}
-                                        onChange={(val) => setData("unit_type", val)}
+                                        onChange={(val) =>
+                                            setData((prev) => ({
+                                                ...prev,
+                                                unit_type: val,
+                                                trailer_plate_2:
+                                                    val && val.toUpperCase().includes("FULL")
+                                                        ? prev.trailer_plate_2
+                                                        : "",
+                                            }))
+                                        }
                                         label="Tipo de unidad:"
                                         error={errors.unit_type}
                                     />
@@ -1719,6 +1996,28 @@ export default function Create({
                                         </div>
                                         {errors.trailer_plate && <p className="text-red-500 text-xs mt-1">{errors.trailer_plate}</p>}
                                     </div>
+
+                                    {/* Segunda Placa remolque (solo cuando se selecciona unidad tipo FULL) */}
+                                    {Boolean(data.unit_type && data.unit_type.toUpperCase().includes("FULL")) && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-1">
+                                                Placa remolque 2:
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    value={data.trailer_plate_2}
+                                                    onChange={(e) => setData("trailer_plate_2", e.target.value)}
+                                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 pl-10 uppercase"
+                                                    required
+                                                />
+                                                <FileText className="w-5 h-5 text-gray-400 absolute left-3 top-2" />
+                                            </div>
+                                            {(errors as any).trailer_plate_2 && (
+                                                <p className="text-red-500 text-xs mt-1">{(errors as any).trailer_plate_2}</p>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/* Clientes */}
                                     <ClientMultiSelect

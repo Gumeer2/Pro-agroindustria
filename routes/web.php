@@ -365,6 +365,7 @@ Route::middleware('auth')->group(function () {
                 Route::post('/documentation/shipment-orders/{id}/unlock-sampling', 'unlockSampling')->name('documentation.shipment-orders.unlock-sampling');
                 Route::get('/documentation/shipment-sampling-incidents', 'getSamplingIncidents')->name('documentation.shipment-orders.sampling-incidents');
                 Route::post('/documentation/shipment-orders/{id}/save-stowage-plan', 'saveStowagePlan')->name('documentation.shipment-orders.save-stowage-plan');
+                Route::post('/documentation/shipment-orders/{id}/vobo-stowage-plan', 'approveStowagePlanVoBo')->name('documentation.shipment-orders.vobo-stowage-plan');
                 Route::get('/documentation/shipment-orders/{id}/stowage-plan', 'getStowagePlan')->name('documentation.shipment-orders.get-stowage-plan');
                 Route::patch('/documentation/shipment-orders/{id}/finish-loading', 'finishLoading')->name('documentation.shipment-orders.finish-loading');
                 Route::delete('/documentation/shipment-orders/{id}/delete-loading', 'deleteLoading')->name('documentation.shipment-orders.delete-loading');
@@ -401,6 +402,8 @@ Route::middleware('auth')->group(function () {
         Route::delete('/service-providers/{serviceProvider}', [\App\Http\Controllers\ServiceProviderController::class, 'destroy'])->name('service-providers.destroy');
         Route::get('/loading-assistants', [\App\Http\Controllers\LoadingAssistantController::class, 'index'])->name('loading-assistants.index');
         Route::post('/loading-assistants', [\App\Http\Controllers\LoadingAssistantController::class, 'store'])->name('loading-assistants.store');
+        Route::get('/verifiers', [\App\Http\Controllers\VerifierController::class, 'index'])->name('verifiers.index');
+        Route::post('/verifiers', [\App\Http\Controllers\VerifierController::class, 'store'])->name('verifiers.store');
 
         // Loading Order References (Scale module references)
         Route::get('/loading-order-references', [\App\Http\Controllers\LoadingOrderReferenceController::class , 'index'])->name('loading-order-references.index');

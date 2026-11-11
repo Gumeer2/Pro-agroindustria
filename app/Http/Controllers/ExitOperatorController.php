@@ -86,8 +86,23 @@ class ExitOperatorController extends Controller
         ]);
     }
 
+    private function ensurePartNumberColumn(): void
+    {
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('client_operator_assignments') &&
+                !\Illuminate\Support\Facades\Schema::hasColumn('client_operator_assignments', 'part_number')) {
+                \Illuminate\Support\Facades\Schema::table('client_operator_assignments', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->unsignedTinyInteger('part_number')->nullable()->after('type');
+                });
+            }
+        } catch (\Throwable $e) {
+            // Ignore schema errors safely
+        }
+    }
+
     public function create(Request $request)
     {
+        $this->ensurePartNumberColumn();
         $user = $request->user();
         $isClientUser = $user && $user->hasRole('Clientes') && !$user->hasRole('Admin');
         $from = $request->query('from');
@@ -149,6 +164,24 @@ class ExitOperatorController extends Controller
         $now = now()->timezone('America/Mexico_City');
         $currentOperationalDate = $now->hour < 5 ? $now->subDay()->toDateString() : $now->toDateString();
 
+        // Backfill part_number on existing FULL assignments that don't have one yet so deleting 1ra Parte never shifts 2da Parte
+        $fullGroups = $clientAssignments->filter(function ($a) {
+            return $a->operator && str_contains(strtoupper($a->operator->unit_type ?? ''), 'FULL');
+        })->groupBy('operator_id');
+
+        foreach ($fullGroups as $opId => $group) {
+            $sortedAsc = $group->sortBy('id')->values();
+            $usedParts = $sortedAsc->pluck('part_number')->filter()->map(fn ($v) => (int) $v)->toArray();
+            foreach ($sortedAsc as $idx => $asg) {
+                if (empty($asg->part_number)) {
+                    $assignedPart = !in_array(1, $usedParts, true) ? 1 : (!in_array(2, $usedParts, true) ? 2 : ($idx + 1));
+                    $usedParts[] = $assignedPart;
+                    $asg->part_number = $assignedPart;
+                    ClientOperatorAssignment::where('id', $asg->id)->update(['part_number' => $assignedPart]);
+                }
+            }
+        }
+
         $clientAssignments->each(function ($assignment) use ($pendingProgrammed) {
             $updated = $assignment->updated_at ? $assignment->updated_at->copy()->timezone('America/Mexico_City') : null;
             if ($updated) {
@@ -175,6 +208,7 @@ class ExitOperatorController extends Controller
 
             $assignment->setAttribute('destare_status', $assignment->destare_status ?? 'pending');
             $assignment->setAttribute('destared_tm', $assignment->destared_tm ? (float) $assignment->destared_tm : null);
+            $assignment->setAttribute('part_number', $assignment->part_number ? (int) $assignment->part_number : null);
 
             if ($assignment->salesOrder) {
                 $prog = (float) ($pendingProgrammed[$assignment->sales_order_id] ?? 0);
@@ -209,6 +243,7 @@ class ExitOperatorController extends Controller
         }
 
         if ($from === 'clients') {
+            $this->ensurePartNumberColumn();
             $validated = $request->validate([
                 'assignment_id' => 'nullable|integer|exists:client_operator_assignments,id',
                 'operator_id' => 'required|integer|exists:exit_operators,id',
@@ -217,6 +252,7 @@ class ExitOperatorController extends Controller
                 'tm' => 'required|numeric|min:0.01',
                 'sack' => 'nullable|string|max:100',
                 'type' => 'nullable|string|max:100',
+                'part_number' => 'nullable|integer|min:1|max:2',
             ], [
                 'sales_order_id.required' => 'Debe seleccionar una Orden de Venta (OV).',
                 'operator_id.required' => 'Debe seleccionar un operador.',
@@ -285,6 +321,27 @@ class ExitOperatorController extends Controller
                 ? ClientOperatorAssignment::find($validated['assignment_id'])
                 : null;
 
+            $isOpFull = str_contains(strtoupper($operator->unit_type ?? ''), 'FULL');
+            $partNumberVal = null;
+            if ($isOpFull) {
+                if (!empty($validated['part_number'])) {
+                    $partNumberVal = (int) $validated['part_number'];
+                } elseif ($currentAssignment && !empty($currentAssignment->part_number)) {
+                    $partNumberVal = (int) $currentAssignment->part_number;
+                } else {
+                    $existingParts = ClientOperatorAssignment::where('operator_id', $operator->id)
+                        ->where(function ($q) {
+                            $q->whereNull('destare_status')
+                              ->orWhere('destare_status', 'pending');
+                        })
+                        ->pluck('part_number')
+                        ->filter()
+                        ->map(fn ($v) => (int) $v)
+                        ->toArray();
+                    $partNumberVal = !in_array(1, $existingParts, true) ? 1 : 2;
+                }
+            }
+
             if ($currentAssignment) {
                 $currentAssignment->update([
                     'operator_id' => $operator->id,
@@ -294,6 +351,7 @@ class ExitOperatorController extends Controller
                     'original_tm' => $currentAssignment->destare_status === 'completed' ? $currentAssignment->original_tm : $validated['tm'],
                     'sack' => $sackVal,
                     'type' => $typeVal,
+                    'part_number' => $partNumberVal,
                 ]);
             } else {
                 ClientOperatorAssignment::create([
@@ -305,6 +363,7 @@ class ExitOperatorController extends Controller
                     'destare_status' => 'pending',
                     'sack' => $sackVal,
                     'type' => $typeVal,
+                    'part_number' => $partNumberVal,
                 ]);
             }
 
@@ -332,6 +391,8 @@ class ExitOperatorController extends Controller
                 ->with('success', '¡Operador ' . $operator->name . ' asignado correctamente a la OV ' . $salesOrder->folio . '!');
         }
 
+        $isFullUnit = str_contains(strtoupper($request->input('unit_type', '')), 'FULL');
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'license' => 'required|string|max:255',
@@ -343,12 +404,18 @@ class ExitOperatorController extends Controller
             'validity' => 'required|date',
             'brand_model' => 'required|string|max:255',
             'tractor_plate' => 'required|string|max:255',
-            'trailer_plate' => (str_contains(strtoupper($request->input('unit_type', '')), 'FULL') || str_contains(strtoupper($request->input('unit_type', '')), 'TRACTO')) ? 'required|string|max:255' : 'nullable|string|max:255',
+            'trailer_plate' => ($isFullUnit || str_contains(strtoupper($request->input('unit_type', '')), 'TRACTO')) ? 'required|string|max:255' : 'nullable|string|max:255',
+            'trailer_plate_2' => $isFullUnit ? 'required|string|max:255' : 'nullable|string|max:255',
             'clients' => 'nullable|array',
             'clients.*' => 'integer|exists:clients,id',
             'client_ids' => 'nullable|array',
             'client_ids.*' => 'integer|exists:clients,id',
         ]);
+
+        if ($isFullUnit && !empty($validated['trailer_plate_2'])) {
+            $validated['trailer_plate'] = trim($validated['trailer_plate'] ?? '') . ' / ' . trim($validated['trailer_plate_2']);
+        }
+        unset($validated['trailer_plate_2']);
 
         $clientIds = $request->input('clients', $request->input('client_ids', []));
         $validated['client_ids'] = !empty($clientIds) ? array_values(array_unique(array_map('intval', (array)$clientIds))) : null;
@@ -412,6 +479,8 @@ class ExitOperatorController extends Controller
                 ->with('error', 'No se puede actualizar la información de un operador vetado.');
         }
 
+        $isFullUnit = str_contains(strtoupper($request->input('unit_type', '')), 'FULL');
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'license' => 'required|string|max:255',
@@ -423,12 +492,18 @@ class ExitOperatorController extends Controller
             'validity' => 'required|date',
             'brand_model' => 'required|string|max:255',
             'tractor_plate' => 'required|string|max:255',
-            'trailer_plate' => (str_contains(strtoupper($request->input('unit_type', '')), 'FULL') || str_contains(strtoupper($request->input('unit_type', '')), 'TRACTO')) ? 'required|string|max:255' : 'nullable|string|max:255',
+            'trailer_plate' => ($isFullUnit || str_contains(strtoupper($request->input('unit_type', '')), 'TRACTO')) ? 'required|string|max:255' : 'nullable|string|max:255',
+            'trailer_plate_2' => $isFullUnit ? 'required|string|max:255' : 'nullable|string|max:255',
             'clients' => 'nullable|array',
             'clients.*' => 'integer|exists:clients,id',
             'client_ids' => 'nullable|array',
             'client_ids.*' => 'integer|exists:clients,id',
         ]);
+
+        if ($isFullUnit && !empty($validated['trailer_plate_2'])) {
+            $validated['trailer_plate'] = trim($validated['trailer_plate'] ?? '') . ' / ' . trim($validated['trailer_plate_2']);
+        }
+        unset($validated['trailer_plate_2']);
 
         $clientIds = $request->input('clients', $request->input('client_ids', []));
         $validated['client_ids'] = !empty($clientIds) ? array_values(array_unique(array_map('intval', (array)$clientIds))) : null;

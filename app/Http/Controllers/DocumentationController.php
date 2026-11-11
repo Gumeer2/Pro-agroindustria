@@ -14,6 +14,7 @@ use App\Models\ShipmentDestination;
 use App\Models\ShipmentOrigin;
 use App\Models\AptAttendance;
 use App\Models\LoadingAssistant;
+use App\Models\Verifier;
 use App\Models\ShipmentProcessHistory;
 use App\Models\ShipmentSamplingIncident;
 use App\Models\User;
@@ -42,9 +43,11 @@ class DocumentationController extends Controller
      * Show the form for creating a new Shipment Order (Orden de Embarque).
      */
 
-    public function createOrder()
+    public function createOrder(Request $request)
     {
         return Inertia::render('Documentation/Create', [
+            'auto_operator_id' => $request->query('auto_operator_id'),
+            'first_order_id' => $request->query('first_order_id'),
             'clients' => Client::orderBy('business_name')->get()->map(function ($client) {
                 return [
                     'id' => $client->id,
@@ -82,11 +85,43 @@ class DocumentationController extends Controller
         ]);
     }
 
+    private function ensureAssignmentColumns(): void
+    {
+        if (Schema::hasTable('client_operator_assignments')) {
+            if (!Schema::hasColumn('client_operator_assignments', 'part_number')) {
+                Schema::table('client_operator_assignments', function (Blueprint $table) {
+                    $table->unsignedTinyInteger('part_number')->nullable()->after('operator_id');
+                });
+            }
+            if (!Schema::hasColumn('client_operator_assignments', 'shipment_order_id')) {
+                Schema::table('client_operator_assignments', function (Blueprint $table) {
+                    $table->string('shipment_order_id', 60)->nullable()->after('destare_status');
+                });
+            }
+        }
+    }
+
+    private function generateNextFolio(): string
+    {
+        $maxFolio = ShipmentOrder::where('folio', 'like', 'PA' . date('Y') . '-%')
+            ->get()
+            ->map(function ($order) {
+                $parts = explode('-', $order->folio);
+                return (count($parts) === 2 && is_numeric($parts[1])) ? (int) $parts[1] : 0;
+            })
+            ->max();
+
+        $nextNumber = ($maxFolio ?? 0) + 1;
+
+        return 'PA' . date('Y') . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+    }
+
     /**
      * Store a newly created Shipment Order.
      */
     public function storeOrder(Request $request)
     {
+        $this->ensureAssignmentColumns();
         \Log::info('Store Order Request Data:', $request->all());
         $validated = $request->validate([
             'folio' => 'required|unique:shipment_orders,folio',
@@ -99,22 +134,22 @@ class DocumentationController extends Controller
             'address' => 'nullable|string',
             'consigned_to' => 'required|string',
             // Transport
-            'transport_company' => 'nullable|string',
-            'operator_name' => 'nullable|string',
-            'unit_number' => 'nullable|string',
-            'tractor_plate' => 'nullable|string',
-            'trailer_plate' => 'nullable|string',
-            'carta_porte' => 'nullable|string',
-            'license_number' => 'nullable|string',
-            'unit_type' => 'nullable|string',
-            'economic_number' => 'nullable|string',
+            'transport_company' => 'required|string',
+            'operator_name' => 'required|string',
+            'unit_number' => 'required|string',
+            'tractor_plate' => 'required|string',
+            'trailer_plate' => 'required|string',
+            'carta_porte' => 'required|string',
+            'license_number' => 'required|string',
+            'unit_type' => 'required|string',
+            'economic_number' => 'required|string',
             'qr_code' => 'nullable|string',
             'qr_fertinal' => 'nullable|string',
             // Shipment
-            'origin_id' => 'nullable|exists:shipment_origins,id',
+            'origin_id' => 'required|exists:shipment_origins,id',
             'destination_id' => 'nullable|exists:shipment_destinations,id',
             'destination' => 'nullable|string',
-            'product' => 'nullable|string', // Text snapshot or ID? Form implies text/select
+            'product' => 'required|string',
             'presentation' => 'required|string',
             'sack_type' => 'nullable|string', // Frontend supplemental field
             'sacks_count' => 'nullable|string',
@@ -124,9 +159,16 @@ class DocumentationController extends Controller
             'documenter_name' => 'nullable|string',
             'scale_name' => 'nullable|string',
             'observations' => 'nullable|string',
-            'state' => 'nullable|string',
+            'state' => 'required|string',
             'scale_operator_id' => 'nullable|exists:users,id',
         ]);
+
+        if (empty($validated['destination_id']) && empty($validated['destination'])) {
+            return back()->withErrors(['destination_id' => 'El destino es obligatorio.'])->withInput();
+        }
+        if ($validated['presentation'] === 'ENVASADO' && empty($request->input('sack_type')) && empty($validated['sacks_count'])) {
+            return back()->withErrors(['sack_type' => 'El tamaño de saco es obligatorio para producto envasado.'])->withInput();
+        }
 
         // 1. Sales Order reference (Permitido guardar aunque exceda saldo para permitir Ajuste de Órdenes de Venta posterior)
         $salesOrder = SalesOrder::findOrFail($validated['sales_order_id']);
@@ -215,6 +257,82 @@ class DocumentationController extends Controller
 
         // Sync Sales Order for pre-calculated totals (especially for ENVASADO)
         $salesOrder->syncLoadedQuantity();
+
+        // Vincular OE con asignación activa del operador
+        $exitOp = !empty($validated['operator_name'])
+            ? \App\Models\ExitOperator::where('name', $validated['operator_name'])->first()
+            : null;
+
+        $firstAssignment = null;
+        if ($exitOp) {
+            if ($request->filled('assignment_id') && is_numeric($request->input('assignment_id'))) {
+                $firstAssignment = ClientOperatorAssignment::where('id', (int) $request->input('assignment_id'))
+                    ->where('operator_id', $exitOp->id)
+                    ->first();
+            }
+
+            if (!$firstAssignment) {
+                $firstAssignment = ClientOperatorAssignment::where('operator_id', $exitOp->id)
+                    ->where('sales_order_id', $validated['sales_order_id'])
+                    ->where(function ($q) {
+                        $q->whereNull('destare_status')
+                          ->orWhere('destare_status', 'pending');
+                    })
+                    ->whereNull('shipment_order_id')
+                    ->orderBy('part_number', 'asc')
+                    ->orderBy('id', 'asc')
+                    ->first();
+            }
+
+            if ($firstAssignment) {
+                $firstAssignment->update(['shipment_order_id' => $order->id]);
+            }
+
+            // Si es unidad FULL y aún tiene la 2da parte pendiente sin documentar, pasar automáticamente a la 2da parte en el formulario
+            $isFullUnit = str_contains(strtoupper($exitOp->unit_type ?? $validated['unit_type'] ?? ''), 'FULL');
+
+            if ($isFullUnit) {
+                $secondAssignment = ClientOperatorAssignment::where('operator_id', $exitOp->id)
+                    ->when($firstAssignment, fn($q) => $q->where('id', '!=', $firstAssignment->id))
+                    ->where(function ($q) {
+                        $q->whereNull('destare_status')
+                          ->orWhere('destare_status', 'pending');
+                    })
+                    ->where(function ($q) {
+                        $q->whereNull('shipment_order_id')
+                          ->orWhereNotIn('shipment_order_id', function ($sub) {
+                              $sub->select('id')
+                                  ->from('shipment_orders')
+                                  ->whereIn('status', ['created', 'authorized', 'weighing_in', 'loading']);
+                          });
+                    })
+                    ->orderBy('part_number', 'asc')
+                    ->orderBy('id', 'asc')
+                    ->first();
+
+                $activeOrdersCount = ShipmentOrder::where('operator_name', $validated['operator_name'])
+                    ->whereIn('status', ['created', 'authorized', 'weighing_in', 'loading'])
+                    ->count();
+
+                if ($secondAssignment && $activeOrdersCount < 2) {
+                    return redirect()->route('documentation.create', [
+                        'auto_operator_id' => $exitOp->id,
+                        'first_order_id' => $order->id,
+                    ])->with('success', '1ra Parte guardada (' . $order->folio . '). Se ha seleccionado automáticamente la 2da Parte.');
+                }
+            }
+        }
+
+        // Si viene de guardar la 2da parte teniendo una 1ra parte recién creada, imprimir ambas OEs
+        if ($request->filled('first_order_id')) {
+            $firstOrder = ShipmentOrder::find($request->input('first_order_id'));
+            if ($firstOrder && $firstOrder->id !== $order->id) {
+                return redirect()->route('documentation.orders.print', [
+                    'id' => $firstOrder->id,
+                    'second_order_id' => $order->id,
+                ])->with('success', 'Las 2 Órdenes de Embarque (1ra y 2da Parte) fueron creadas correctamente.');
+            }
+        }
 
         return redirect()->route('documentation.orders.print', $order->id)->with('success', 'Orden de Embarque creada correctamente.');
     }
@@ -353,13 +471,89 @@ class DocumentationController extends Controller
                     }
                 }
 
-                // Obtener asignaciones de Orden de Venta para este operador
-                $assignments = ClientOperatorAssignment::where('operator_id', $op->id)
+                // Obtener asignaciones activas (pendientes de destarar) de Orden de Venta para este operador
+                $this->ensureAssignmentColumns();
+
+                $pendingAssignments = ClientOperatorAssignment::where('operator_id', $op->id)
+                    ->where(function ($q) {
+                        $q->whereNull('destare_status')
+                          ->orWhere('destare_status', 'pending');
+                    })
                     ->with(['salesOrder.client', 'salesOrder.product', 'salesOrder.vessel'])
-                    ->orderBy('updated_at', 'desc')
+                    ->orderBy('part_number', 'asc')
+                    ->orderBy('id', 'asc')
                     ->get();
 
-                $latestAssignment = $assignments->first();
+                $assignments = $pendingAssignments->isNotEmpty()
+                    ? $pendingAssignments
+                    : ClientOperatorAssignment::where('operator_id', $op->id)
+                        ->with(['salesOrder.client', 'salesOrder.product', 'salesOrder.vessel'])
+                        ->orderBy('updated_at', 'desc')
+                        ->get();
+
+                $isFullUnit = str_contains(strtoupper($op->unit_type ?? ''), 'FULL');
+                $trailerParts = array_values(array_filter(array_map('trim', explode('/', $op->trailer_plate ?? ''))));
+
+                // Obtener OEs activas en planta para este operador y detectar qué parte ya fue documentada
+                $activeOrders = ShipmentOrder::where('operator_name', $op->name)
+                    ->whereIn('status', ['created', 'authorized', 'weighing_in', 'loading'])
+                    ->orderBy('created_at', 'asc')
+                    ->get();
+
+                $usedOrderIds = [];
+                $mappedAssignments = $assignments->values()->map(function ($a, $idx) use ($isFullUnit, $trailerParts, $op, $activeOrders, &$usedOrderIds) {
+                    $partNum = $a->part_number ? (int) $a->part_number : ($idx + 1);
+                    $partTrailer = ($isFullUnit && count($trailerParts) > 1 && isset($trailerParts[$partNum - 1]))
+                        ? $trailerParts[$partNum - 1]
+                        : $op->trailer_plate;
+
+                    $matchedOe = null;
+                    if (!empty($a->shipment_order_id)) {
+                        $matchedOe = $activeOrders->firstWhere('id', $a->shipment_order_id);
+                    }
+                    if (!$matchedOe && $activeOrders->isNotEmpty()) {
+                        // Intentar emparejar por placa de remolque de la parte o por OV
+                        $matchedOe = $activeOrders
+                            ->whereNotIn('id', $usedOrderIds)
+                            ->first(function ($oe) use ($partTrailer, $a) {
+                                return (
+                                    !empty($partTrailer) &&
+                                    strtoupper(trim($oe->trailer_plate ?? '')) === strtoupper(trim($partTrailer))
+                                ) || (string) $oe->sales_order_id === (string) $a->sales_order_id;
+                            });
+                        if ($matchedOe) {
+                            $a->update(['shipment_order_id' => $matchedOe->id]);
+                        }
+                    }
+                    if ($matchedOe) {
+                        $usedOrderIds[] = $matchedOe->id;
+                    }
+
+                    return [
+                        'id' => $a->id,
+                        'part_number' => $partNum,
+                        'trailer_plate' => $partTrailer,
+                        'sales_order_id' => $a->sales_order_id,
+                        'presentation' => $a->presentation,
+                        'tm' => $a->tm,
+                        'sack' => $a->sack,
+                        'type' => $a->type,
+                        'folio' => $a->salesOrder?->folio,
+                        'balance' => $a->salesOrder?->balance,
+                        'client_id' => $a->salesOrder?->client_id,
+                        'client_name' => $a->salesOrder?->client?->business_name,
+                        'product_name' => $a->salesOrder?->product?->name,
+                        'is_documented' => (bool) $matchedOe,
+                        'documented_folio' => $matchedOe?->folio,
+                    ];
+                })->values();
+
+                // Seleccionar por defecto la primera asignación NO documentada (ej. si la 1ra Parte ya tiene OE, selecciona la 2da Parte)
+                $defaultMapped = $mappedAssignments->firstWhere('is_documented', false) ?? $mappedAssignments->first();
+                $latestAssignment = $defaultMapped
+                    ? $assignments->firstWhere('id', $defaultMapped['id'])
+                    : $assignments->first();
+
                 $salesOrderId = $latestAssignment?->sales_order_id ?? $op->sales_order_id;
                 $salesOrder = $latestAssignment?->salesOrder;
                 if (!$salesOrder && $salesOrderId) {
@@ -370,6 +564,7 @@ class DocumentationController extends Controller
                 $tm = $latestAssignment?->tm ?? $op->tm ?? '';
                 $sack = $latestAssignment?->sack ?? $op->sack ?? '';
                 $type = $latestAssignment?->type ?? $op->type ?? '';
+                $defaultTrailerPlate = $defaultMapped['trailer_plate'] ?? $op->trailer_plate;
 
                 return [
                     'id' => $op->id,
@@ -377,7 +572,9 @@ class DocumentationController extends Controller
                     'transporter_line' => $op->transport_line,
                     'unit_type' => $op->unit_type,
                     'tractor_plate' => $op->tractor_plate,
-                    'trailer_plate' => $op->trailer_plate,
+                    'trailer_plate' => $defaultTrailerPlate,
+                    'full_trailer_plate' => $op->trailer_plate,
+                    'default_assignment_id' => $latestAssignment?->id,
                     'economic_number' => $op->economic_number,
                     'license' => $op->license,
                     'brand_model' => $op->brand_model,
@@ -401,21 +598,7 @@ class DocumentationController extends Controller
                         'product_name' => $salesOrder->product?->name,
                         'vessel_name' => $salesOrder->vessel?->name,
                     ] : null,
-                    'assignments' => $assignments->map(function ($a) {
-                        return [
-                            'id' => $a->id,
-                            'sales_order_id' => $a->sales_order_id,
-                            'presentation' => $a->presentation,
-                            'tm' => $a->tm,
-                            'sack' => $a->sack,
-                            'type' => $a->type,
-                            'folio' => $a->salesOrder?->folio,
-                            'balance' => $a->salesOrder?->balance,
-                            'client_id' => $a->salesOrder?->client_id,
-                            'client_name' => $a->salesOrder?->client?->business_name,
-                            'product_name' => $a->salesOrder?->product?->name,
-                        ];
-                    })->values()->all(),
+                    'assignments' => $mappedAssignments->all(),
                 ];
             });
 
@@ -737,7 +920,13 @@ class DocumentationController extends Controller
         $stowagePlan = $order->stowage_plan ?? $history?->stowage_plan;
         $stowagePlanStatus = $order->stowage_plan_status ?? $history?->stowage_plan_status ?? 'pending';
         $samples = !empty($history?->samples) ? $history->samples : ($order->samples ?? []);
-        $samplingStatus = $history?->sampling_status ?? ($order->sampling_status ?? (count($samples) >= 80 ? 'completed' : 'pending'));
+        if (!is_array($samples)) {
+            $samples = is_string($samples) ? (json_decode($samples, true) ?: []) : [];
+        }
+        $targetPerEnsacadora = $this->getTargetSamplesPerEnsacadora($order);
+        $targetSamples = $targetPerEnsacadora * 2;
+        $breakdown = $this->computeEnsacadoraSamplingBreakdown($samples, $targetPerEnsacadora);
+        $samplingStatus = $history?->sampling_status ?? ($order->sampling_status ?? ($breakdown['both_completed'] ? 'completed' : (count($samples) > 0 ? 'in_progress' : 'pending')));
         $samplingAvg = $history?->sampling_avg ?? ($order->sampling_avg ?? null);
         $samplingCompletedAt = $history?->sampling_completed_at ?? ($order->sampling_completed_at ?? null);
 
@@ -753,6 +942,10 @@ class DocumentationController extends Controller
             'stowage_plan_saved_at' => ($order->stowage_plan_saved_at ?? $history?->stowage_plan_saved_at) ? \Carbon\Carbon::parse($order->stowage_plan_saved_at ?? $history?->stowage_plan_saved_at)->toIso8601String() : null,
             'stowage_plan_saved_by' => $order->stowage_plan_saved_by ?? $history?->stowage_plan_saved_by,
             'samples' => $samples,
+            'target_samples_per_ensacadora' => $targetPerEnsacadora,
+            'target_samples_count' => $targetSamples,
+            'ensacadora_1_summary' => $breakdown['ensacadora_1'],
+            'ensacadora_2_summary' => $breakdown['ensacadora_2'],
             'sampling_status' => $samplingStatus,
             'sampling_avg' => $samplingAvg,
             'sampling_completed_at' => $samplingCompletedAt ? \Carbon\Carbon::parse($samplingCompletedAt)->toIso8601String() : null,
@@ -765,9 +958,14 @@ class DocumentationController extends Controller
     public function printOrder($id)
     {
         $order = ShipmentOrder::findOrFail($id);
+        $secondOrder = null;
+        if (request()->filled('second_order_id')) {
+            $secondOrder = ShipmentOrder::find(request('second_order_id'));
+        }
 
         return Inertia::render('Documentation/Orders/Print', [
             'order' => $this->formatOrderForPrint($order),
+            'secondOrder' => $secondOrder ? $this->formatOrderForPrint($secondOrder) : null,
         ]);
     }
 
@@ -931,19 +1129,19 @@ class DocumentationController extends Controller
             'sales_order_id' => 'required|exists:sales_orders,id',
             'consigned_to' => 'required|string',
             // Transport
-            'transport_company' => 'nullable|string',
-            'operator_name' => 'nullable|string',
-            'unit_number' => 'nullable|string',
-            'tractor_plate' => 'nullable|string',
-            'trailer_plate' => 'nullable|string',
-            'carta_porte' => 'nullable|string',
-            'license_number' => 'nullable|string',
-            'unit_type' => 'nullable|string',
-            'economic_number' => 'nullable|string',
+            'transport_company' => 'required|string',
+            'operator_name' => 'required|string',
+            'unit_number' => 'required|string',
+            'tractor_plate' => 'required|string',
+            'trailer_plate' => 'required|string',
+            'carta_porte' => 'required|string',
+            'license_number' => 'required|string',
+            'unit_type' => 'required|string',
+            'economic_number' => 'required|string',
             // Shipment
             'destination_id' => 'nullable|exists:shipment_destinations,id',
             'destination' => 'nullable|string',
-            'product' => 'nullable|string',
+            'product' => 'required|string',
             'presentation' => 'required|string',
             'sack_type' => 'nullable|string',
             'sacks_count' => 'nullable|string',
@@ -952,11 +1150,18 @@ class DocumentationController extends Controller
             'balance' => 'nullable',
             'shortage_balance' => 'nullable|string',
             'observations' => 'nullable|string',
-            'state' => 'nullable|string',
+            'state' => 'required|string',
             // Allow Operator/Unit IDs to be updated if re-selected
             'operator_id' => 'nullable',
             'scale_operator_id' => 'nullable|exists:users,id',
         ]);
+
+        if (empty($validated['destination_id']) && empty($validated['destination'])) {
+            return back()->withErrors(['destination_id' => 'El destino es obligatorio.'])->withInput();
+        }
+        if ($validated['presentation'] === 'ENVASADO' && empty($request->input('sack_type')) && empty($validated['sacks_count'])) {
+            return back()->withErrors(['sack_type' => 'El tamaño de saco es obligatorio para producto envasado.'])->withInput();
+        }
 
         // Validate Balance again if programmed tons changed (Permitido para permitir documentar la OE y luego aplicar Ajuste)
         // if ($validated['sales_order_id'] != $order->sales_order_id || $validated['programmed_tons'] != $order->programmed_tons) {
@@ -1802,7 +2007,8 @@ class DocumentationController extends Controller
         return response()->json([
             'order' => $this->formatOrderForPrint($order),
             'history' => $history ? $this->formatProcessHistoryItem($history) : null,
-            'is_registered' => !empty($order->lot_id) || (!empty($history) && !empty($history->lot_id)),
+            'is_in_apt' => !empty($history) && !empty($history->lot_id),
+            'is_registered' => !empty($history) && !empty($history->lot_id),
         ]);
     }
 
@@ -1817,6 +2023,8 @@ class DocumentationController extends Controller
             'loading_assistant' => 'nullable|string|max:255',
             'stowage_count' => 'nullable|integer',
             'loaded_at' => 'nullable|date',
+            'from_estibadores' => 'nullable|boolean',
+            'stowage_plan' => 'nullable|array',
         ]);
 
         if ($validated['squad_leader'] && !$this->personalAgroindustrySquadLeaders()
@@ -1844,6 +2052,81 @@ class DocumentationController extends Controller
             return response()->json([
                 'message' => "La unidad debe pasar a Bascula antes de continuar con la orden {$order->folio}.",
             ], 422);
+        }
+
+        if ($request->boolean('from_estibadores')) {
+            $incomingPlan = $request->input('stowage_plan', []);
+            if (is_string($incomingPlan)) {
+                $incomingPlan = json_decode($incomingPlan, true) ?: [];
+            }
+            $existingPlan = is_array($order->stowage_plan) ? $order->stowage_plan : [];
+            $mergedPlan = array_merge($existingPlan, is_array($incomingPlan) ? $incomingPlan : []);
+            $mergedPlan['warehouse'] = $validated['warehouse'];
+            if (!empty($validated['loading_assistant'])) {
+                $mergedPlan['supervisor'] = $validated['loading_assistant'];
+            }
+            if (empty($mergedPlan['vobo_status'])) {
+                $mergedPlan['vobo_status'] = 'pending';
+            }
+
+            $computedStowageCount = $request->input('stowage_count') ?: ($existingPlan['stowage_count'] ?? $order->stowage_count);
+            if (isset($mergedPlan['stowages']) && is_array($mergedPlan['stowages'])) {
+                $nonEmptyCount = collect($mergedPlan['stowages'])
+                    ->filter(fn($v) => !is_null($v) && ((float)$v > 0 || strtoupper((string)$v) === 'X'))
+                    ->count();
+                if ($nonEmptyCount > 0) {
+                    $computedStowageCount = $nonEmptyCount;
+                }
+            }
+            if ($computedStowageCount) {
+                $mergedPlan['stowage_count'] = (int) $computedStowageCount;
+            }
+
+            $now = now();
+            $order->update([
+                'lot_id' => $validated['lot_id'],
+                'warehouse' => $validated['warehouse'],
+                'loading_squad_leader' => $validated['squad_leader'] ?? null,
+                'loading_assistant' => $validated['loading_assistant'] ?? null,
+                'stowage_plan' => $mergedPlan,
+                'loaded_at' => $order->loaded_at ?? $now,
+                'status' => $order->status === 'created' || !$order->status ? 'loading' : $order->status,
+            ]);
+
+            $lot = Lot::find($validated['lot_id']);
+            $existingHistory = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+            $historyRecord = ShipmentProcessHistory::updateOrCreate(
+                ['shipment_order_id' => $order->id],
+                [
+                    'lot_id' => $validated['lot_id'],
+                    'warehouse' => $validated['warehouse'],
+                    'cubicle' => $lot?->cubicle,
+                    'loading_administrator' => $existingHistory?->loading_administrator ?: ($request->user()?->name ?: 'Estibadores'),
+                    'loading_squad_leader' => $validated['squad_leader'] ?? null,
+                    'loading_assistant' => $validated['loading_assistant'] ?? null,
+                    'stowage_count' => $computedStowageCount,
+                    'started_at' => $existingHistory?->started_at ?? $order->loaded_at ?? $now,
+                    'status' => $existingHistory?->status ?: 'loading',
+                    'stowage_plan' => $mergedPlan,
+                    'stowage_plan_status' => $order->stowage_plan_status ?: 'pending',
+                    'stowage_plan_saved_at' => $order->stowage_plan_saved_at,
+                    'stowage_plan_saved_by' => $order->stowage_plan_saved_by,
+                ]
+            );
+
+            $freshOrder = $order->fresh(['items.product', 'lot', 'client', 'sales_order']);
+            $orderPayload = $this->formatOrderForPrint($freshOrder);
+            $orderPayload['history_id'] = $historyRecord->id;
+            $orderPayload['lot_folio'] = $freshOrder->lot?->folio;
+            $orderPayload['stowage_count'] = $computedStowageCount;
+            $orderPayload['target_samples_count'] = $this->getTargetSamplesCount($freshOrder);
+            $orderPayload['vobo_status'] = $mergedPlan['vobo_status'] ?? 'pending';
+            $orderPayload['is_in_apt'] = ($mergedPlan['vobo_status'] ?? 'pending') === 'approved';
+
+            return response()->json([
+                'message' => 'Datos de carga guardados. Abriendo Nota de Estiba.',
+                'order' => $orderPayload,
+            ]);
         }
 
         $administrator = $request->user()?->name ?: $request->user()?->username ?: 'Administrador';
@@ -1939,11 +2222,12 @@ class DocumentationController extends Controller
             $samples = json_decode($samples, true) ?: [];
         }
         $stowageCount = $request->input('stowage_count');
+        $targetPerEnsacadora = $this->getTargetSamplesPerEnsacadora($order);
+        $targetSamples = $targetPerEnsacadora * 2;
         $sampleCount = count($samples);
-        $isCompleted = $sampleCount >= 80;
         $existingSampleCount = count($history?->samples ?? $order?->samples ?? []);
 
-        // Candado estricto para envasados: estrictamente se debe realizar primero la Nota de Estiba para realizar muestras
+        // Candado estricto para envasados: estrictamente se debe realizar primero la Nota de Estiba y contar con el VoBo de Supervisión PROAGRO para realizar muestras
         $productText = mb_strtoupper(($order?->product ?? '') . ' ' . ($order?->presentation ?? ''));
         $isEnvasado = str_contains($productText, 'ENVASADO') || str_contains($productText, 'SACO') || str_contains($productText, '25KG') || str_contains($productText, '50KG');
         $stowageDone = ($order?->stowage_plan_status === 'completed' && !empty($order?->stowage_plan_saved_at)) 
@@ -1951,9 +2235,61 @@ class DocumentationController extends Controller
 
         if ($isEnvasado && !$stowageDone) {
             return response()->json([
-                'message' => 'Candado Activo: Estrictamente se debe realizar y liberar primero la Nota de Estiba (GLS-AP-FO-002) antes de capturar las muestras de ensacadora.',
+                'message' => 'Candado Activo: Estrictamente se debe realizar y guardar primero la Nota de Estiba (GLS-AP-FO-002) antes de capturar las muestras de ensacadora.',
             ], 422);
         }
+
+        $currentPlan = is_array($history->stowage_plan)
+            ? $history->stowage_plan
+            : (is_array($order?->stowage_plan) ? $order->stowage_plan : []);
+
+        if ($isEnvasado && ($currentPlan['vobo_status'] ?? 'pending') !== 'approved') {
+            return response()->json([
+                'message' => 'Candado Activo: La Nota de Estiba (GLS-AP-FO-002) se encuentra en estado "Pendiente de VoBo". El personal de Supervisión PROAGRO debe revisarla y dar su VoBo antes de iniciar la toma de muestras.',
+            ], 422);
+        }
+
+        // Regla funcional 4 y 5 (Especificación VECODE):
+        // Normalizar muestras por ensacadora y validar que no se compensen muestras faltantes de una ensacadora con la otra
+        $env1Seq = 0;
+        $env2Seq = 0;
+        $currentUserName = $request->user()?->name ?: ($request->user()?->username ?: 'Estibador');
+        $orderFolio = $order?->folio ?? 'N/A';
+        $progTons = (float) ($order?->programmed_tons ?: 36);
+        $normalizedSamples = [];
+
+        foreach ($samples as $s) {
+            if (!is_array($s)) continue;
+            $env = (int) ($s['ensacadora'] ?? $s['envasadora'] ?? 1) === 2 ? 2 : 1;
+            if ($env === 1) {
+                $env1Seq++;
+                $seq = $env1Seq;
+            } else {
+                $env2Seq++;
+                $seq = $env2Seq;
+            }
+            $s['ensacadora'] = $env;
+            $s['envasadora'] = $env;
+            $s['ensacadora_name'] = "Ensacadora {$env}";
+            $s['num'] = $seq;
+            $s['order_folio'] = $s['order_folio'] ?? $orderFolio;
+            $s['programmed_tons'] = $s['programmed_tons'] ?? $progTons;
+            $s['required_samples'] = $targetPerEnsacadora;
+            $s['captured_by'] = $s['captured_by'] ?? $currentUserName;
+            $s['captured_at'] = $s['captured_at'] ?? now()->toIso8601String();
+            $normalizedSamples[] = $s;
+        }
+
+        if ($env1Seq > $targetPerEnsacadora || $env2Seq > $targetPerEnsacadora) {
+            return response()->json([
+                'message' => "Regla de muestreo VECODE: No se permite compensar muestras faltantes de una ensacadora con muestras adicionales de la otra. El límite requerido para esta unidad ({$progTons} TM) es de {$targetPerEnsacadora} muestras en Ensacadora 1 y {$targetPerEnsacadora} muestras en Ensacadora 2 ({$targetSamples} en total).",
+            ], 422);
+        }
+
+        $samples = $normalizedSamples;
+        $sampleCount = count($samples);
+        $breakdown = $this->computeEnsacadoraSamplingBreakdown($samples, $targetPerEnsacadora);
+        $isCompleted = $breakdown['both_completed'];
 
         $avg = null;
         if ($sampleCount > 0) {
@@ -1964,13 +2300,29 @@ class DocumentationController extends Controller
         }
 
         $now = now();
-        $isFinalSave = $isCompleted && ($request->boolean('is_completed') || count($samples) >= 80);
+        $isFinalSave = $isCompleted && ($request->boolean('is_completed') || $breakdown['both_completed']);
+
+        $existingPlan = is_array($history->stowage_plan)
+            ? $history->stowage_plan
+            : (is_array($order?->stowage_plan) ? $order->stowage_plan : []);
+
+        // Regla funcional 2: Dos registros independientes de muestreo (Ensacadora 1 y Ensacadora 2)
+        $existingPlan['sampling_records'] = [
+            'programmed_tons' => $progTons,
+            'target_per_ensacadora' => $targetPerEnsacadora,
+            'target_total' => $targetSamples,
+            'ensacadora_1' => $breakdown['ensacadora_1'],
+            'ensacadora_2' => $breakdown['ensacadora_2'],
+            'updated_at' => $now->toIso8601String(),
+            'updated_by' => $currentUserName,
+        ];
 
         $updateData = [
             'samples' => $samples,
             'sampling_avg' => $avg,
             'sampling_status' => $isCompleted ? 'completed' : ($sampleCount > 0 ? 'in_progress' : 'pending'),
             'sampling_completed_at' => $isCompleted ? ($history->sampling_completed_at ?? $now) : null,
+            'stowage_plan' => $existingPlan,
             'updated_by' => auth()->id(),
         ];
 
@@ -1982,10 +2334,55 @@ class DocumentationController extends Controller
             $updateData['stowage_count'] = (int)$stowageCount;
         }
 
-        // Al certificar y guardar el muestreo final (80/80), terminar el proceso de carga
+        // Al certificar y guardar el muestreo final, actualizar Peso Neto Estimado en Nota de Estiba y dejar pendiente de Liberación por Supervisión PROAGRO (Paso 4)
         if ($isFinalSave) {
-            $updateData['finished_at'] = $history->finished_at ?? $now;
-            $updateData['status'] = 'completed';
+            if (empty($existingPlan['sampling_release_status'])) {
+                $existingPlan['sampling_release_status'] = 'pending_release';
+            }
+
+            if ($avg && $avg > 0) {
+                $existingPlan['avg_unit_weight'] = $avg;
+                $totalSacksForNet = 0;
+                if (!empty($existingPlan['stowages']) && is_array($existingPlan['stowages'])) {
+                    $numericSacksSum = collect($existingPlan['stowages'])
+                        ->filter(fn($v) => is_numeric($v) && (float)$v > 0)
+                        ->sum(fn($v) => (float)$v);
+                    if ($numericSacksSum > 0) {
+                        $totalSacksForNet = (int) round($numericSacksSum);
+                    }
+                }
+
+                if ($totalSacksForNet <= 0 && $order) {
+                    $tons = (float) ($order->programmed_tons ?? 0);
+                    $sacksStr = (string) ($order->sacks_count ?? '');
+                    if ($tons > 0) {
+                        if (stripos($sacksStr, 'KG') !== false) {
+                            $size = (int) preg_replace('/\D/', '', $sacksStr);
+                            if ($size > 0) {
+                                $totalSacksForNet = (int) round(($tons * 1000) / $size);
+                            }
+                        } else {
+                            $pres = strtoupper((string) ($order->presentation ?? ''));
+                            if (str_contains($pres, '25')) $totalSacksForNet = (int) round($tons * 40);
+                            elseif (str_contains($pres, '50')) $totalSacksForNet = (int) round($tons * 20);
+                            elseif (str_contains($pres, '200')) $totalSacksForNet = (int) round($tons * 5);
+                            elseif (str_contains($pres, '500')) $totalSacksForNet = (int) round($tons * 2);
+                            elseif (str_contains($pres, '1000')) $totalSacksForNet = (int) round($tons * 1);
+                        }
+                    }
+                    if ($totalSacksForNet <= 0 && is_numeric($sacksStr) && (float)$sacksStr > 0) {
+                        $totalSacksForNet = (int) round((float)$sacksStr);
+                    }
+                }
+
+                if ($totalSacksForNet > 0) {
+                    $estimatedNetTons = round(($avg * $totalSacksForNet) / 1000, 3);
+                    $existingPlan['net_weight'] = number_format($estimatedNetTons, 3, '.', '') . ' TM';
+                    $existingPlan['estimated_net_tons'] = $estimatedNetTons;
+                }
+            }
+
+            $updateData['stowage_plan'] = $existingPlan;
         }
 
         $history->update($updateData);
@@ -1997,12 +2394,11 @@ class DocumentationController extends Controller
                 'sampling_status' => $updateData['sampling_status'],
                 'sampling_completed_at' => $updateData['sampling_completed_at'],
             ];
+            if (isset($updateData['stowage_plan'])) {
+                $orderUpdate['stowage_plan'] = $updateData['stowage_plan'];
+            }
             if ($request->has('is_blocked')) {
                 $orderUpdate['is_sampling_blocked'] = $request->boolean('is_blocked');
-            }
-            if ($isFinalSave) {
-                $orderUpdate['loading_finished_at'] = $order->loading_finished_at ?? $now;
-                $orderUpdate['status'] = 'loading';
             }
             $order->update($orderUpdate);
         }
@@ -2035,22 +2431,39 @@ class DocumentationController extends Controller
         }
 
         if (!$history) {
+            $targetPerEnsacadora = $this->getTargetSamplesPerEnsacadora($order);
+            $breakdown = $this->computeEnsacadoraSamplingBreakdown([], $targetPerEnsacadora);
             return response()->json([
                 'samples' => [],
                 'stowage_count' => null,
                 'sampling_completed_at' => null,
                 'sampling_status' => 'pending',
                 'sampling_avg' => null,
+                'target_samples_per_ensacadora' => $targetPerEnsacadora,
+                'target_samples_count' => $targetPerEnsacadora * 2,
+                'ensacadora_1_summary' => $breakdown['ensacadora_1'],
+                'ensacadora_2_summary' => $breakdown['ensacadora_2'],
             ]);
         }
 
-        $sampleCount = count($history->samples ?? []);
+        $targetPerEnsacadora = $this->getTargetSamplesPerEnsacadora($order ?? $history->shipmentOrder);
+        $targetSamples = $targetPerEnsacadora * 2;
+        $historySamples = $history->samples ?? [];
+        if (!is_array($historySamples)) {
+            $historySamples = is_string($historySamples) ? (json_decode($historySamples, true) ?: []) : [];
+        }
+        $sampleCount = count($historySamples);
+        $breakdown = $this->computeEnsacadoraSamplingBreakdown($historySamples, $targetPerEnsacadora);
         return response()->json([
-            'samples' => $history->samples ?? [],
-            'stowage_count' => $history->stowage_count,
-            'sampling_completed_at' => $sampleCount >= 80 ? $history->sampling_completed_at?->toIso8601String() : null,
-            'sampling_status' => $sampleCount >= 80 ? ($history->sampling_status ?? 'completed') : ($sampleCount > 0 ? 'in_progress' : 'pending'),
+            'samples' => $historySamples,
+            'stowage_count' => $history->stowage_count ?? ($history->stowage_plan['stowage_count'] ?? null),
+            'sampling_completed_at' => $breakdown['both_completed'] ? $history->sampling_completed_at?->toIso8601String() : null,
+            'sampling_status' => $breakdown['both_completed'] ? ($history->sampling_status ?? 'completed') : ($sampleCount > 0 ? 'in_progress' : 'pending'),
             'sampling_avg' => $history->sampling_avg,
+            'target_samples_per_ensacadora' => $targetPerEnsacadora,
+            'target_samples_count' => $targetSamples,
+            'ensacadora_1_summary' => $breakdown['ensacadora_1'],
+            'ensacadora_2_summary' => $breakdown['ensacadora_2'],
             'is_sampling_blocked' => (bool) ($history->is_sampling_blocked ?? $order?->is_sampling_blocked ?? false),
             'sampling_unlock_count' => (int) ($history->sampling_unlock_count ?? $order?->sampling_unlock_count ?? 0),
         ]);
@@ -2098,21 +2511,33 @@ class DocumentationController extends Controller
 
         if (!$user || !Hash::check($validated['password'], $user->password)) {
             return response()->json([
-                'message' => 'Credenciales inválidas. Verifique el usuario y la contraseña del Jefe de Almacén.',
+                'message' => 'Credenciales inválidas. Verifique el usuario y la contraseña del Supervisor PROAGRO o Jefe de Almacén.',
             ], 422);
         }
 
-        // Verificar rol de Jefe de Almacén o Administrador
-        $isJefe = (method_exists($user, 'hasRole') && ($user->hasRole('Jefe de Almacen') || $user->hasRole('Jefe de Almacén') || $user->hasRole('Admin') || $user->hasRole('admin') || $user->hasRole('super-admin')))
+        // Verificar rol de Supervisor PROAGRO, Jefe de Almacén o Administrador
+        $isJefe = (method_exists($user, 'hasRole') && (
+                $user->hasRole('Jefe de Almacen') ||
+                $user->hasRole('Jefe de Almacén') ||
+                $user->hasRole('Supervisor') ||
+                $user->hasRole('APT') ||
+                $user->hasRole('Almacen') ||
+                $user->hasRole('Almacén') ||
+                $user->hasRole('Admin') ||
+                $user->hasRole('admin') ||
+                $user->hasRole('super-admin')
+            ))
             || ($user->is_admin ?? false)
+            || !$this->isEstibadorUser($user)
             || str_contains(mb_strtolower($user->position ?? ''), 'jefe')
+            || str_contains(mb_strtolower($user->position ?? ''), 'supervis')
             || str_contains(mb_strtolower($user->level ?? ''), 'jefe')
             || str_contains(mb_strtolower($user->position ?? ''), 'almac')
             || str_contains(mb_strtolower($user->name ?? ''), 'admin');
 
-        if (!$isJefe) {
+        if ($this->isEstibadorUser($user)) {
             return response()->json([
-                'message' => 'El usuario ingresado no cuenta con perfil de Jefe de Almacén ni Administrador.',
+                'message' => 'El usuario ingresado tiene perfil de Estibador. Se requiere autorización del Supervisor de PROAGRO o Jefe de Almacén.',
             ], 403);
         }
 
@@ -2141,7 +2566,7 @@ class DocumentationController extends Controller
                 'unlocked_by_name' => $user->name,
                 'assistant_name' => $assistant,
                 'unlock_count' => $currentUnlockCount,
-                'reason' => $validated['notes'] ?: 'Desbloqueo autorizado tras 3 alertas por pesos fuera de tolerancia',
+                'reason' => $validated['notes'] ?: 'Desbloqueo autorizado tras alertas por pesos fuera de tolerancia',
                 'unlocked_at' => now(),
             ]);
         } else {
@@ -2154,15 +2579,16 @@ class DocumentationController extends Controller
                 'unlocked_by_name' => $user->name,
                 'assistant_name' => $assistant,
                 'unlock_count' => 1,
-                'reason' => $validated['notes'] ?: 'Desbloqueo autorizado tras 3 alertas por pesos fuera de tolerancia',
+                'reason' => $validated['notes'] ?: 'Desbloqueo autorizado tras alertas por pesos fuera de tolerancia',
                 'unlocked_at' => now(),
             ]);
         }
 
+        $targetSamples = $this->getTargetSamplesCount($order);
         $samples = $history?->samples ?? $order?->samples ?? [];
         $sampleCount = count($samples);
-        $statusAfterUnlock = $sampleCount >= 80 ? 'completed' : ($sampleCount > 0 ? 'in_progress' : 'pending');
-        $completedAtAfterUnlock = $sampleCount >= 80 ? $history?->sampling_completed_at : null;
+        $statusAfterUnlock = $sampleCount >= $targetSamples ? 'completed' : ($sampleCount > 0 ? 'in_progress' : 'pending');
+        $completedAtAfterUnlock = $sampleCount >= $targetSamples ? $history?->sampling_completed_at : null;
 
         if ($history) {
             $history->update([
@@ -2289,9 +2715,22 @@ class DocumentationController extends Controller
             return response()->json(['message' => 'No se encontró la orden ni el registro de historial de embarque.'], 404);
         }
 
+        $existingPlan = $history?->stowage_plan ?: $order?->stowage_plan ?: [];
+        if (is_string($existingPlan)) {
+            $existingPlan = json_decode($existingPlan, true) ?: [];
+        }
+
         $stowagePlan = $request->input('stowage_plan', []);
         if (is_string($stowagePlan)) {
             $stowagePlan = json_decode($stowagePlan, true) ?: [];
+        }
+
+        if (is_array($existingPlan) && is_array($stowagePlan)) {
+            $stowagePlan = array_merge($existingPlan, $stowagePlan);
+        }
+
+        if (!isset($stowagePlan['vobo_status'])) {
+            $stowagePlan['vobo_status'] = $existingPlan['vobo_status'] ?? 'pending';
         }
 
         $warehouseInput = $request->input('warehouse');
@@ -2314,7 +2753,9 @@ class DocumentationController extends Controller
 
         // Also if stowages array has values, calculate non-empty pallets count to populate stowage_count if empty
         if (isset($stowagePlan['stowages']) && is_array($stowagePlan['stowages'])) {
-            $nonEmptyStowages = collect($stowagePlan['stowages'])->filter(fn($val) => !is_null($val) && (float)$val > 0)->count();
+            $nonEmptyStowages = collect($stowagePlan['stowages'])
+                ->filter(fn($val) => !is_null($val) && ((float)$val > 0 || strtoupper((string)$val) === 'X'))
+                ->count();
             if ($nonEmptyStowages > 0) {
                 $updateData['stowage_count'] = $nonEmptyStowages;
             }
@@ -2332,7 +2773,7 @@ class DocumentationController extends Controller
                 'loading_administrator' => auth()->user()?->name ?: 'Estibadores',
                 'loading_squad_leader' => $order->loading_squad_leader,
                 'loading_assistant' => $order->loading_assistant,
-                'started_at' => $now,
+                'started_at' => $order->loaded_at ?? $now,
                 'status' => 'loading',
                 'stowage_plan' => $stowagePlan,
                 'stowage_plan_status' => 'completed',
@@ -2377,6 +2818,66 @@ class DocumentationController extends Controller
         ]);
     }
 
+    public function approveStowagePlanVoBo(Request $request, string $id)
+    {
+        $user = $request->user();
+        if ($this->isEstibadorUser($user)) {
+            return response()->json([
+                'message' => 'El VoBo de la Nota de Estiba solo puede ser autorizado por personal de Supervisión PROAGRO.',
+            ], 403);
+        }
+
+        $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
+        $history = null;
+        if ($order) {
+            $history = ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
+        } else {
+            $history = ShipmentProcessHistory::find($id);
+            if ($history) {
+                $order = $history->shipmentOrder;
+            }
+        }
+
+        if (!$order && !$history) {
+            return response()->json(['message' => 'Orden o registro no encontrado.'], 404);
+        }
+
+        $stowagePlan = $history?->stowage_plan ?? $order?->stowage_plan ?? [];
+        if (is_string($stowagePlan)) {
+            $stowagePlan = json_decode($stowagePlan, true) ?: [];
+        }
+
+        $now = now();
+        $stowagePlan['vobo_status'] = 'approved';
+        $stowagePlan['vobo_by'] = $user?->name ?? 'Supervisor PROAGRO';
+        $stowagePlan['vobo_user_id'] = $user?->id;
+        $stowagePlan['vobo_at'] = $now->toIso8601String();
+
+        if ($history) {
+            $history->update([
+                'stowage_plan' => $stowagePlan,
+                'stowage_plan_status' => 'completed',
+            ]);
+        }
+
+        if ($order) {
+            $order->update([
+                'stowage_plan' => $stowagePlan,
+                'stowage_plan_status' => 'completed',
+            ]);
+        }
+
+        $formatted = $history
+            ? $this->formatProcessHistoryItem($history->fresh(['shipmentOrder.items.product', 'lot']))
+            : $this->formatLoadingHistoryItem($order->fresh(['items.product', 'lot']));
+
+        return response()->json([
+            'message' => 'VoBo de Nota de Estiba registrado correctamente. El personal estibador ya puede iniciar la toma de muestras.',
+            'stowage_plan' => $stowagePlan,
+            'item' => $formatted,
+        ]);
+    }
+
     public function loadingHistory(Request $request)
     {
         $lotId = $request->query('lot_id');
@@ -2387,6 +2888,12 @@ class DocumentationController extends Controller
 
     public function finishLoading(string $id)
     {
+        if ($this->isEstibadorUser(auth()->user())) {
+            return response()->json([
+                'message' => 'La liberación de la toma de muestras solo puede realizarse por personal de Supervisión PROAGRO.',
+            ], 403);
+        }
+
         $order = ShipmentOrder::where('id', $id)->orWhere('folio', $id)->first();
         if (!$order) {
             $loadingOrder = \App\Models\LoadingOrder::where('id', $id)->orWhere('folio', $id)->first();
@@ -2409,33 +2916,59 @@ class DocumentationController extends Controller
             return response()->json(['message' => 'Orden o registro no encontrado.'], 404);
         }
 
-        // CANDADO ESTRICTO DE ENVASADO: No permitir finalizar sin 80 muestras validadas y guardadas
+        $targetPerEnsacadora = $this->getTargetSamplesPerEnsacadora($order);
+        $targetSamples = $targetPerEnsacadora * 2;
+
+        // CANDADO ESTRICTO DE ENVASADO (Regla funcional 7 VECODE):
+        // Permitir la liberación final de la toma de muestras únicamente cuando ambas ensacadoras hayan completado su cantidad requerida y no existan autorizaciones pendientes.
         $textToCheck = mb_strtoupper(($order?->product ?? '') . ' ' . ($order?->presentation ?? '') . ' ' . ($history?->product_text ?? '') . ' ' . ($order?->sacks_count ?? ''));
         $isEnvasado = str_contains($textToCheck, 'ENVAS') || str_contains($textToCheck, 'SACO') || str_contains($textToCheck, '25KG') || str_contains($textToCheck, '50KG') || str_contains($textToCheck, '25 KG') || str_contains($textToCheck, '50 KG') || ((int)($order?->stowage_count ?? 0) > 0) || ((int)($history?->stowage_count ?? 0) > 0);
 
         if ($isEnvasado) {
+            $isBlocked = (bool) ($history?->is_sampling_blocked ?? $order?->is_sampling_blocked ?? false);
+            if ($isBlocked) {
+                return response()->json([
+                    'message' => "Candado Activo: No se puede liberar la toma de muestras de la orden (" . ($order?->folio ?? 'N/A') . ") porque existe una autorización de desbloqueo pendiente por peso fuera del límite.",
+                ], 422);
+            }
+
             $samples = $history?->samples ?? $order?->samples ?? [];
             if (!is_array($samples)) {
-                $samples = is_string($samples) ? json_decode($samples, true) : [];
+                $samples = is_string($samples) ? (json_decode($samples, true) ?: []) : [];
             }
             $sampleCount = count($samples);
-            $hasSamplingCompleted = $sampleCount >= 80 && (
+            $breakdown = $this->computeEnsacadoraSamplingBreakdown($samples, $targetPerEnsacadora);
+            $hasSamplingCompleted = $breakdown['both_completed'] && (
                 (!empty($order?->sampling_completed_at) && $order?->sampling_status === 'completed') ||
                 (!empty($history?->sampling_completed_at) && $history?->sampling_status === 'completed')
             );
 
             if (!$hasSamplingCompleted) {
+                $e1 = $breakdown['env1_count'];
+                $e2 = $breakdown['env2_count'];
                 return response()->json([
-                    'message' => "Candado Activo: No se puede finalizar la orden (" . ($order?->folio ?? 'N/A') . ") porque requiere que se hayan validado y guardado las 80 muestras de ensacadora (lleva {$sampleCount}/80 muestras).",
+                    'message' => "Candado Activo: No se puede liberar la toma de muestras de la orden (" . ($order?->folio ?? 'N/A') . ") hasta que ambas ensacadoras hayan completado su cantidad requerida (Ensacadora 1: {$e1}/{$targetPerEnsacadora}, Ensacadora 2: {$e2}/{$targetPerEnsacadora}, Total: {$sampleCount}/{$targetSamples} muestras).",
                 ], 422);
             }
         }
 
         $now = now();
+        $stowagePlan = $history?->stowage_plan ?? $order?->stowage_plan ?? [];
+        if (is_string($stowagePlan)) {
+            $stowagePlan = json_decode($stowagePlan, true) ?: [];
+        }
+        if (is_array($stowagePlan)) {
+            $stowagePlan['sampling_release_status'] = 'released';
+            $stowagePlan['released_by'] = auth()->user()?->name ?? 'Supervisor PROAGRO';
+            $stowagePlan['released_user_id'] = auth()->id();
+            $stowagePlan['released_at'] = $now->toIso8601String();
+        }
+
         if ($order) {
             $order->update([
                 'status' => 'loading',
                 'loading_finished_at' => $order->loading_finished_at ?? $now,
+                'stowage_plan' => $stowagePlan,
             ]);
         }
 
@@ -2443,11 +2976,12 @@ class DocumentationController extends Controller
             $history->update([
                 'finished_at' => $history->finished_at ?? $now,
                 'status' => 'completed',
+                'stowage_plan' => $stowagePlan,
             ]);
         }
 
         return response()->json([
-            'message' => 'Orden de embarque finalizada correctamente.',
+            'message' => 'Toma de muestras liberada y orden de embarque finalizada correctamente.',
             'item' => $history
                 ? $this->formatProcessHistoryItem($history->fresh(['shipmentOrder.items.product', 'lot']))
                 : $this->formatLoadingHistoryItem($order->fresh(['items.product', 'lot'])),
@@ -2475,30 +3009,53 @@ class DocumentationController extends Controller
         }
 
         $isEstibador = $request->boolean('is_estibadores') || $this->isEstibadorUser($request->user());
+        $stowagePlan = $history?->stowage_plan ?? $order?->stowage_plan ?? [];
+        if (is_string($stowagePlan)) {
+            $stowagePlan = json_decode($stowagePlan, true) ?: [];
+        }
+        $samples = $history?->samples ?? $order?->samples ?? [];
+        if (!is_array($samples)) {
+            $samples = is_string($samples) ? (json_decode($samples, true) ?: []) : [];
+        }
 
         if ($isEstibador) {
-            // Estibadores solo pueden eliminar la nota de estiba si en APT ya la eliminaron del proceso
-            if ($history && $history->exists && ($history->lot_id || $history->started_at)) {
+            $voboApproved = ($stowagePlan['vobo_status'] ?? 'pending') === 'approved';
+            if ($voboApproved || count($samples) > 0 || !empty($history?->finished_at)) {
                 return response()->json([
-                    'message' => 'No se puede eliminar la nota de estiba porque la orden está en proceso en APT. Para eliminarla, primero debe eliminarse en Gestión de Proceso de Embarques en APT.'
+                    'message' => 'No se puede eliminar la nota de estiba porque ya cuenta con VoBo de Supervisión PROAGRO o ya inició la toma de muestras. Solicite a Supervisión PROAGRO en APT que la libere/elimine primero.'
                 ], 422);
             }
 
             if ($order) {
+                ShipmentProcessHistory::where('shipment_order_id', $order->id)->delete();
                 $order->update([
+                    'lot_id' => null,
+                    'loading_administrator' => null,
+                    'loading_squad_leader' => null,
+                    'loading_assistant' => null,
+                    'loaded_at' => null,
+                    'loading_finished_at' => null,
+                    'status' => 'created',
                     'stowage_plan' => null,
                     'stowage_plan_status' => 'pending',
                     'stowage_plan_saved_at' => null,
                     'stowage_plan_saved_by' => null,
                 ]);
+            } elseif ($history) {
+                $history->delete();
             }
 
             return response()->json(['message' => 'Nota de estiba eliminada correctamente. Puede volver a escanear la orden para realizar una nueva.']);
         }
 
         // Eliminación desde APT (Gestión de proceso de embarques):
-        // Elimina el proceso de embarque de APT (ShipmentProcessHistory, asignación de lote, muestreo),
+        // Elimina el proceso de embarque de APT (ShipmentProcessHistory, asignación de lote, muestreo, VoBo),
         // pero CONSERVA la nota de estiba que los estibadores guardaron para que ellos puedan verla, editarla o eliminarla.
+        if (is_array($stowagePlan) && !empty($stowagePlan)) {
+            $stowagePlan['vobo_status'] = 'pending';
+            unset($stowagePlan['vobo_by'], $stowagePlan['vobo_user_id'], $stowagePlan['vobo_at'], $stowagePlan['sampling_release_status'], $stowagePlan['released_by'], $stowagePlan['released_user_id'], $stowagePlan['released_at']);
+        }
+
         $resetFields = [
             'lot_id' => null,
             'loading_administrator' => null,
@@ -2507,8 +3064,15 @@ class DocumentationController extends Controller
             'loaded_at' => null,
             'loading_finished_at' => null,
             'status' => 'created',
-            // stowage_plan, stowage_plan_status, stowage_plan_saved_at, stowage_plan_saved_by y warehouse se conservan intactos
+            'samples' => null,
+            'sampling_status' => 'pending',
+            'sampling_completed_at' => null,
+            'sampling_avg' => null,
+            'stowage_plan' => !empty($stowagePlan) ? $stowagePlan : $order?->stowage_plan,
         ];
+        if (Schema::hasColumn('shipment_orders', 'is_sampling_blocked')) {
+            $resetFields['is_sampling_blocked'] = false;
+        }
 
         if ($order) {
             ShipmentProcessHistory::where('shipment_order_id', $order->id)->delete();
@@ -2520,6 +3084,89 @@ class DocumentationController extends Controller
         }
 
         return response()->json(['message' => 'Orden eliminada de Gestión de Embarques en APT. La nota de estiba ha sido liberada para que estibadores puedan editarla o eliminarla.']);
+    }
+
+    /**
+     * Regla de cálculo VECODE (Especificación del muestreo de sacos por ensacadora):
+     * Muestras por ensacadora = REDONDEAR HACIA ARRIBA A PAR (TM * 40 / 36)
+     * Equivalente matemático: M = 2 * CEILING(((TM * 40 / 36) / 2))
+     */
+    private function getTargetSamplesPerEnsacadora($order): int
+    {
+        if (!$order) {
+            return 40;
+        }
+        $tons = (float) ($order->programmed_tons ?: 0);
+        if ($tons <= 0 && (float) ($order->programmed_weight ?? 0) > 0) {
+            $w = (float) $order->programmed_weight;
+            $tons = $w > 200 ? ($w / 1000.0) : $w;
+        }
+        if ($tons <= 0) {
+            return 40;
+        }
+        $perEnsacadora = (int) (2 * ceil((($tons * 40.0) / 36.0) / 2.0));
+        return max(2, min(40, $perEnsacadora));
+    }
+
+    private function getTargetSamplesCount($order): int
+    {
+        return $this->getTargetSamplesPerEnsacadora($order) * 2;
+    }
+
+    private function computeEnsacadoraSamplingBreakdown(array $samples, int $targetPerEnsacadora): array
+    {
+        $env1Samples = [];
+        $env2Samples = [];
+        foreach ($samples as $s) {
+            if (!is_array($s)) continue;
+            $env = (int) ($s['ensacadora'] ?? $s['envasadora'] ?? 1);
+            if ($env === 2) {
+                $env2Samples[] = $s;
+            } else {
+                $env1Samples[] = $s;
+            }
+        }
+
+        $env1Count = count($env1Samples);
+        $env2Count = count($env2Samples);
+        $totalCount = $env1Count + $env2Count;
+        $targetTotal = $targetPerEnsacadora * 2;
+
+        $env1Weights = collect($env1Samples)->pluck('weight')->map(fn ($w) => (float) $w)->filter(fn ($w) => $w > 0);
+        $env2Weights = collect($env2Samples)->pluck('weight')->map(fn ($w) => (float) $w)->filter(fn ($w) => $w > 0);
+
+        $env1Completed = $env1Count >= $targetPerEnsacadora;
+        $env2Completed = $env2Count >= $targetPerEnsacadora;
+
+        return [
+            'env1_count' => $env1Count,
+            'env2_count' => $env2Count,
+            'total_count' => $totalCount,
+            'env1_pending' => max(0, $targetPerEnsacadora - $env1Count),
+            'env2_pending' => max(0, $targetPerEnsacadora - $env2Count),
+            'total_pending' => max(0, $targetTotal - $totalCount),
+            'env1_completed' => $env1Completed,
+            'env2_completed' => $env2Completed,
+            'both_completed' => $env1Completed && $env2Completed,
+            'ensacadora_1' => [
+                'ensacadora' => 1,
+                'name' => 'Ensacadora 1',
+                'required' => $targetPerEnsacadora,
+                'completed' => $env1Count,
+                'pending' => max(0, $targetPerEnsacadora - $env1Count),
+                'avg' => $env1Weights->count() > 0 ? round($env1Weights->avg(), 3) : null,
+                'status' => $env1Completed ? 'completed' : ($env1Count > 0 ? 'in_progress' : 'pending'),
+            ],
+            'ensacadora_2' => [
+                'ensacadora' => 2,
+                'name' => 'Ensacadora 2',
+                'required' => $targetPerEnsacadora,
+                'completed' => $env2Count,
+                'pending' => max(0, $targetPerEnsacadora - $env2Count),
+                'avg' => $env2Weights->count() > 0 ? round($env2Weights->avg(), 3) : null,
+                'status' => $env2Completed ? 'completed' : ($env2Count > 0 ? 'in_progress' : 'pending'),
+            ],
+        ];
     }
 
     private function getLoadingHistory(?string $lotId = null, bool $forEstibadores = false)
@@ -2537,21 +3184,19 @@ class DocumentationController extends Controller
             $historyItems->push($this->formatProcessHistoryItem($ph));
         }
 
-        // Solo para el módulo de Estibadores incluir órdenes que tienen nota de estiba pero aún no inician muestreo/carga en APT o fueron eliminadas de APT
-        if ($forEstibadores) {
-            $stowageOrders = ShipmentOrder::with(['items.product', 'lot'])
-                ->whereNotIn('id', $processedOrderIds)
-                ->where(function ($q) {
-                    $q->whereNotNull('stowage_plan')
-                      ->orWhere('stowage_plan_status', 'completed')
-                      ->orWhereNotNull('stowage_plan_saved_at');
-                })
-                ->orderByDesc('updated_at')
-                ->get();
+        // Incluir órdenes que tienen nota de estiba aunque hayan sido liberadas de APT
+        $stowageOrders = ShipmentOrder::with(['items.product', 'lot'])
+            ->whereNotIn('id', $processedOrderIds)
+            ->where(function ($q) {
+                $q->whereNotNull('stowage_plan')
+                  ->orWhere('stowage_plan_status', 'completed')
+                  ->orWhereNotNull('stowage_plan_saved_at');
+            })
+            ->orderByDesc('updated_at')
+            ->get();
 
-            foreach ($stowageOrders as $so) {
-                $historyItems->push($this->formatLoadingHistoryItem($so));
-            }
+        foreach ($stowageOrders as $so) {
+            $historyItems->push($this->formatLoadingHistoryItem($so));
         }
 
         if ($lotId) {
@@ -2565,17 +3210,31 @@ class DocumentationController extends Controller
     {
         $order = $history->shipmentOrder;
         $stowagePlan = $history->stowage_plan ?: $order?->stowage_plan;
+        if (is_string($stowagePlan)) {
+            $stowagePlan = json_decode($stowagePlan, true) ?: [];
+        }
         $isStowageCompleted = ($order?->stowage_plan_status === 'completed')
             || ($history->stowage_plan_status === 'completed')
             || (!empty($order?->stowage_plan) && is_array($order->stowage_plan))
             || (!empty($history->stowage_plan) && is_array($history->stowage_plan));
         $stowagePlanStatus = $isStowageCompleted ? 'completed' : ($order?->stowage_plan_status ?: ($history->stowage_plan_status ?: 'pending'));
 
+        $targetPerEnsacadora = $this->getTargetSamplesPerEnsacadora($order);
+        $targetSamples = $targetPerEnsacadora * 2;
+        $samples = $history->samples ?? $order?->samples ?? [];
+        if (!is_array($samples)) {
+            $samples = is_string($samples) ? (json_decode($samples, true) ?: []) : [];
+        }
+        $samplesCount = count($samples);
+        $breakdown = $this->computeEnsacadoraSamplingBreakdown($samples, $targetPerEnsacadora);
+        $voboStatus = is_array($stowagePlan) ? ($stowagePlan['vobo_status'] ?? ($isStowageCompleted ? 'pending' : null)) : null;
+        $isInApt = ($voboStatus === 'approved') || $samplesCount > 0 || !empty($history->finished_at);
+
         return [
             'id' => $order ? $order->id : (string)$history->id,
             'history_id' => $history->id,
             'shipment_order_id' => $order?->id,
-            'is_in_apt' => true,
+            'is_in_apt' => $isInApt,
             'lot_id' => $history->lot_id,
             'warehouse' => $history->lot?->warehouse ?: $history->warehouse ?: $order?->warehouse ?: ($stowagePlan['warehouse'] ?? null),
             'cubicle' => $history->lot?->cubicle ?: $history->cubicle,
@@ -2593,15 +3252,25 @@ class DocumentationController extends Controller
             'started_at' => ($history->started_at ?? $order?->loaded_at)?->toIso8601String(),
             'finished_at' => ($history->finished_at ?? $order?->loading_finished_at)?->toIso8601String(),
             'status' => $history->status ?? $order?->status ?? 'loading',
-            'stowage_count' => $history->stowage_count,
-            'samples' => $history->samples ?? [],
-            'sampling_completed_at' => count($history->samples ?? []) >= 80 ? $history->sampling_completed_at?->toIso8601String() : null,
-            'sampling_status' => count($history->samples ?? []) >= 80 ? ($history->sampling_status ?? 'completed') : (count($history->samples ?? []) > 0 ? 'in_progress' : 'pending'),
-            'sampling_avg' => $history->sampling_avg,
+            'stowage_count' => $history->stowage_count ?? ($stowagePlan['stowage_count'] ?? null),
+            'samples' => $samples,
+            'target_samples_per_ensacadora' => $targetPerEnsacadora,
+            'target_samples_count' => $targetSamples,
+            'ensacadora_1_summary' => $breakdown['ensacadora_1'],
+            'ensacadora_2_summary' => $breakdown['ensacadora_2'],
+            'sampling_completed_at' => $breakdown['both_completed'] ? ($history->sampling_completed_at ?? $order?->sampling_completed_at)?->toIso8601String() : null,
+            'sampling_status' => $breakdown['both_completed'] ? ($history->sampling_status ?? 'completed') : ($samplesCount > 0 ? 'in_progress' : 'pending'),
+            'sampling_avg' => $history->sampling_avg ?? $order?->sampling_avg,
             'stowage_plan' => $stowagePlan,
             'stowage_plan_status' => $stowagePlanStatus,
             'stowage_plan_saved_at' => ($history->stowage_plan_saved_at ?? $order?->stowage_plan_saved_at)?->toIso8601String(),
             'stowage_plan_saved_by' => $history->stowage_plan_saved_by ?? $order?->stowage_plan_saved_by,
+            'vobo_status' => $voboStatus,
+            'vobo_by' => is_array($stowagePlan) ? ($stowagePlan['vobo_by'] ?? null) : null,
+            'vobo_at' => is_array($stowagePlan) ? ($stowagePlan['vobo_at'] ?? null) : null,
+            'sampling_release_status' => is_array($stowagePlan) ? ($stowagePlan['sampling_release_status'] ?? (!empty($history->finished_at) ? 'released' : ($breakdown['both_completed'] ? 'pending_release' : null))) : null,
+            'released_by' => is_array($stowagePlan) ? ($stowagePlan['released_by'] ?? null) : null,
+            'released_at' => is_array($stowagePlan) ? ($stowagePlan['released_at'] ?? null) : null,
             'loading_assistant' => $history->loading_assistant ?? $order?->loading_assistant ?? 'N/A',
             'is_sampling_blocked' => (bool) ($history->is_sampling_blocked ?? $order?->is_sampling_blocked ?? false),
             'sampling_unlock_count' => (int) ($history->sampling_unlock_count ?? $order?->sampling_unlock_count ?? 0),
@@ -2612,17 +3281,30 @@ class DocumentationController extends Controller
     {
         $history = $order->latestProcessHistory ?? ShipmentProcessHistory::where('shipment_order_id', $order->id)->latest()->first();
         $stowagePlan = $history?->stowage_plan ?: $order->stowage_plan;
+        if (is_string($stowagePlan)) {
+            $stowagePlan = json_decode($stowagePlan, true) ?: [];
+        }
         $isStowageCompleted = ($order->stowage_plan_status === 'completed')
             || ($history?->stowage_plan_status === 'completed')
             || (!empty($order->stowage_plan) && is_array($order->stowage_plan))
             || (!empty($history?->stowage_plan) && is_array($history->stowage_plan));
         $stowagePlanStatus = $isStowageCompleted ? 'completed' : ($order->stowage_plan_status ?: ($history?->stowage_plan_status ?: 'pending'));
 
+        $targetPerEnsacadora = $this->getTargetSamplesPerEnsacadora($order);
+        $targetSamples = $targetPerEnsacadora * 2;
+        $samples = $history?->samples ?? $order->samples ?? [];
+        if (!is_array($samples)) {
+            $samples = is_string($samples) ? (json_decode($samples, true) ?: []) : [];
+        }
+        $samplesCount = count($samples);
+        $breakdown = $this->computeEnsacadoraSamplingBreakdown($samples, $targetPerEnsacadora);
+        $voboStatus = is_array($stowagePlan) ? ($stowagePlan['vobo_status'] ?? ($isStowageCompleted ? 'pending' : null)) : null;
+
         return [
             'id' => $order->id,
             'history_id' => $history?->id,
             'shipment_order_id' => $order->id,
-            'is_in_apt' => false,
+            'is_in_apt' => ($voboStatus === 'approved') || $samplesCount > 0 || !empty($order->loading_finished_at),
             'lot_id' => $order->lot_id,
             'warehouse' => $order->lot?->warehouse ?: $order->warehouse ?: ($stowagePlan['warehouse'] ?? null),
             'cubicle' => $order->lot?->cubicle,
@@ -2640,15 +3322,25 @@ class DocumentationController extends Controller
             'started_at' => $order->loaded_at?->toIso8601String(),
             'finished_at' => $order->loading_finished_at?->toIso8601String(),
             'status' => $order->status,
-            'stowage_count' => $history?->stowage_count,
-            'samples' => $history?->samples ?? [],
-            'sampling_completed_at' => count($history?->samples ?? []) >= 80 ? $history?->sampling_completed_at?->toIso8601String() : null,
-            'sampling_status' => count($history?->samples ?? []) >= 80 ? ($history?->sampling_status ?? 'completed') : (count($history?->samples ?? []) > 0 ? 'in_progress' : 'pending'),
-            'sampling_avg' => $history?->sampling_avg,
+            'stowage_count' => $history?->stowage_count ?? $order->stowage_count ?? ($stowagePlan['stowage_count'] ?? null),
+            'samples' => $samples,
+            'target_samples_per_ensacadora' => $targetPerEnsacadora,
+            'target_samples_count' => $targetSamples,
+            'ensacadora_1_summary' => $breakdown['ensacadora_1'],
+            'ensacadora_2_summary' => $breakdown['ensacadora_2'],
+            'sampling_completed_at' => $breakdown['both_completed'] ? ($history?->sampling_completed_at ?? $order->sampling_completed_at)?->toIso8601String() : null,
+            'sampling_status' => $breakdown['both_completed'] ? ($history?->sampling_status ?? 'completed') : ($samplesCount > 0 ? 'in_progress' : 'pending'),
+            'sampling_avg' => $history?->sampling_avg ?? $order->sampling_avg,
             'stowage_plan' => $stowagePlan,
             'stowage_plan_status' => $stowagePlanStatus,
             'stowage_plan_saved_at' => ($history?->stowage_plan_saved_at ?? $order->stowage_plan_saved_at)?->toIso8601String(),
             'stowage_plan_saved_by' => $history?->stowage_plan_saved_by ?? $order->stowage_plan_saved_by,
+            'vobo_status' => $voboStatus,
+            'vobo_by' => is_array($stowagePlan) ? ($stowagePlan['vobo_by'] ?? null) : null,
+            'vobo_at' => is_array($stowagePlan) ? ($stowagePlan['vobo_at'] ?? null) : null,
+            'sampling_release_status' => is_array($stowagePlan) ? ($stowagePlan['sampling_release_status'] ?? (!empty($order->loading_finished_at) ? 'released' : ($breakdown['both_completed'] ? 'pending_release' : null))) : null,
+            'released_by' => is_array($stowagePlan) ? ($stowagePlan['released_by'] ?? null) : null,
+            'released_at' => is_array($stowagePlan) ? ($stowagePlan['released_at'] ?? null) : null,
             'loading_assistant' => $history?->loading_assistant ?? $order->loading_assistant ?? 'N/A',
             'is_sampling_blocked' => (bool) ($history?->is_sampling_blocked ?? $order->is_sampling_blocked ?? false),
             'sampling_unlock_count' => (int) ($history?->sampling_unlock_count ?? $order->sampling_unlock_count ?? 0),
@@ -2658,10 +3350,12 @@ class DocumentationController extends Controller
     public function estibadoresIndex(Request $request)
     {
         $this->ensureLoadingAssistantTables();
+        $this->ensureVerifierTables();
 
         $lots = Lot::orderBy('created_at', 'desc')->get(['id', 'folio', 'plant_origin', 'warehouse', 'cubicle']);
         $squadLeaders = $this->personalAgroindustrySquadLeaders();
         $assistants = LoadingAssistant::orderBy('name')->get(['id', 'name']);
+        $verifiers = Verifier::orderBy('name')->get(['id', 'name']);
         $history = $this->getLoadingHistory(null, true);
 
         return Inertia::render('APT/ShipmentProcess', [
@@ -2670,6 +3364,7 @@ class DocumentationController extends Controller
             'lots' => $lots,
             'squad_leaders' => $squadLeaders,
             'assistants' => $assistants,
+            'verifiers' => $verifiers,
             'initial_history' => $history,
             'initial_incidents' => [],
         ]);
@@ -2678,11 +3373,13 @@ class DocumentationController extends Controller
     public function shipmentProcessIndex(Request $request)
     {
         $this->ensureLoadingAssistantTables();
+        $this->ensureVerifierTables();
         $this->ensureSamplingIncidentsTable();
 
         $lots = Lot::orderBy('created_at', 'desc')->get(['id', 'folio', 'plant_origin', 'warehouse', 'cubicle']);
         $squadLeaders = $this->personalAgroindustrySquadLeaders();
         $assistants = LoadingAssistant::orderBy('name')->get(['id', 'name']);
+        $verifiers = Verifier::orderBy('name')->get(['id', 'name']);
         
         $isEstibador = $this->isEstibadorUser($request->user());
         if ($isEstibador) {
@@ -2698,6 +3395,7 @@ class DocumentationController extends Controller
             'lots' => $lots,
             'squad_leaders' => $squadLeaders,
             'assistants' => $assistants,
+            'verifiers' => $verifiers,
             'initial_history' => $history,
             'initial_incidents' => $incidents,
         ]);
@@ -2766,6 +3464,17 @@ class DocumentationController extends Controller
         if (!Schema::hasColumn('shipment_orders', 'loading_assistant')) {
             Schema::table('shipment_orders', function (Blueprint $table) {
                 $table->string('loading_assistant')->nullable()->after('loading_squad_leader');
+            });
+        }
+    }
+
+    private function ensureVerifierTables(): void
+    {
+        if (!Schema::hasTable('verifiers')) {
+            Schema::create('verifiers', function (Blueprint $table) {
+                $table->id();
+                $table->string('name')->unique();
+                $table->timestamps();
             });
         }
     }

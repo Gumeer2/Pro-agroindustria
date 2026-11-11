@@ -18,8 +18,10 @@ class ClientOperatorAssignment extends Model
         'destare_status',
         'destared_at',
         'loading_order_id',
+        'shipment_order_id',
         'sack',
         'type',
+        'part_number',
     ];
 
     protected $casts = [
@@ -27,6 +29,7 @@ class ClientOperatorAssignment extends Model
         'original_tm' => 'decimal:2',
         'destared_tm' => 'decimal:2',
         'destared_at' => 'datetime',
+        'part_number' => 'integer',
     ];
 
     public function operator()

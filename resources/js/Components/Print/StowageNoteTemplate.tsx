@@ -6,11 +6,14 @@ interface Props {
     samples?: Array<{ id: number; num: number; ensacadora?: 1 | 2; envasadora?: 1 | 2; weight: number }>;
 }
 
-export default function StowageNoteTemplate({ order = {} }: Props) {
+export default function StowageNoteTemplate({ order = {}, samples = [] }: Props) {
     const page = usePage<any>();
     const tenant = page?.props?.tenant;
 
     const safeOrder = order || {};
+    const effectiveSamples = (Array.isArray(samples) && samples.length > 0)
+        ? samples
+        : (Array.isArray(safeOrder?.samples) ? safeOrder.samples : []);
 
     const gridCols = Array.from({ length: 24 }, (_, i) => 24 - i);
 
@@ -18,8 +21,19 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
     const bgColor = !tenant || tenant?.slug === 'proagro' ? 'bg-green-200' : (tenant?.primary_color ? 'bg-gray-200' : 'bg-green-200');
     const accentColor = !tenant || tenant?.slug === 'proagro' ? 'bg-green-100' : (tenant?.primary_color ? 'bg-gray-100' : 'bg-green-100');
 
-    // Helper function to calculate sacks exactly like Print.tsx
+    // Helper function to calculate sacks
     const calculateSacks = () => {
+        if (Array.isArray(safeOrder.stowage_plan?.stowages)) {
+            const sumCaptured = safeOrder.stowage_plan.stowages.reduce((acc: number, v: any) => {
+                if (v === true || v === 'X' || v === 'x' || v === null || v === undefined || v === '') return acc;
+                const n = Number(v);
+                return !isNaN(n) && n > 0 ? acc + n : acc;
+            }, 0);
+            if (sumCaptured > 0) {
+                return String(Math.round(sumCaptured));
+            }
+        }
+
         if (!safeOrder.programmed_tons) return "0";
         const tons = parseFloat(safeOrder.programmed_tons);
         if (isNaN(tons)) return "0";
@@ -45,6 +59,34 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
 
         return "N/A";
     };
+
+    const totalSacksDisplay = calculateSacks();
+
+    const netWeightDisplay = (() => {
+        const completedSamples = effectiveSamples.filter((s: any) => Number(s?.weight) > 0);
+        const targetCount = Number(safeOrder.target_samples_count) || 80;
+        const isSamplingComplete =
+            completedSamples.length >= targetCount ||
+            safeOrder.sampling_status === 'completed' ||
+            Boolean(safeOrder.sampling_completed_at);
+
+        const numericTotalSacks = parseFloat(String(totalSacksDisplay));
+        if (isSamplingComplete && !isNaN(numericTotalSacks) && numericTotalSacks > 0) {
+            const avg =
+                completedSamples.length > 0
+                    ? completedSamples.reduce((acc: number, s: any) => acc + Number(s.weight), 0) / completedSamples.length
+                    : Number(safeOrder.sampling_avg || safeOrder.stowage_plan?.avg_unit_weight || 0);
+            if (avg > 0) {
+                return `${((avg * numericTotalSacks) / 1000).toFixed(3)} TM`;
+            }
+        }
+
+        if (isSamplingComplete && safeOrder.stowage_plan?.net_weight) {
+            return String(safeOrder.stowage_plan.net_weight);
+        }
+
+        return "";
+    })();
 
     return (
         <div className="w-full bg-white font-sans text-[9px] text-black leading-tight p-2 box-border flex flex-col justify-between overflow-hidden">
@@ -166,10 +208,10 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                 </div>
             </div>
 
-            {/* --- GRID E- (1 Fila: 24 Columnas + TM Programada a la derecha) --- */}
+            {/* --- GRID E- (1 Fila: 24 Columnas + TM Programada y Peso Neto a la derecha) --- */}
             <div className="w-full mb-1 flex items-end">
                 {/* Table Container */}
-                <div className="w-[90%] flex flex-col">
+                <div className="w-[82%] flex flex-col">
                     <div className="text-center font-bold text-xs leading-none mb-0.5">E-</div>
                     <table className="w-full border-collapse border border-green-800 text-center text-[7.5px]">
                         <thead>
@@ -183,12 +225,15 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                             <tr className="h-10 bg-white">
                                 {gridCols.map(col => {
                                     const val = safeOrder.stowage_plan?.stowages?.[col - 1];
-                                    const isTachado = val === 'X' || val === 'x' || val === true || val === 1 || val === '1' || (typeof val === 'number' && val > 0);
+                                    const isLegacyX = val === 'X' || val === 'x' || val === true;
+                                    const isNumeric = !isLegacyX && val !== undefined && val !== null && String(val).trim() !== '' && !isNaN(Number(val)) && Number(val) > 0;
                                     return (
-                                        <td key={`cell-${col}`} className="border border-green-800 font-black text-center text-[13px] leading-none">
-                                            {isTachado ? (
-                                                <span className="text-black font-black">X</span>
-                                            ) : (val !== undefined && val !== null ? val : "")}
+                                        <td key={`cell-${col}`} className="border border-green-800 font-bold text-center text-[9.5px] leading-none px-0.5">
+                                            {isLegacyX ? (
+                                                <span className="text-black font-black text-[13px]">X</span>
+                                            ) : isNumeric ? (
+                                                <span className="text-black font-black">{Number(val)}</span>
+                                            ) : ""}
                                         </td>
                                     );
                                 })}
@@ -197,13 +242,21 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                     </table>
                 </div>
 
-                {/* Box Container on Right with TM Programada */}
-                <div className="w-[10%] flex flex-col items-center pl-1">
+                {/* Box Container on Right with TM Programada & Peso Neto */}
+                <div className="w-[9%] flex flex-col items-center pl-1">
                     <span className="text-[6px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
                         TM Programada
                     </span>
                     <div className="w-full h-10 border-2 border-black bg-white rounded-xl flex items-center justify-center font-bold text-[8.5px]">
                         {safeOrder.programmed_tons ? Number(safeOrder.programmed_tons).toFixed(1) : ""}
+                    </div>
+                </div>
+                <div className="w-[9%] flex flex-col items-center pl-1">
+                    <span className="text-[6px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
+                        Peso Neto
+                    </span>
+                    <div className="w-full h-10 border-2 border-black bg-white rounded-xl flex items-center justify-center font-bold text-[8px] text-center px-0.5 leading-tight">
+                        {netWeightDisplay}
                     </div>
                 </div>
             </div>
@@ -214,7 +267,7 @@ export default function StowageNoteTemplate({ order = {} }: Props) {
                     { label: 'CÓDIGO', width: '15%', value: safeOrder.product?.code || safeOrder.product_code || "" },
                     { label: 'DESCRIPCIÓN DEL PRODUCTO', width: '40%', value: safeOrder.product_text || safeOrder.product?.name || safeOrder.product || "" },
                     { label: 'NO. DE ALMACEN', width: '15%', value: safeOrder.warehouse ? safeOrder.warehouse.replace("Almacen ", "") : "" },
-                    { label: 'TOTAL DE SACOS', width: '10%', value: calculateSacks() },
+                    { label: 'TOTAL DE SACOS', width: '10%', value: totalSacksDisplay },
                     { label: 'AJUSTE', width: '10%', value: safeOrder.stowage_plan?.adjustment || "" },
                     { label: 'JUSTIFICAR', width: '10%', value: safeOrder.stowage_plan?.justification || "" }
                 ].map((col, idx) => (

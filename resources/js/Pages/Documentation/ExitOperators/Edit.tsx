@@ -40,6 +40,11 @@ export default function Edit({ auth, operator, clients = [] }: { auth: any; oper
         ? operator.client_ids
         : (operator.clients?.map(c => c.id) || []);
 
+    const isInitialFull = Boolean(operator.unit_type && operator.unit_type.toUpperCase().includes("FULL"));
+    const rawTrailerParts = isInitialFull && operator.trailer_plate && operator.trailer_plate.includes("/")
+        ? operator.trailer_plate.split("/").map((p) => p.trim())
+        : [operator.trailer_plate || "", ""];
+
     const { data, setData, put, processing, errors } = useForm({
         name: operator.name || "",
         license: operator.license || "",
@@ -51,7 +56,8 @@ export default function Edit({ auth, operator, clients = [] }: { auth: any; oper
         validity: operator.validity ? new Date(operator.validity).toISOString().split('T')[0] : "",
         brand_model: operator.brand_model || "",
         tractor_plate: operator.tractor_plate || "",
-        trailer_plate: operator.trailer_plate || "",
+        trailer_plate: rawTrailerParts[0] || "",
+        trailer_plate_2: rawTrailerParts[1] || "",
         clients: initialClientIds as number[],
     });
 
@@ -136,7 +142,16 @@ export default function Edit({ auth, operator, clients = [] }: { auth: any; oper
                                 {/* Tipo de unidad */}
                                 <UnitTypeDropdown
                                     value={data.unit_type}
-                                    onChange={(val) => setData("unit_type", val)}
+                                    onChange={(val) =>
+                                        setData((prev) => ({
+                                            ...prev,
+                                            unit_type: val,
+                                            trailer_plate_2:
+                                                val && val.toUpperCase().includes("FULL")
+                                                    ? prev.trailer_plate_2
+                                                    : "",
+                                        }))
+                                    }
                                     label="Tipo de unidad:"
                                     error={errors.unit_type}
                                 />
@@ -178,6 +193,29 @@ export default function Edit({ auth, operator, clients = [] }: { auth: any; oper
                                     </div>
                                     {errors.trailer_plate && <p className="text-red-500 text-xs mt-1">{errors.trailer_plate}</p>}
                                 </div>
+
+                                {/* Segunda Placa remolque (solo cuando se selecciona unidad tipo FULL) */}
+                                {Boolean(data.unit_type && data.unit_type.toUpperCase().includes("FULL")) && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">
+                                            Placa remolque 2:
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={data.trailer_plate_2}
+                                                onChange={(e) => setData("trailer_plate_2", e.target.value)}
+                                                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 pl-10 uppercase font-mono"
+                                                placeholder="Placa Remolque 2"
+                                                required
+                                            />
+                                            <CreditCard className="w-5 h-5 text-gray-400 absolute left-3 top-2" />
+                                        </div>
+                                        {(errors as any).trailer_plate_2 && (
+                                            <p className="text-red-500 text-xs mt-1">{(errors as any).trailer_plate_2}</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Column 2 */}

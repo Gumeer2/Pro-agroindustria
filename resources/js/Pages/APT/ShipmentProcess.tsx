@@ -13,6 +13,7 @@ import {
     Package,
     Pause,
     Pencil,
+    Plus,
     Printer,
     QrCode,
     Search,
@@ -40,6 +41,7 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import { Dialog, Menu, Transition } from "@headlessui/react";
 import LoadingAssistantDropdown from "@/Components/LoadingAssistantDropdown";
+import VerifierDropdown from "@/Components/VerifierDropdown";
 import QrScannerModal from "@/Components/QrScannerModal";
 import EnsacadoraSamplingModal from "@/Components/EnsacadoraSamplingModal";
 import ShipmentDocumentsPrintModal from "@/Components/ShipmentDocumentsPrintModal";
@@ -81,6 +83,7 @@ interface HistoryItem {
     status: string;
     stowage_count?: number | null;
     samples?: any[];
+    target_samples_count?: number;
     sampling_completed_at?: string | null;
     sampling_status?: string | null;
     sampling_avg?: number | null;
@@ -88,6 +91,12 @@ interface HistoryItem {
     stowage_plan_status?: string | null;
     stowage_plan_saved_at?: string | null;
     stowage_plan_saved_by?: number | string | null;
+    vobo_status?: string | null;
+    vobo_by?: string | null;
+    vobo_at?: string | null;
+    sampling_release_status?: string | null;
+    released_by?: string | null;
+    released_at?: string | null;
     loading_assistant?: string | null;
     is_sampling_blocked?: boolean;
     sampling_unlock_count?: number;
@@ -100,6 +109,7 @@ interface Props {
     lots: Lot[];
     squad_leaders: string[];
     assistants: Assistant[];
+    verifiers?: Assistant[];
     initial_history: HistoryItem[];
     initial_incidents?: any[];
 }
@@ -368,20 +378,43 @@ const isRowEnvasado = (row: any): boolean => {
     return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG") || text.includes("25 KG") || text.includes("50 KG");
 };
 
+const getTargetSamplesPerEnsacadoraForRow = (row: any): number => {
+    if (row?.target_samples_per_ensacadora && Number(row.target_samples_per_ensacadora) > 0) {
+        return Math.min(40, Math.max(2, Number(row.target_samples_per_ensacadora)));
+    }
+    const pt = parseFloat(String(row?.programmed_tons || "0"));
+    const pw = parseFloat(String(row?.programmed_weight || "0"));
+    const tons = pt > 0 ? pt : (pw > 0 ? (pw > 200 ? pw / 1000 : pw) : 36);
+    const m = 2 * Math.ceil(((tons * 40.0) / 36.0) / 2.0);
+    return Math.max(2, Math.min(40, m));
+};
+
+const getTargetSamplesForRow = (row: any): number => {
+    return getTargetSamplesPerEnsacadoraForRow(row) * 2;
+};
+
 const getOrderSamplingStatus = (row: HistoryItem): {
     isEnvasado: boolean;
     isCompleted: boolean;
     samplesCount: number;
+    targetSamples: number;
+    targetPerEnsacadora: number;
+    env1Count: number;
+    env2Count: number;
     savedAt: string | null;
 } => {
+    const targetPerEnsacadora = getTargetSamplesPerEnsacadoraForRow(row);
+    const targetSamples = targetPerEnsacadora * 2;
     if (!isRowEnvasado(row)) {
-        return { isEnvasado: false, isCompleted: true, samplesCount: 0, savedAt: null };
+        return { isEnvasado: false, isCompleted: true, samplesCount: 0, targetSamples, targetPerEnsacadora, env1Count: 0, env2Count: 0, savedAt: null };
     }
 
-    // La base de datos es la única fuente de verdad (estrictamente 80 muestras para estar completado)
+    // La base de datos es la única fuente de verdad (fórmula VECODE: M por ensacadora, M*2 total)
     const dbSamples = Array.isArray(row.samples) ? row.samples : [];
     const dbCount = dbSamples.length;
-    const dbCompleted = dbCount >= 80;
+    const env1Count = dbSamples.filter((s: any) => (s?.ensacadora || s?.envasadora || 1) === 1).length;
+    const env2Count = dbSamples.filter((s: any) => (s?.ensacadora || s?.envasadora) === 2).length;
+    const dbCompleted = env1Count >= targetPerEnsacadora && env2Count >= targetPerEnsacadora;
     const dbSavedAt = dbCompleted ? (row.sampling_completed_at || null) : null;
 
     // Si la base de datos no tiene muestras, limpiar cualquier clave huérfana de localStorage
@@ -410,6 +443,10 @@ const getOrderSamplingStatus = (row: HistoryItem): {
         isEnvasado: true,
         isCompleted: dbCompleted,
         samplesCount: dbCount,
+        targetSamples,
+        targetPerEnsacadora,
+        env1Count,
+        env2Count,
         savedAt: dbSavedAt,
     };
 };
@@ -421,6 +458,7 @@ export default function ShipmentProcess({
     lots = [],
     squad_leaders = [],
     assistants = [],
+    verifiers = [],
     initial_history = [],
     initial_incidents = [],
 }: Props) {
@@ -485,7 +523,148 @@ export default function ShipmentProcess({
     const [squadLeader, setSquadLeader] = useState<string>(squad_leaders[0] || "");
     const [loadingAssistant, setLoadingAssistant] = useState<string>("");
     const [stowageCount, setStowageCount] = useState<string>("");
+    const [verifier, setVerifier] = useState<string>("");
+    const [estibaObservations, setEstibaObservations] = useState<string>("");
+    const [avgUnitWeight, setAvgUnitWeight] = useState<string>("");
+    const [stowageGroups, setStowageGroups] = useState<Array<{ count: number; sacks: number }>>([]);
     const [isSaving, setIsSaving] = useState(false);
+
+    const buildStowagesArray = (groups: Array<{ count: number; sacks: number }>): (number | null)[] => {
+        const arr: (number | null)[] = Array(24).fill(null);
+        let idx = 0;
+        for (const g of groups) {
+            for (let i = 0; i < g.count && idx < 24; i++) {
+                arr[idx] = g.sacks;
+                idx++;
+            }
+        }
+        return arr;
+    };
+
+    const totalEstibasCaptured = useMemo(
+        () => stowageGroups.reduce((sum, g) => sum + g.count, 0),
+        [stowageGroups]
+    );
+
+    const totalSacksCaptured = useMemo(
+        () => stowageGroups.reduce((sum, g) => sum + g.count * g.sacks, 0),
+        [stowageGroups]
+    );
+
+    const expectedSacksForOrder = useMemo(() => {
+        if (!scannedOrder) return 0;
+        const tons = parseFloat(String(scannedOrder.programmed_tons ?? scannedOrder.programmed_weight ?? 0));
+        const sacksStr = String(scannedOrder.sacks_count ?? "").trim();
+
+        if (!isNaN(tons) && tons > 0) {
+            if (sacksStr.toUpperCase().includes("KG")) {
+                const size = parseInt(sacksStr.replace(/\D/g, ""), 10);
+                if (!isNaN(size) && size > 0) {
+                    return Math.round((tons * 1000) / size);
+                }
+            }
+            const pres = `${scannedOrder.presentation || ""} ${scannedOrder.product || ""} ${scannedOrder.product_text || ""}`.toUpperCase();
+            if (pres.includes("25")) return Math.round(tons * 40);
+            if (pres.includes("50")) return Math.round(tons * 20);
+            if (pres.includes("200")) return Math.round(tons * 5);
+            if (pres.includes("500")) return Math.round(tons * 2);
+            if (pres.includes("1000")) return Math.round(tons * 1);
+        }
+
+        if (sacksStr && !sacksStr.toUpperCase().includes("KG")) {
+            const numericSacks = parseInt(sacksStr.replace(/\D/g, ""), 10);
+            if (!isNaN(numericSacks) && numericSacks > 0) {
+                return numericSacks;
+            }
+        }
+
+        if (!isNaN(tons) && tons > 0) {
+            return Math.round(tons * 40);
+        }
+        return 0;
+    }, [scannedOrder]);
+
+    const handleAddStowageGroup = async () => {
+        const remaining = 24 - totalEstibasCaptured;
+        if (remaining <= 0) {
+            Swal.fire({
+                icon: "info",
+                title: "Límite alcanzado",
+                text: "Ya se completaron las 24 estibas máximas.",
+                confirmButtonColor: "#4f46e5",
+            });
+            return;
+        }
+
+        const remainingSacks = expectedSacksForOrder > 0 ? Math.max(0, expectedSacksForOrder - totalSacksCaptured) : null;
+        if (expectedSacksForOrder > 0 && remainingSacks !== null && remainingSacks <= 0) {
+            Swal.fire({
+                icon: "info",
+                title: "Sacos Completados",
+                html: `Ya se completaron los <b>${expectedSacksForOrder} sacos</b> programados para esta orden (${scannedOrder?.programmed_tons || ""} TM).<br/><span class="text-xs text-slate-500">Si desea modificar la distribución, elimine primero un grupo de estibas.</span>`,
+                confirmButtonColor: "#4f46e5",
+            });
+            return;
+        }
+
+        const startIdx = totalEstibasCaptured + 1;
+        const sacksBannerHtml = expectedSacksForOrder > 0
+            ? `<div class="p-2.5 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 flex items-center justify-between">
+                    <span>Programados: <b>${expectedSacksForOrder} sacos</b></span>
+                    <span>Capturados: <b>${totalSacksCaptured}</b></span>
+                    <span class="font-extrabold text-indigo-700">Restan: ${remainingSacks} sacos</span>
+               </div>`
+            : "";
+
+        const { value: formValues } = await Swal.fire({
+            title: "Agregar Estibas y Sacos",
+            html: `
+                <div class="text-left space-y-3">
+                    <p class="text-xs text-slate-600">
+                        Se asignará consecutivamente a partir del lugar <b>#${startIdx}</b> (disponibles: <b>${remaining}</b> estiba(s)).
+                    </p>
+                    ${sacksBannerHtml}
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Cantidad de estibas</label>
+                        <input id="swal-est-count" type="number" min="1" max="${remaining}" class="swal2-input !m-0 !w-full" placeholder="Ej: 9 (o 1 para el lugar ${startIdx})" autofocus />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Número de sacos por estiba</label>
+                        <input id="swal-est-sacks" type="number" min="1" ${remainingSacks !== null ? `max="${remainingSacks}"` : ""} class="swal2-input !m-0 !w-full" placeholder="Ej: 120" />
+                    </div>
+                </div>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: "Agregar",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#4f46e5",
+            preConfirm: () => {
+                const cnt = parseInt((document.getElementById("swal-est-count") as HTMLInputElement)?.value || "0", 10);
+                const sck = parseInt((document.getElementById("swal-est-sacks") as HTMLInputElement)?.value || "0", 10);
+                if (!cnt || cnt < 1 || cnt > remaining) {
+                    Swal.showValidationMessage(`La cantidad de estibas debe estar entre 1 y ${remaining}.`);
+                    return false;
+                }
+                if (!sck || sck < 1) {
+                    Swal.showValidationMessage("Ingrese un número válido de sacos mayor a 0.");
+                    return false;
+                }
+                const addedSacks = cnt * sck;
+                if (expectedSacksForOrder > 0 && remainingSacks !== null && addedSacks > remainingSacks) {
+                    Swal.showValidationMessage(
+                        `El subtotal a agregar (${cnt} × ${sck} = ${addedSacks} sacos) excede los ${remainingSacks} sacos restantes de la orden (Total programado: ${expectedSacksForOrder} sacos).`
+                    );
+                    return false;
+                }
+                return { cnt, sck };
+            },
+        });
+
+        if (formValues) {
+            setStowageGroups((prev) => [...prev, { count: formValues.cnt, sacks: formValues.sck }]);
+        }
+    };
 
     const totalSamples = "80";
 
@@ -556,24 +735,76 @@ export default function ShipmentProcess({
         return false;
     };
 
+    const isVoBoApproved = (row: any): boolean => {
+        if (!row) return false;
+        return (row.vobo_status || row.stowage_plan?.vobo_status) === "approved";
+    };
+
+    const isSamplingReleased = (row: any): boolean => {
+        if (!row) return false;
+        return Boolean(row.finished_at) || (row.sampling_release_status || row.stowage_plan?.sampling_release_status) === "released";
+    };
+
     const isInAptProcess = (row: any): boolean => {
         if (!row) return false;
-        if (row.is_in_apt === true) return true;
-        if (row.is_in_apt === false) return false;
-        return Boolean(row.history_id || row.lot_id);
+        if (isVoBoApproved(row)) return true;
+        if (Array.isArray(row.samples) && row.samples.length > 0) return true;
+        if (row.finished_at) return true;
+        return false;
+    };
+
+    const handleApproveVoBo = async (row: any) => {
+        const targetId = row?.id || row?.shipment_order_id || row?.history_id;
+        if (!targetId) return;
+
+        const result = await Swal.fire({
+            title: "¿Dar VoBo a la Nota de Estiba?",
+            html: `¿Confirmas que revisaste la <b>Nota de Estiba (GLS-AP-FO-002)</b> de la orden <b>${row.folio || ""}</b> y autorizas el <b>VoBo</b> para que el personal estibador inicie la toma de muestras?`,
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: "✓ Sí, autorizar VoBo",
+            cancelButtonText: "Revisar Nota primero",
+            confirmButtonColor: "#16a34a",
+            cancelButtonColor: "#4f46e5",
+        });
+
+        if (result.dismiss === Swal.DismissReason.cancel) {
+            handleOpenStowagePlan(row);
+            return;
+        }
+        if (!result.isConfirmed) return;
+
+        try {
+            const res = await axios.post(route("documentation.shipment-orders.vobo-stowage-plan", targetId));
+            await refreshHistory();
+            Swal.fire({
+                icon: "success",
+                title: "¡VoBo Autorizado!",
+                text: res.data?.message || "VoBo registrado correctamente. El personal estibador ya puede realizar la toma de muestras.",
+                timer: 2500,
+                showConfirmButton: false,
+            });
+        } catch (error: any) {
+            Swal.fire({
+                icon: "error",
+                title: "Error",
+                text: error.response?.data?.message || "No se pudo registrar el VoBo.",
+                confirmButtonColor: "#4f46e5",
+            });
+        }
     };
 
     const handleOpenStowagePlan = (order: any) => {
         if (isEstibadorUser && order && isInAptProcess(order)) {
             Swal.fire({
                 icon: "warning",
-                title: "Nota de Estiba Bloqueada",
+                title: "Nota de Estiba con VoBo / En Proceso",
                 html: `<div class="text-left space-y-2">
                     <p class="font-medium text-slate-800">
-                        La orden <b>${order.folio || ""}</b> se encuentra actualmente en proceso en <b>Gestión de Proceso de Embarques (APT)</b>.
+                        La orden <b>${order.folio || ""}</b> ya cuenta con <b>VoBo de Supervisión PROAGRO</b> o ya inició la toma de muestras.
                     </p>
                     <p class="text-sm text-slate-600">
-                        Solo podrá <b>editar</b> la nota de estiba siempre y cuando en APT la hayan eliminado primero del proceso.
+                        Solo podrá editar la nota de estiba si Supervisión PROAGRO la libera/elimina primero en Gestión de Proceso de Embarques (APT).
                     </p>
                 </div>`,
                 confirmButtonColor: "#4f46e5",
@@ -585,36 +816,65 @@ export default function ShipmentProcess({
     };
 
     const handleOpenSampling = (row: any) => {
-        const isRowEnvasado = (() => {
-            const pres = (row?.presentation || "").toString().toUpperCase();
-            if (pres.includes("ENVASADO")) return true;
-            if (pres.includes("GRANEL")) return false;
-            const text = `${row?.product || row?.product_text || ""}`.toUpperCase();
-            return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
-        })();
+        const isRowEnvasadoVal = isRowEnvasado(row);
 
-        if (isRowEnvasado && !isStowagePlanCompleted(row)) {
+        if (isRowEnvasadoVal && !isStowagePlanCompleted(row)) {
             Swal.fire({
                 icon: "warning",
-                title: "Candado Activo: Requiere Nota de Estiba",
+                title: "Paso 1 Requerido: Crear Nota de Estiba",
                 html: `<div class="text-left space-y-3">
                     <p class="font-medium text-slate-800">
-                        No se pueden tomar las muestras de la orden <b>${row?.folio || ""}</b> porque la <b>Nota de Estiba (GLS-AP-FO-002)</b> no ha sido realizada o fue eliminada.
+                        No se pueden tomar las muestras de la orden <b>${row?.folio || ""}</b> porque la <b>Nota de Estiba (GLS-AP-FO-002)</b> aún no ha sido creada.
                     </p>
                     <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                        <b>Bloqueo estricto:</b> Se debe realizar y liberar primero la <b>Nota de Estiba a Camión</b> en el módulo de Estibadores para poder habilitar el muestreo de ensacadora.
+                        <b>Paso 1:</b> El estibador debe registrar primero la <b>Nota de Estiba a Camión</b>.
                     </div>
                 </div>`,
-                showCancelButton: true,
                 confirmButtonColor: "#059669",
-                cancelButtonColor: "#64748b",
-                confirmButtonText: "Realizar Nota de Estiba",
-                cancelButtonText: "Cerrar",
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    handleOpenStowagePlan(row);
-                }
+                confirmButtonText: "Entendido",
             });
+            return;
+        }
+
+        if (isRowEnvasadoVal && !isVoBoApproved(row)) {
+            if (!isEstibadorUser) {
+                Swal.fire({
+                    icon: "info",
+                    title: "Paso 2 Pendiente: Revisión y VoBo",
+                    html: `<div class="text-left space-y-3">
+                        <p class="font-medium text-slate-800">
+                            La Nota de Estiba de la orden <b>${row?.folio || ""}</b> se encuentra en estado <b>"Pendiente de VoBo"</b>.
+                        </p>
+                        <div class="p-3 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-900 text-sm">
+                            Revise la Nota de Estiba y presione el <b>Botón: VoBo</b> para habilitar la toma de muestras.
+                        </div>
+                    </div>`,
+                    showCancelButton: true,
+                    confirmButtonColor: "#16a34a",
+                    cancelButtonColor: "#64748b",
+                    confirmButtonText: "Revisar Nota de Estiba",
+                    cancelButtonText: "Cerrar",
+                }).then((res) => {
+                    if (res.isConfirmed) {
+                        handleOpenStowagePlan(row);
+                    }
+                });
+            } else {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Pendiente de VoBo (Paso 2)",
+                    html: `<div class="text-left space-y-3">
+                        <p class="font-medium text-slate-800">
+                            La Nota de Estiba de la orden <b>${row?.folio || ""}</b> está en estado <b>"Pendiente de VoBo"</b>.
+                        </p>
+                        <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
+                            <b>Regla de negocio:</b> El personal de <b>Supervisión PROAGRO</b> en Gestión de Proceso de Embarques (APT) debe revisar la información y dar su <b>VoBo</b> antes de continuar con la toma de muestras.
+                        </div>
+                    </div>`,
+                    confirmButtonColor: "#4f46e5",
+                    confirmButtonText: "Entendido",
+                });
+            }
             return;
         }
 
@@ -776,15 +1036,55 @@ export default function ShipmentProcess({
                 );
                 const targetOrder = matchedHistory ? { ...matchedHistory, ...order } : order;
 
-                // 1. Abrir directamente la Nota de Estiba (GLS-AP-FO-002) para captura o edición
+                // 1. Para Estibadores:
                 if (isEstibadorUser) {
-                    handleOpenStowagePlan(targetOrder);
-                    setSearchQr("");
-                    setScannedOrder(null);
+                    // Si la Nota de Estiba ya tiene VoBo de Supervisión PROAGRO, abrir directamente la Toma de Muestras (Paso 3)
+                    if (isVoBoApproved(targetOrder)) {
+                        setSearchQr("");
+                        setScannedOrder(null);
+                        handleOpenSampling(targetOrder);
+                        return;
+                    }
+
+                    const plan = targetOrder.stowage_plan || {};
+                    setScannedOrder(targetOrder);
+                    if (targetOrder.warehouse) {
+                        setWarehouse(targetOrder.warehouse);
+                        const whNum = normalizeWarehouseNumber(targetOrder.warehouse);
+                        if (whNum) setSelectedWarehouseId(whNum);
+                    }
+                    setSelectedLotId(targetOrder.lot_id ? String(targetOrder.lot_id) : "");
+                    if (targetOrder.loading_squad_leader || targetOrder.squad_leader) {
+                        setSquadLeader(targetOrder.loading_squad_leader || targetOrder.squad_leader);
+                    }
+                    setLoadingAssistant(targetOrder.loading_assistant || "");
+                    setVerifier(plan.verifier || "");
+                    setEstibaObservations(plan.comments || "");
+                    setAvgUnitWeight(plan.avg_unit_weight !== undefined && plan.avg_unit_weight !== null ? String(plan.avg_unit_weight) : "");
+
+                    if (Array.isArray(plan.stowage_groups) && plan.stowage_groups.length > 0 && plan.stowage_groups[0].count !== undefined) {
+                        setStowageGroups(plan.stowage_groups.map((g: any) => ({ count: Number(g.count), sacks: Number(g.sacks) })));
+                    } else if (Array.isArray(plan.stowages)) {
+                        const reconstructed: Array<{ count: number; sacks: number }> = [];
+                        for (const rawVal of plan.stowages) {
+                            const n = Number(rawVal);
+                            if (rawVal === true || isNaN(n) || n <= 0) continue;
+                            if (reconstructed.length > 0 && reconstructed[reconstructed.length - 1].sacks === n) {
+                                reconstructed[reconstructed.length - 1].count += 1;
+                            } else {
+                                reconstructed.push({ count: 1, sacks: n });
+                            }
+                        }
+                        setStowageGroups(reconstructed);
+                    } else {
+                        setStowageGroups([]);
+                    }
+
+                    setCurrentStep(2);
                     return;
                 }
 
-                // 2. Si NO es Estibador (es la persona encargada / supervisor / verificador):
+                // 2. Si NO es Estibador (Supervisión PROAGRO en Gestión de Proceso de Embarques - APT):
                 const isTargetEnvasado = (() => {
                     const pres = (targetOrder?.presentation || "").toString().toUpperCase();
                     if (pres.includes("ENVASADO")) return true;
@@ -794,54 +1094,29 @@ export default function ShipmentProcess({
                 })();
 
                 if (isTargetEnvasado) {
-                    // CANDADO ESTRICTO DE NOTA DE ESTIBA:
+                    setSearchQr("");
+                    setScannedOrder(null);
                     if (!isStowagePlanCompleted(targetOrder)) {
                         Swal.fire({
                             icon: "warning",
-                            title: "Candado Activo: Requiere Nota de Estiba",
+                            title: "Paso 1 Pendiente: Nota de Estiba",
                             html: `<div class="text-left space-y-3">
                                 <p class="font-medium text-slate-800">
-                                    No se pueden registrar muestras para la orden <b>${targetOrder.folio || ""}</b> porque la <b>Nota de Estiba (GLS-AP-FO-002)</b> está pendiente o fue eliminada.
+                                    La orden <b>${targetOrder.folio || ""}</b> aún no cuenta con la <b>Nota de Estiba (GLS-AP-FO-002)</b> registrada por el personal estibador.
                                 </p>
                                 <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                                    <b>Bloqueo estricto:</b> Se debe realizar y liberar primero la <b>Nota de Estiba</b> en el módulo de Estibadores para poder habilitar el muestreo de ensacadora.
+                                    Una vez que el estibador cree la Nota de Estiba, aparecerá en el <b>Historial de Órdenes de Embarque</b> para su revisión, VoBo y liberación.
                                 </div>
                             </div>`,
-                            showCancelButton: true,
-                            confirmButtonColor: "#059669",
-                            cancelButtonColor: "#64748b",
-                            confirmButtonText: "Realizar Nota de Estiba",
-                            cancelButtonText: "Cancelar",
-                        }).then((result) => {
-                            if (result.isConfirmed) {
-                                handleOpenStowagePlan(targetOrder);
-                            }
-                            setSearchQr("");
-                            setScannedOrder(null);
+                            confirmButtonColor: "#4f46e5",
+                            confirmButtonText: "Entendido",
                         });
                         return;
                     }
 
-                    // Si el estibador YA guardó la nota de estiba:
-                    // Primero se le pide llenar el formulario de asignación y carga (Paso 2),
-                    // y una vez guardado el formulario se procede automáticamente al muestreo de 80 muestras.
-                    setScannedOrder(targetOrder);
-                    if (targetOrder.warehouse) {
-                        setWarehouse(targetOrder.warehouse);
-                    }
-                    if (targetOrder.lot_id) {
-                        setSelectedLotId(String(targetOrder.lot_id));
-                    }
-                    if (targetOrder.loading_squad_leader || targetOrder.squad_leader) {
-                        setSquadLeader(targetOrder.loading_squad_leader || targetOrder.squad_leader);
-                    }
-                    if (targetOrder.loading_assistant) {
-                        setLoadingAssistant(targetOrder.loading_assistant);
-                    }
-                    if (targetOrder.stowage_count) {
-                        setStowageCount(String(targetOrder.stowage_count));
-                    }
-                    setCurrentStep(2);
+                    // Si ya tiene Nota de Estiba, abrirla para revisión y VoBo (y filtrar en el historial)
+                    setHistorySearch(targetOrder.folio || "");
+                    handleOpenStowagePlan(targetOrder);
                     return;
                 }
 
@@ -888,6 +1163,10 @@ export default function ShipmentProcess({
         setStowageCount("");
         setSelectedLotId("");
         setLoadingAssistant("");
+        setVerifier("");
+        setEstibaObservations("");
+        setAvgUnitWeight("");
+        setStowageGroups([]);
         setCurrentStep(1);
     };
 
@@ -915,9 +1194,91 @@ export default function ShipmentProcess({
             return;
         }
 
+        if (isEstibadorUser) {
+            const hasLegacyStowages = Array.isArray(scannedOrder?.stowage_plan?.stowages) &&
+                scannedOrder.stowage_plan.stowages.some((v: any) => v !== null && v !== undefined && v !== "");
+            if (stowageGroups.length === 0 && !hasLegacyStowages) {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Estibas y Sacos requeridos",
+                    text: "Por favor agregue al menos un grupo de estibas y número de sacos usando el botón (+).",
+                    confirmButtonColor: "#4f46e5",
+                });
+                return;
+            }
+
+            if (expectedSacksForOrder > 0 && stowageGroups.length > 0 && totalSacksCaptured !== expectedSacksForOrder) {
+                const diff = expectedSacksForOrder - totalSacksCaptured;
+                Swal.fire({
+                    icon: "warning",
+                    title: diff > 0 ? "Sacos Incompletos" : "Exceso de Sacos",
+                    html: diff > 0
+                        ? `Ha capturado <b>${totalSacksCaptured} sacos</b>, pero la orden tiene programados <b>${expectedSacksForOrder} sacos</b> (${scannedOrder?.programmed_tons || ""} TM).<br/><br/>Faltan <b>${diff} sacos</b> por asignar en las estibas.`
+                        : `Ha capturado <b>${totalSacksCaptured} sacos</b>, lo cual excede los <b>${expectedSacksForOrder} sacos</b> programados para la orden (${scannedOrder?.programmed_tons || ""} TM) por <b>${Math.abs(diff)} sacos</b>.`,
+                    confirmButtonColor: "#4f46e5",
+                });
+                return;
+            }
+        }
+
         setIsSaving(true);
 
         try {
+            if (isEstibadorUser) {
+                const stowagesArray = stowageGroups.length > 0
+                    ? buildStowagesArray(stowageGroups)
+                    : (scannedOrder?.stowage_plan?.stowages || Array(24).fill(null));
+                const usedCount = stowageGroups.length > 0
+                    ? totalEstibasCaptured
+                    : stowagesArray.filter((v: any) => v !== null && v !== undefined && v !== "").length;
+                const existingPlan = scannedOrder?.stowage_plan || {};
+                const nowTime = new Date().toLocaleTimeString("es-MX", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                });
+
+                const stowagePlanPayload = {
+                    ...existingPlan,
+                    shift: existingPlan.shift || "1",
+                    hour: existingPlan.hour || nowTime,
+                    supervisor: loadingAssistant || existingPlan.supervisor || currentUserName || "",
+                    stowages: stowagesArray,
+                    stowage_groups: stowageGroups.length > 0 ? stowageGroups : (existingPlan.stowage_groups || null),
+                    verifier: verifier || "",
+                    comments: estibaObservations,
+                    avg_unit_weight: existingPlan.avg_unit_weight || null,
+                    net_weight: existingPlan.net_weight || null,
+                    warehouse: warehouse || `Almacen ${selectedWarehouseId}`,
+                };
+
+                const response = await axios.post(route("documentation.shipment-orders.save-loading"), {
+                    shipment_order_id: scannedOrder.id,
+                    lot_id: selectedLotId,
+                    warehouse: warehouse || `Almacen ${selectedWarehouseId}`,
+                    squad_leader: squadLeader || null,
+                    loading_assistant: loadingAssistant || null,
+                    stowage_count: usedCount || null,
+                    from_estibadores: true,
+                    stowage_plan: stowagePlanPayload,
+                });
+
+                const savedOrder = {
+                    ...scannedOrder,
+                    ...(response.data?.order || {}),
+                    stowage_plan: stowagePlanPayload,
+                    stowage_count: usedCount || scannedOrder.stowage_count || null,
+                    loading_squad_leader: squadLeader || null,
+                    loading_assistant: loadingAssistant || null,
+                    is_in_apt: false,
+                };
+
+                handleResetToStep1();
+                setActiveStowageOrder(savedOrder);
+                setIsStowageModalOpen(true);
+                await refreshHistory();
+                return;
+            }
+
             const response = await axios.post(route("documentation.shipment-orders.save-loading"), {
                 shipment_order_id: scannedOrder.id,
                 lot_id: selectedLotId,
@@ -987,12 +1348,22 @@ export default function ShipmentProcess({
     const handleFinish = async (id: string, folio: string) => {
         const targetRow = history.find((h) => String(h.id) === String(id));
         if (targetRow) {
+            if (targetRow.is_sampling_blocked) {
+                Swal.fire({
+                    icon: "error",
+                    title: "Autorización de Desbloqueo Pendiente",
+                    html: `No se puede liberar la toma de muestras de la orden <b>${folio}</b> porque existe una autorización de desbloqueo pendiente por peso fuera del límite.<br/><br/>Autorice primero el desbloqueo en el control de muestreo.`,
+                    confirmButtonColor: "#dc2626",
+                    confirmButtonText: "Entendido",
+                });
+                return;
+            }
             const status = getOrderSamplingStatus(targetRow);
             if (status.isEnvasado && !status.isCompleted) {
                 Swal.fire({
                     icon: "warning",
-                    title: "Muestreo Incompleto",
-                    html: `No puede finalizar la orden <b>${folio}</b> porque el muestreo de ensacadora aún está incompleto.<br/><br/>Lleva <b>${status.samplesCount} de 80 muestras</b> capturadas.<br/><br/>Por favor haga clic en el botón <b>"Muestreo"</b> en la tabla para completar las 80 muestras requeridas.`,
+                    title: "Toma de Muestras Incompleta",
+                    html: `No se puede liberar la toma de muestras de la orden <b>${folio}</b> porque ambas ensacadoras deben completar su cantidad requerida:<br/><br/>• <b>Ensacadora 1:</b> ${status.env1Count} de ${status.targetPerEnsacadora} muestras<br/>• <b>Ensacadora 2:</b> ${status.env2Count} de ${status.targetPerEnsacadora} muestras<br/>• <b>Total Unidad:</b> ${status.samplesCount} de ${status.targetSamples} muestras`,
                     confirmButtonColor: "#4f46e5",
                     confirmButtonText: "Entendido",
                 });
@@ -1000,14 +1371,17 @@ export default function ShipmentProcess({
             }
         }
 
+        const isEnvasadoRow = targetRow ? isRowEnvasado(targetRow) : false;
         const result = await Swal.fire({
-            title: "¿Finalizar orden?",
-            text: `¿Estás seguro que quieres finalizar esta orden de embarque ${folio ? `(${folio})` : ""}?`,
+            title: isEnvasadoRow ? "¿Liberar Toma de Muestras?" : "¿Finalizar orden?",
+            html: isEnvasadoRow
+                ? `¿Confirmas la <b>liberación de la toma de muestras</b> de la orden <b>${folio || ""}</b> (Paso 4) para finalizar el proceso y habilitar el destare en báscula?`
+                : `¿Estás seguro que quieres finalizar esta orden de embarque ${folio ? `(${folio})` : ""}?`,
             icon: "question",
             showCancelButton: true,
-            confirmButtonText: "Sí, finalizar",
+            confirmButtonText: isEnvasadoRow ? "✓ Sí, liberar toma de muestras" : "Sí, finalizar",
             cancelButtonText: "Cancelar",
-            confirmButtonColor: "#4338ca",
+            confirmButtonColor: "#16a34a",
             cancelButtonColor: "#6b7280",
         });
 
@@ -1018,16 +1392,18 @@ export default function ShipmentProcess({
             await refreshHistory();
             Swal.fire({
                 icon: "success",
-                title: "Orden Finalizada",
-                text: `La orden ${folio} ha sido finalizada correctamente.`,
-                timer: 2000,
+                title: isEnvasadoRow ? "¡Toma de Muestras Liberada!" : "Orden Finalizada",
+                text: isEnvasadoRow
+                    ? `La toma de muestras de la orden ${folio} ha sido liberada y el proceso ha finalizado correctamente.`
+                    : `La orden ${folio} ha sido finalizada correctamente.`,
+                timer: 2200,
                 showConfirmButton: false,
             });
         } catch (error: any) {
             Swal.fire({
                 icon: "error",
                 title: "Error",
-                text: error.response?.data?.message || "No se pudo finalizar la orden.",
+                text: error.response?.data?.message || "No se pudo liberar/finalizar la orden.",
                 confirmButtonColor: "#4f46e5",
             });
         }
@@ -1706,6 +2082,112 @@ export default function ShipmentProcess({
                                             className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-700 font-medium shadow-sm cursor-not-allowed"
                                         />
                                     </div>
+
+                                    {isEstibadorUser && (
+                                        <>
+                                            {/* Lista de Verificador */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                                    Verificador
+                                                </label>
+                                                <VerifierDropdown
+                                                    value={verifier}
+                                                    initialVerifiers={verifiers}
+                                                    onChange={(name) => setVerifier(name)}
+                                                />
+                                            </div>
+
+                                            {/* Cantidad de estibas y número de sacos (+) */}
+                                            <div className="md:col-span-2">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                                    <label className="block text-sm font-semibold text-gray-700">
+                                                        Estibas y Número de Sacos
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        <span
+                                                            className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                                                                expectedSacksForOrder > 0 && totalSacksCaptured === expectedSacksForOrder
+                                                                    ? "text-emerald-800 bg-emerald-50 border-emerald-200"
+                                                                    : "text-indigo-800 bg-indigo-50 border-indigo-200"
+                                                            }`}
+                                                        >
+                                                            {totalEstibasCaptured} / 24 estibas • {totalSacksCaptured}
+                                                            {expectedSacksForOrder > 0 ? ` / ${expectedSacksForOrder}` : ""} sacos
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleAddStowageGroup}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"
+                                                            title="Agregar cantidad de estibas y número de sacos"
+                                                        >
+                                                            <Plus className="w-4 h-4" />
+                                                            Agregar Estibas / Sacos
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {stowageGroups.length > 0 ? (
+                                                    <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                                        {(() => {
+                                                            let cursor = 1;
+                                                            return stowageGroups.map((group, idx) => {
+                                                                const start = cursor;
+                                                                const end = Math.min(24, cursor + group.count - 1);
+                                                                cursor = end + 1;
+                                                                const rangeText = start === end ? `Estiba ${start}` : `Del ${start} al ${end}`;
+                                                                return (
+                                                                    <div
+                                                                        key={idx}
+                                                                        className="flex items-center justify-between gap-3 bg-white border border-indigo-100 rounded-lg px-3.5 py-2 shadow-2xs"
+                                                                    >
+                                                                        <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-gray-800">
+                                                                            <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 font-mono">
+                                                                                {rangeText} ({group.count} {group.count === 1 ? "estiba" : "estibas"})
+                                                                            </span>
+                                                                            <span className="text-emerald-700 font-extrabold">
+                                                                                {group.sacks} sacos c/u
+                                                                            </span>
+                                                                            <span className="text-gray-400 font-medium">
+                                                                                (Subtotal: {group.count * group.sacks} sacos)
+                                                                            </span>
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                setStowageGroups((prev) => prev.filter((_, i) => i !== idx))
+                                                                            }
+                                                                            className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition"
+                                                                            title="Eliminar grupo"
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            });
+                                                        })()}
+                                                    </div>
+                                                ) : (
+                                                    <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center text-xs text-gray-500 bg-gray-50/60">
+                                                        Presione el ícono <b className="text-indigo-700">(+)</b> para capturar la cantidad de estibas y el número de sacos (ej. 9 estibas de 120 sacos, 1 de 180 sacos).
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Observaciones -> Comentarios Nota de Estiba */}
+                                            <div className="md:col-span-2">
+                                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                                    Observaciones
+                                                </label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={estibaObservations}
+                                                    onChange={(e) => setEstibaObservations(e.target.value)}
+                                                    placeholder="Comentarios para la Nota de Estiba..."
+                                                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-800 font-medium shadow-sm focus:border-indigo-500 focus:ring-indigo-500 uppercase text-sm"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
                                 {/* Submit & Back Buttons */}
@@ -1724,6 +2206,8 @@ export default function ShipmentProcess({
                                     >
                                         {isSaving
                                             ? "Guardando..."
+                                            : isEstibadorUser
+                                            ? "Guardar y Ver Nota de Estiba"
                                             : isEnvasado
                                             ? "Guardar y Realizar Muestreo"
                                             : "Guardar Embarque"}
@@ -1900,22 +2384,6 @@ export default function ShipmentProcess({
                                                                                 )}
                                                                             </Menu.Item>
                                                                         )}
-                                                                        {!isEstibadorUser && (
-                                                                            <Menu.Item>
-                                                                                {({ active }) => (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => handleOpenSampling(row)}
-                                                                                        className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg font-bold text-left ${
-                                                                                            active ? "bg-indigo-600 text-white" : "text-gray-700"
-                                                                                        }`}
-                                                                                    >
-                                                                                        <Scale className="w-3.5 h-3.5" />
-                                                                                        Muestreo Ensacadora {!isStowagePlanCompleted(row) ? "(Bloqueado)" : ""}
-                                                                                    </button>
-                                                                                )}
-                                                                            </Menu.Item>
-                                                                        )}
                                                                     </>
                                                                 );
                                                             })()}
@@ -2017,67 +2485,91 @@ export default function ShipmentProcess({
                                             {/* Acciones */}
                                             <td className="w-[31%] px-1 py-2 text-center">
                                                 {isEstibadorUser ? (
-                                                    <div className="flex items-center justify-center gap-1.5 flex-nowrap">
-                                                        {isInAptProcess(row) ? (
+                                                    <div className="flex items-center justify-center gap-1 flex-nowrap">
+                                                        {isVoBoApproved(row) ? (
                                                             <>
                                                                 <span
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200"
-                                                                    title="En proceso en APT: Debe eliminarse primero de Gestión de Embarques de APT para poder editar o eliminar"
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0"
+                                                                    title={`VoBo autorizado por ${row.vobo_by || row.stowage_plan?.vobo_by || "Supervisión PROAGRO"}`}
                                                                 >
-                                                                    <Lock className="w-3 h-3 text-amber-600" />
-                                                                    En proceso APT
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                    VoBo ✓
                                                                 </span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        Swal.fire({
-                                                                            icon: "warning",
-                                                                            title: "Acción Bloqueada",
-                                                                            html: `<div class="text-left space-y-2">
-                                                                                <p class="font-medium text-slate-800">
-                                                                                    La orden <b>${row.folio}</b> se encuentra actualmente en proceso en <b>Gestión de Proceso de Embarques (APT)</b>.
-                                                                                </p>
-                                                                                <p class="text-sm text-slate-600">
-                                                                                    Solo podrá <b>editar</b> o <b>eliminar</b> la nota de estiba siempre y cuando en APT la hayan eliminado primero del proceso.
-                                                                                </p>
-                                                                            </div>`,
-                                                                            confirmButtonColor: "#4f46e5",
-                                                                        });
-                                                                    }}
-                                                                    className="p-1 rounded-md text-gray-300 hover:text-amber-600 hover:bg-amber-50 transition cursor-not-allowed"
-                                                                    title="Bloqueado: La orden está en proceso en APT"
-                                                                >
-                                                                    <Pencil className="w-3.5 h-3.5" />
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        Swal.fire({
-                                                                            icon: "warning",
-                                                                            title: "Acción Bloqueada",
-                                                                            html: `<div class="text-left space-y-2">
-                                                                                <p class="font-medium text-slate-800">
-                                                                                    La orden <b>${row.folio}</b> se encuentra actualmente en proceso en <b>Gestión de Proceso de Embarques (APT)</b>.
-                                                                                </p>
-                                                                                <p class="text-sm text-slate-600">
-                                                                                    Solo podrá <b>eliminar</b> la nota de estiba siempre y cuando en APT la hayan eliminado primero del proceso.
-                                                                                </p>
-                                                                            </div>`,
-                                                                            confirmButtonColor: "#4f46e5",
-                                                                        });
-                                                                    }}
-                                                                    className="p-1 rounded-md text-gray-300 hover:text-red-600 hover:bg-red-50 transition cursor-not-allowed"
-                                                                    title="Bloqueado: La orden está en proceso en APT"
-                                                                >
-                                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                                </button>
+
+                                                                {isSamplingReleased(row) ? (
+                                                                    <>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSampling(row)}
+                                                                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
+                                                                            title="Muestreo completado y liberado por Supervisión PROAGRO"
+                                                                        >
+                                                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                            <span>{samplingStatus.samplesCount}/{samplingStatus.targetSamples} • Liberada ✓</span>
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenPrintModal(row.id)}
+                                                                            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
+                                                                            title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
+                                                                        >
+                                                                            <Printer className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </>
+                                                                ) : samplingStatus.isCompleted ? (
+                                                                    <>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSampling(row)}
+                                                                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
+                                                                            title={`Muestras completadas (${samplingStatus.samplesCount}/${samplingStatus.targetSamples}). Haga clic para ver.`}
+                                                                        >
+                                                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                            <span>{samplingStatus.samplesCount}/{samplingStatus.targetSamples}</span>
+                                                                        </button>
+                                                                        <span
+                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0"
+                                                                            title="En espera de que Supervisión PROAGRO libere la toma de muestras (Paso 4)"
+                                                                        >
+                                                                            <Clock className="w-3 h-3 text-amber-600" />
+                                                                            Pend. Liberación
+                                                                        </span>
+                                                                    </>
+                                                                ) : row.is_sampling_blocked ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                        title="Muestreo bloqueado por peso fuera de límite. Haga clic para que el Supervisor PROAGRO autorice el desbloqueo."
+                                                                    >
+                                                                        <Lock className="w-3 h-3" />
+                                                                        <span>Bloqueado ({samplingStatus.samplesCount}/{samplingStatus.targetSamples})</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenSampling(row)}
+                                                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                        title={`Paso 3: Capturar muestras de pesos de sacos (${samplingStatus.samplesCount}/${samplingStatus.targetSamples})`}
+                                                                    >
+                                                                        <Scale className="w-3 h-3" />
+                                                                        <span>Tomar Muestras ({samplingStatus.samplesCount}/{samplingStatus.targetSamples})</span>
+                                                                    </button>
+                                                                )}
                                                             </>
                                                         ) : (
                                                             <>
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0"
+                                                                    title="Pendiente de Revisión y VoBo por parte de Supervisión PROAGRO (Paso 2)"
+                                                                >
+                                                                    <Clock className="w-3 h-3 text-amber-600" />
+                                                                    Pendiente VoBo
+                                                                </span>
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleOpenStowagePlan(row)}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition"
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition shrink-0"
                                                                     title="Editar Nota de Estiba (GLS-AP-FO-002)"
                                                                 >
                                                                     <Pencil className="w-3 h-3" />
@@ -2086,7 +2578,7 @@ export default function ShipmentProcess({
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleDelete(row.id, row.folio)}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition"
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition shrink-0"
                                                                     title="Eliminar Nota de Estiba"
                                                                 >
                                                                     <Trash2 className="w-3 h-3" />
@@ -2099,50 +2591,52 @@ export default function ShipmentProcess({
                                                     <div className="flex items-center justify-center gap-1 flex-nowrap">
                                                         {samplingStatus.isEnvasado ? (
                                                             <>
-                                                                {/* Muestreo */}
-                                                                {!isStowagePlanCompleted(row) ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenStowagePlan(row)}
+                                                                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                    title="Revisar Nota de Estiba (GLS-AP-FO-002)"
+                                                                >
+                                                                    <FileSpreadsheet className="w-3 h-3 text-emerald-700" />
+                                                                    <span>Nota Estiba</span>
+                                                                </button>
+
+                                                                {!isVoBoApproved(row) && (
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => handleOpenSampling(row)}
-                                                                        className="bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
-                                                                        title="Candado Activo: Requiere que se guarde y libere primero la Nota de Estiba (GLS-AP-FO-002)"
+                                                                        onClick={() => handleApproveVoBo(row)}
+                                                                        className="bg-green-600 hover:bg-green-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                        title="Paso 2: Dar visto bueno (VoBo) a la Nota de Estiba para habilitar la toma de muestras"
                                                                     >
-                                                                        <Lock className="w-3 h-3 text-amber-600" />
-                                                                        <span>Bloqueado</span>
-                                                                    </button>
-                                                                ) : samplingStatus.isCompleted ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleOpenSampling(row)}
-                                                                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
-                                                                        title="Muestreo finalizado (80/80). Haga clic para ver o editar."
-                                                                    >
-                                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                        <span>80/80</span>
-                                                                    </button>
-                                                                ) : row.is_sampling_blocked ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleOpenSampling(row)}
-                                                                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                        title="Muestreo bloqueado por 3 alertas de tolerancia. Haga clic para desbloquear con el Jefe de Almacén."
-                                                                    >
-                                                                        <Lock className="w-3 h-3" />
-                                                                        <span>Bloqueado ({samplingStatus.samplesCount}/80)</span>
-                                                                    </button>
-                                                                ) : (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleOpenSampling(row)}
-                                                                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0"
-                                                                        title={`Muestreo (${samplingStatus.samplesCount} de 80 muestras). Haga clic para continuar.`}
-                                                                    >
-                                                                        <Scale className="w-3 h-3" />
-                                                                        <span>Muestreo ({samplingStatus.samplesCount}/80)</span>
+                                                                        <CheckCircle2 className="w-3 h-3" />
+                                                                        <span>VoBo</span>
                                                                     </button>
                                                                 )}
 
-                                                                {/* Imprimir */}
+                                                                {isVoBoApproved(row) && (
+                                                                    row.is_sampling_blocked ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSampling(row)}
+                                                                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                            title="Peso fuera del límite: Haga clic para autorizar el desbloqueo de la unidad"
+                                                                        >
+                                                                            <Lock className="w-3 h-3" />
+                                                                            <span>Desbloquear</span>
+                                                                        </button>
+                                                                    ) : !isSamplingReleased(row) && samplingStatus.isCompleted ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleFinish(row.id, row.folio)}
+                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                            title="Paso 4: Liberar toma de muestras al finalizar"
+                                                                        >
+                                                                            <Unlock className="w-3 h-3" />
+                                                                            <span>Liberar Muestras</span>
+                                                                        </button>
+                                                                    ) : null
+                                                                )}
+
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleOpenPrintModal(row.id)}
@@ -2152,7 +2646,6 @@ export default function ShipmentProcess({
                                                                     <Printer className="w-3.5 h-3.5" />
                                                                 </button>
 
-                                                                {/* Eliminar */}
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleDelete(row.id, row.folio)}
@@ -2164,7 +2657,6 @@ export default function ShipmentProcess({
                                                             </>
                                                         ) : (
                                                             <>
-                                                                {/* Granel: Finalizar (mientras esté en carga) */}
                                                                 {row.status === "loading" && !row.finished_at && (
                                                                     <button
                                                                         type="button"
@@ -2175,7 +2667,6 @@ export default function ShipmentProcess({
                                                                     </button>
                                                                 )}
 
-                                                                {/* Eliminar */}
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleDelete(row.id, row.folio)}
@@ -2313,18 +2804,8 @@ export default function ShipmentProcess({
                 }}
                 order={activeSamplingOrder}
                 stowageCount={activeSamplingOrder?.stowage_count || stowageCount}
-                totalSamplesCount={80}
-                onSave={async (savedSamples) => {
-                    if (savedSamples && savedSamples.length >= 80 && activeSamplingOrder) {
-                        try {
-                            const targetId = activeSamplingOrder.id || activeSamplingOrder.shipment_order_id || activeSamplingOrder.folio;
-                            if (targetId) {
-                                await axios.patch(route("documentation.shipment-orders.finish-loading", targetId));
-                            }
-                        } catch (e) {
-                            console.error("Error al finalizar orden tras muestreo final:", e);
-                        }
-                    }
+                totalSamplesCount={activeSamplingOrder ? getTargetSamplesForRow(activeSamplingOrder) : 80}
+                onSave={async () => {
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
                 }}
@@ -2341,7 +2822,7 @@ export default function ShipmentProcess({
                                   ...prev,
                                   is_sampling_blocked: false,
                                   sampling_status:
-                                      (Array.isArray(prev.samples) ? prev.samples.length : 0) >= 80
+                                      (Array.isArray(prev.samples) ? prev.samples.length : 0) >= getTargetSamplesForRow(prev)
                                           ? "completed"
                                           : "in_progress",
                                   sampling_completed_at: null,
@@ -2362,6 +2843,8 @@ export default function ShipmentProcess({
                     await refreshHistory();
                 }}
                 order={activeStowageOrder}
+                isEstibadorUser={isEstibadorUser}
+                verifiers={verifiers}
                 onSaved={async (updated) => {
                     if (updated) {
                         setActiveStowageOrder(updated);

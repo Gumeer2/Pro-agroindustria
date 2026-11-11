@@ -160,6 +160,16 @@ export default function Edit({
     const [queryOperator, setQueryOperator] = useState("");
     const [foundOperators, setFoundOperators] = useState<Operator[]>([]);
     const [cartaPorteWarning, setCartaPorteWarning] = useState<string | null>(null);
+    const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+
+    const clearClientError = (field: string) => {
+        setClientErrors((prev) => {
+            if (!prev[field]) return prev;
+            const next = { ...prev };
+            delete next[field];
+            return next;
+        });
+    };
 
     // Determine current OV Balance for validation
     // If editing, we need to know the *current* available balance of the OV 
@@ -329,16 +339,148 @@ export default function Edit({
         return () => clearTimeout(timeoutId);
     }, [data.carta_porte, data.transport_company]);
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    const validateForm = () => {
+        const missing: string[] = [];
+        const errorsMap: Record<string, string> = {};
 
+        // 1. Información General & Cliente
+        if (!data.sales_order_id) {
+            missing.push("Vincular a Orden de Venta (OV)");
+            errorsMap.sales_order_id = "Seleccione una Orden de Venta";
+        }
+        if (!data.client_id && !data.client_name) {
+            missing.push("Cliente");
+            errorsMap.client_name = "El cliente es obligatorio";
+        }
+        if (!data.consigned_to || !data.consigned_to.trim()) {
+            missing.push("Consignar a");
+            errorsMap.consigned_to = "El consignatario es obligatorio";
+        }
+
+        // 2. Datos del Transportista
+        if (!data.operator_name || !data.operator_name.trim()) {
+            missing.push("Nombre del Operador");
+            errorsMap.operator_name = "El nombre del operador es obligatorio";
+        }
+        if (!data.transport_company || !data.transport_company.trim()) {
+            missing.push("Empresa Transportista");
+            errorsMap.transport_company = "La empresa transportista es obligatoria";
+        }
+        if (!data.carta_porte || !data.carta_porte.trim()) {
+            missing.push("Carta Porte");
+            errorsMap.carta_porte = "La carta porte es obligatoria";
+        }
+        if (!data.unit_type || !data.unit_type.trim()) {
+            missing.push("Tipo de Unidad");
+            errorsMap.unit_type = "El tipo de unidad es obligatorio";
+        }
+        if (!data.tractor_plate || !data.tractor_plate.trim()) {
+            missing.push("Placas Tractor");
+            errorsMap.tractor_plate = "Las placas del tractor son obligatorias";
+        }
+        if (!data.trailer_plate || !data.trailer_plate.trim()) {
+            missing.push("Placas Remolque (o S/R)");
+            errorsMap.trailer_plate = "Las placas de remolque son obligatorias (indique placas o S/R)";
+        }
+        if (!data.economic_number || !data.economic_number.trim()) {
+            missing.push("Número Económico");
+            errorsMap.economic_number = "El número económico es obligatorio";
+        }
+        if (!data.license_number || !data.license_number.trim()) {
+            missing.push("Licencia");
+            errorsMap.license_number = "La licencia es obligatoria";
+        }
+        if (!data.unit_number || !data.unit_number.trim()) {
+            missing.push("Unidad / Marca");
+            errorsMap.unit_number = "La unidad / marca es obligatoria";
+        }
+
+        // 3. Detalle del Embarque
+        if (!data.product || !data.product.trim()) {
+            missing.push("Producto");
+            errorsMap.product = "El producto es obligatorio";
+        }
+        if (!data.presentation || !data.presentation.trim()) {
+            missing.push("Presentación");
+            errorsMap.presentation = "La presentación es obligatoria";
+        }
+        if (data.presentation === "ENVASADO" && (!data.sack_type || !data.sack_type.trim())) {
+            missing.push("Tamaño de Saco");
+            errorsMap.sack_type = "Seleccione el tamaño de saco";
+        }
+        if (!data.origin_id) {
+            missing.push("Origen");
+            errorsMap.origin_id = "Seleccione un origen";
+        }
+        if (!data.programmed_tons || isNaN(Number(data.programmed_tons)) || Number(data.programmed_tons) <= 0) {
+            missing.push("Ton. Programadas (mayor a 0)");
+            errorsMap.programmed_tons = "El tonelaje programado debe ser mayor a 0";
+        }
+        if (!data.destination_id && (!data.destination || !data.destination.trim())) {
+            missing.push("Destino");
+            errorsMap.destination_id = "Seleccione un destino";
+        }
+        if (!data.state || !data.state.trim()) {
+            missing.push("Estado");
+            errorsMap.state = "Seleccione el estado de destino";
+        }
+
+        return {
+            isValid: missing.length === 0,
+            missing,
+            errorsMap,
+            firstField: missing.length > 0 ? Object.keys(errorsMap)[0] : undefined,
+        };
+    };
+
+    const runSubmit = () => {
         // Strict Block: Do not allow submission if there's a duplicate Carta Porte warning
         if (cartaPorteWarning) {
-            alert("❌ Error: " + cartaPorteWarning + "\n\nDebe corregir la Carta Porte antes de guardar.");
+            Swal.fire({
+                icon: "error",
+                title: "Carta Porte Duplicada",
+                text: cartaPorteWarning + "\n\nDebe corregir la Carta Porte antes de guardar.",
+                confirmButtonColor: "#dc2626",
+            });
             return;
         }
 
+        const validation = validateForm();
+        if (!validation.isValid) {
+            setClientErrors(validation.errorsMap);
+            if (validation.firstField) {
+                const el = document.querySelector(`[name="${validation.firstField}"]`) as HTMLElement;
+                if (el) {
+                    el.focus();
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+            return;
+        }
+
+        setClientErrors({});
         put(route("documentation.update", order.id));
+    };
+
+    const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+        if (e.key === 'Enter') {
+            const target = e.target as HTMLElement;
+            // Permitir Enter para saltos de línea dentro de textarea
+            if (target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Al presionar Enter, validar que todo esté completo antes de enviar
+            runSubmit();
+        }
+    };
+
+    const submit: FormEventHandler = (e) => {
+        e.preventDefault();
+        runSubmit();
     };
 
     return (
@@ -376,7 +518,7 @@ export default function Edit({
                         </div>
                     </div>
 
-                    <form onSubmit={submit} className="p-8">
+                    <form onSubmit={submit} onKeyDown={handleFormKeyDown} className="p-8">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                             {/* SECTION: Información General */}
                             <div className="md:col-span-2">
@@ -819,25 +961,37 @@ export default function Edit({
                             <OriginDropdown
                                 value={data.origin_id}
                                 initialOrigins={origins}
-                                onChange={(id) => setData("origin_id", id)}
-                                error={errors.origin_id}
+                                onChange={(id) => {
+                                    setData("origin_id", id);
+                                    clearClientError("origin_id");
+                                }}
+                                error={clientErrors.origin_id || errors.origin_id}
                             />
+                            {(clientErrors.origin_id || errors.origin_id) && (
+                                <span className="text-xs text-red-500 mt-1 block font-bold">
+                                    {clientErrors.origin_id || errors.origin_id}
+                                </span>
+                            )}
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
                                     Ton. Programadas <span className="text-red-500">*</span>
                                 </label>
                                 <input
+                                    name="programmed_tons"
                                     type="number"
                                     step="0.01"
                                     required
                                     min="0.01"
                                     value={data.programmed_tons}
                                     onWheel={(e) => e.currentTarget.blur()}
-                                    onChange={(e) => setData("programmed_tons", e.target.value)}
+                                    onChange={(e) => {
+                                        setData("programmed_tons", e.target.value);
+                                        clearClientError("programmed_tons");
+                                    }}
                                     className={`w-full rounded-lg shadow-sm focus:ring-indigo-500 py-2.5 px-3 font-bold ${
-                                        data.programmed_tons !== "" && Number(data.programmed_tons) <= 0
-                                            ? 'border-red-500 focus:border-red-500 bg-red-50'
+                                        (clientErrors.programmed_tons || errors.programmed_tons || (data.programmed_tons !== "" && Number(data.programmed_tons) <= 0))
+                                            ? 'border-red-500 bg-red-50 focus:border-red-500'
                                             : Number(data.programmed_tons) > Number(availableBalance)
                                             ? 'border-amber-400 focus:border-amber-500 bg-amber-50/40 text-amber-900'
                                             : 'border-gray-300 focus:border-indigo-500'
@@ -850,38 +1004,50 @@ export default function Edit({
                                         <span>Excede el saldo disponible ({availableBalance.toFixed(2)} TM) — Se permitirá guardar para ajuste de peso posterior.</span>
                                     </p>
                                 )}
+                                {(clientErrors.programmed_tons || errors.programmed_tons) && (
+                                    <p className="text-red-500 text-xs mt-1 font-bold">{clientErrors.programmed_tons || errors.programmed_tons}</p>
+                                )}
                                 {data.programmed_tons !== "" && Number(data.programmed_tons) <= 0 && (
                                     <p className="text-red-600 text-[10px] mt-1 font-bold">
                                         ❌ El tonelaje debe ser mayor a 0
                                     </p>
                                 )}
-                                {errors.programmed_tons && (
-                                    <p className="text-red-500 text-xs mt-1">{errors.programmed_tons}</p>
+                            </div>
+
+                            <div>
+                                <DestinationDropdown
+                                    value={data.destination_id}
+                                    initialDestinations={destinations}
+                                    onChange={(id) => {
+                                        const match = destinations?.find((d: any) => d.id === id);
+                                        setData((prev) => ({
+                                            ...prev,
+                                            destination_id: id,
+                                            destination: match ? match.name : prev.destination,
+                                        }));
+                                        clearClientError("destination_id");
+                                    }}
+                                    error={clientErrors.destination_id || errors.destination_id}
+                                />
+                                {(clientErrors.destination_id || errors.destination_id) && (
+                                    <span className="text-xs text-red-500 mt-1 block font-bold">
+                                        {clientErrors.destination_id || errors.destination_id}
+                                    </span>
                                 )}
                             </div>
 
-                            <DestinationDropdown
-                                value={data.destination_id}
-                                initialDestinations={destinations}
-                                onChange={(id) => {
-                                    const match = destinations?.find((d: any) => d.id === id);
-                                    setData((prev) => ({
-                                        ...prev,
-                                        destination_id: id,
-                                        destination: match ? match.name : prev.destination,
-                                    }));
-                                }}
-                                error={errors.destination_id}
-                            />
-
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">
-                                    Estado
+                                    Estado <span className="text-red-500">*</span>
                                 </label>
                                 <select
+                                    name="state"
                                     value={data.state}
-                                    onChange={(e) => setData("state", e.target.value)}
-                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase"
+                                    onChange={(e) => {
+                                        setData("state", e.target.value);
+                                        clearClientError("state");
+                                    }}
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${(clientErrors.state || errors.state) ? 'border-red-500 bg-red-50 text-red-900 ring-1 ring-red-500' : 'border-gray-300'}`}
                                 >
                                     <option value="">Seleccione...</option>
                                     <option value="AGUASCALIENTES">AGUASCALIENTES</option>
@@ -917,6 +1083,11 @@ export default function Edit({
                                     <option value="YUCATAN">YUCATÁN</option>
                                     <option value="ZACATECAS">ZACATECAS</option>
                                 </select>
+                                {(clientErrors.state || errors.state) && (
+                                    <span className="text-xs text-red-500 mt-1 block font-bold">
+                                        {clientErrors.state || errors.state}
+                                    </span>
+                                )}
                             </div>
 
                             <div className="md:col-span-2">

@@ -219,13 +219,14 @@ class WeightTicketController extends Controller
                         $destareBlockMessage = "<p class='text-sm'>La orden de embarque <b>" . ($order->shipment_order->folio ?? $order->folio) . "</b> aún no ha sido marcada como finalizada en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class='text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200'>Debe darse por finalizada la carga en el proceso de embarques antes de poder realizar el destare.</p>";
                     }
 
-                    // Candado estricto: Para producto envasado, requerir 80 muestras validadas y guardadas
+                    // Candado estricto: Para producto envasado, requerir las muestras validadas y guardadas
                     $samplingCheck = $this->checkOrderSamplingValidation($order);
                     if ($samplingCheck['is_envasado'] && !$samplingCheck['is_completed']) {
+                        $targetSamples = $samplingCheck['target_samples'] ?? 80;
                         $canDestare = false;
-                        $destareBadgeText = "Muestreo Incompleto (" . $samplingCheck['samples_count'] . "/80)";
+                        $destareBadgeText = "Muestreo Incompleto (" . $samplingCheck['samples_count'] . "/{$targetSamples})";
                         $destareBlockTitle = "Muestreo de Ensacadora Incompleto";
-                        $destareBlockMessage = "<p class='text-sm'>La orden de embarque <b>" . ($order->shipment_order->folio ?? $order->folio) . "</b> requiere que se hayan <b>validado y guardado las 80 muestras de ensacadora</b> en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class='text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200'>Actualmente cuenta con <b>" . $samplingCheck['samples_count'] . " de 80 muestras</b>. Mientras no se completen las 80 muestras y se presione 'Guardado (80/80) - Salir', no se puede destarar.</p>";
+                        $destareBlockMessage = "<p class='text-sm'>La orden de embarque <b>" . ($order->shipment_order->folio ?? $order->folio) . "</b> requiere que se hayan <b>validado y guardado las {$targetSamples} muestras de ensacadora</b> y haya sido liberada por Supervisión PROAGRO.</p><p class='text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200'>Actualmente cuenta con <b>" . $samplingCheck['samples_count'] . " de {$targetSamples} muestras</b>.</p>";
                     }
                 }
 
@@ -791,14 +792,15 @@ class WeightTicketController extends Controller
 
             // VALIDATION: For Sales / Shipment Orders, block destare if not finalized in Shipment Process module or sampling incomplete
             if ($order->shipment_order_id && $order->shipment_order) {
-                // Candado estricto: Para producto envasado, requerir 80 muestras validadas y guardadas
+                // Candado estricto: Para producto envasado, requerir las muestras validadas y guardadas
                 $samplingCheck = $this->checkOrderSamplingValidation($order);
                 if ($samplingCheck['is_envasado'] && !$samplingCheck['is_completed']) {
+                    $targetSamples = $samplingCheck['target_samples'] ?? 80;
                     return redirect()->route('scale.index', [
                         'scale_id' => $request->input('scale_id', 1),
                         'view' => 'table',
                         'tab' => 'sale',
-                    ])->with('error', 'ALERTA: Operación Bloqueada. La orden de embarque (' . ($order->shipment_order->folio ?? $order->folio) . ') no puede destarar hasta que se hayan validado y guardado las 80 muestras de ensacadora (lleva ' . $samplingCheck['samples_count'] . '/80). Mientras no se completen las 80 muestras no se puede destarar.');
+                    ])->with('error', 'ALERTA: Operación Bloqueada. La orden de embarque (' . ($order->shipment_order->folio ?? $order->folio) . ') no puede destarar hasta que se hayan validado y guardado las ' . $targetSamples . ' muestras de ensacadora (lleva ' . $samplingCheck['samples_count'] . '/' . $targetSamples . ').');
                 }
 
                 $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
@@ -1588,10 +1590,11 @@ class WeightTicketController extends Controller
 
                 // VALIDATION: For Sales / Shipment Orders, block destare if not finalized in Shipment Process module or sampling incomplete
                 if ($order->shipment_order_id && $order->shipment_order) {
-                    // Candado estricto: Para producto envasado, requerir 80 muestras validadas y guardadas
+                    // Candado estricto: Para producto envasado, requerir las muestras validadas y guardadas
                     $samplingCheck = $this->checkOrderSamplingValidation($order);
                     if ($samplingCheck['is_envasado'] && !$samplingCheck['is_completed']) {
-                        throw new \Exception("ALERTA: Operación Bloqueada. La orden de embarque (" . ($order->shipment_order->folio ?? $order->folio) . ") no puede destarar hasta que se hayan validado y guardado las 80 muestras de ensacadora (lleva " . $samplingCheck['samples_count'] . "/80). Mientras no se completen las 80 muestras no se puede destarar.");
+                        $targetSamples = $samplingCheck['target_samples'] ?? 80;
+                        throw new \Exception("ALERTA: Operación Bloqueada. La orden de embarque (" . ($order->shipment_order->folio ?? $order->folio) . ") no puede destarar hasta que se hayan validado y guardado las {$targetSamples} muestras de ensacadora (lleva " . $samplingCheck['samples_count'] . "/{$targetSamples}).");
                     }
 
                     $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
@@ -2099,8 +2102,21 @@ class WeightTicketController extends Controller
                 'is_envasado' => false,
                 'is_completed' => true,
                 'samples_count' => 0,
+                'target_samples' => 80,
             ];
         }
+
+        $tons = (float) ($shipmentOrder->programmed_tons ?: 0);
+        if ($tons <= 0 && (float) ($shipmentOrder->programmed_weight ?? 0) > 0) {
+            $w = (float) $shipmentOrder->programmed_weight;
+            $tons = $w > 200 ? ($w / 1000.0) : $w;
+        }
+        $targetPerEnsacadora = 40;
+        if ($tons > 0) {
+            $perEnsacadora = (int) (2 * ceil((($tons * 40.0) / 36.0) / 2.0));
+            $targetPerEnsacadora = max(2, min(40, $perEnsacadora));
+        }
+        $targetSamples = $targetPerEnsacadora * 2;
 
         $history = \App\Models\ShipmentProcessHistory::where('shipment_order_id', $shipmentOrder->id)
             ->latest()
@@ -2132,10 +2148,11 @@ class WeightTicketController extends Controller
                 'is_envasado' => false,
                 'is_completed' => true,
                 'samples_count' => 0,
+                'target_samples' => $targetSamples,
             ];
         }
 
-        // It is Envasado: check samples count and saved completion
+        // It is Envasado: check samples count per ensacadora and saved completion
         $samples = $shipmentOrder->samples ?? [];
         if (empty($samples) && $history) {
             $samples = $history->samples ?? [];
@@ -2143,22 +2160,39 @@ class WeightTicketController extends Controller
         if (is_string($samples)) {
             $samples = json_decode($samples, true) ?: [];
         }
-        $samplesCount = is_array($samples) ? count($samples) : 0;
-        if ($history && is_array($history->samples) && count($history->samples) > $samplesCount) {
-            $samplesCount = count($history->samples);
+        if ($history && is_array($history->samples) && count($history->samples) > (is_array($samples) ? count($samples) : 0)) {
+            $samples = $history->samples;
+        }
+        $samples = is_array($samples) ? $samples : [];
+        $samplesCount = count($samples);
+        $env1Count = 0;
+        $env2Count = 0;
+        foreach ($samples as $s) {
+            if (!is_array($s)) continue;
+            $env = (int) ($s['ensacadora'] ?? $s['envasadora'] ?? 1);
+            if ($env === 2) {
+                $env2Count++;
+            } else {
+                $env1Count++;
+            }
         }
 
-        $isSavedAndCompleted = (
+        $isBlocked = (bool) ($history?->is_sampling_blocked ?? $shipmentOrder->is_sampling_blocked ?? false);
+        $isSavedAndCompleted = !$isBlocked && (
             ($shipmentOrder->sampling_status === 'completed' && !empty($shipmentOrder->sampling_completed_at)) ||
             ($history && $history->sampling_status === 'completed' && !empty($history->sampling_completed_at))
         );
 
-        $isCompleted = ($samplesCount >= 80) && $isSavedAndCompleted;
+        $isCompleted = ($env1Count >= $targetPerEnsacadora) && ($env2Count >= $targetPerEnsacadora) && $isSavedAndCompleted;
 
         return [
             'is_envasado' => true,
             'is_completed' => $isCompleted,
             'samples_count' => $samplesCount,
+            'target_samples' => $targetSamples,
+            'target_per_ensacadora' => $targetPerEnsacadora,
+            'env1_count' => $env1Count,
+            'env2_count' => $env2Count,
         ];
     }
 }
