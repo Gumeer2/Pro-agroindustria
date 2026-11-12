@@ -485,13 +485,13 @@ class SurveillanceController extends Controller
                            ->where('tractor_plate', 'like', "%{$tractorPlate}%");
                     });
                 }
-                if (!empty($tractorPlate)) {
+                if (!empty($tractorPlate) && !in_array(strtoupper($tractorPlate), ['S/P', 'N/A', 'SP', 'NA', '-'])) {
                     $q->orWhere('tractor_plate', $tractorPlate);
                 }
-                if (!empty($operatorName)) {
+                if (!empty($operatorName) && !in_array(strtoupper($operatorName), ['N/A', 'SIN ASIGNAR', '-'])) {
                     $q->orWhere('operator_name', 'like', "%{$operatorName}%");
                 }
-                if (!empty($economicNumber)) {
+                if (!empty($economicNumber) && !in_array(strtoupper($economicNumber), ['S/N', 'N/A', 'SN', 'NA', '-'])) {
                     $q->orWhere('economic_number', $economicNumber);
                 }
             })
@@ -1720,6 +1720,26 @@ class SurveillanceController extends Controller
             ->values()
             ->all();
 
+        // Check if unit is FULL to automatically link all active orders of this operator
+        $unitTypeRaw = strtoupper(trim((string) ($order->unit_type ?: ($subject->unit_type ?? ''))));
+        $isFullUnit = (bool) ($order->is_full ?? false)
+            || str_contains($unitTypeRaw, 'FULL')
+            || str_contains($unitTypeRaw, 'DOBLE');
+
+        $ordersToLinkIds = [$order->id];
+        $linkedFolios = [$order->folio ?? $order->id];
+
+        if ($isFullUnit && !empty($availableOrders)) {
+            foreach ($availableOrders as $availOrder) {
+                if (!empty($availOrder['id']) && !in_array($availOrder['id'], $ordersToLinkIds)) {
+                    $ordersToLinkIds[] = $availOrder['id'];
+                    $linkedFolios[] = $availOrder['folio'] ?? $availOrder['id'];
+                }
+            }
+            $ordersToLinkIds = array_slice($ordersToLinkIds, 0, 3);
+            $linkedFolios = array_slice($linkedFolios, 0, 3);
+        }
+
         // Format order details
         $formattedOrder = [
             'id'             => $order->id,
@@ -1767,13 +1787,14 @@ class SurveillanceController extends Controller
             ->first();
 
         $now = Carbon::now();
+        $foliosText = implode(', ', $linkedFolios);
 
         if ($existingOpLog) {
             $log = $existingOpLog;
             $existingOrderIds = $log->shipmentOrders()->pluck('shipment_orders.id')->toArray();
-            $mergedOrderIds = array_slice(array_unique(array_merge($existingOrderIds, [$order->id])), 0, 3);
+            $mergedOrderIds = array_slice(array_unique(array_merge($existingOrderIds, $ordersToLinkIds)), 0, 3);
             $log->shipmentOrders()->sync($mergedOrderIds);
-            $notes = $log->notes ? ($log->notes . " | Orden vinculada: {$order->folio}") : "Entrada registrada con orden {$order->folio}";
+            $notes = $log->notes ? ($log->notes . " | Orden(es) vinculada(s): {$foliosText}") : "Entrada registrada con orden(es) {$foliosText}";
             $log->update([
                 'entry_at' => $now,
                 'notes'    => $notes,
@@ -1787,10 +1808,10 @@ class SurveillanceController extends Controller
                 'entry_at'         => $now,
                 'checklist_passed' => true,
                 'user_id'          => auth()->id(),
-                'notes'            => "Entrada registrada mediante escaneo de orden de embarque {$order->folio}",
+                'notes'            => "Entrada registrada mediante escaneo de orden(es) de embarque {$foliosText}",
             ]);
 
-            $log->shipmentOrders()->sync([$order->id]);
+            $log->shipmentOrders()->sync($ordersToLinkIds);
         }
 
         // Clean up any other empty in-plant logs for this operator so they never appear twice
@@ -1814,10 +1835,15 @@ class SurveillanceController extends Controller
             ->whereDoesntHave('shipmentOrders')
             ->delete();
 
+        $successMessage = ($isFullUnit && count($linkedFolios) > 1)
+            ? "¡Entrada registrada exitosamente (Unidad FULL)! Se vincularon automáticamente las órdenes {$foliosText} con el operador {$subject->name}."
+            : "¡Entrada registrada exitosamente para la orden {$order->folio} con el operador {$subject->name}!";
+
         return response()->json([
             'success'          => true,
-            'message'          => "¡Entrada registrada exitosamente para la orden {$order->folio} con el operador {$subject->name}!",
+            'message'          => $successMessage,
             'order'            => $formattedOrder,
+            'linked_folios'    => $linkedFolios,
             'subject'          => $subject,
             'log'              => $log,
             'entry_at'         => $now->toDateTimeString(),

@@ -2004,6 +2004,19 @@ class DocumentationController extends Controller
             ], 409);
         }
 
+        $isEstibadoresContext = $request->boolean('is_estibadores')
+            || $this->isEstibadorUser($request->user())
+            || str_contains(strtolower((string) $request->header('referer')), 'estibadores');
+
+        if ($isEstibadoresContext) {
+            $pres = strtoupper((string) ($order->presentation ?? ''));
+            if (str_contains($pres, 'GRANEL') && !str_contains($pres, 'ENVASADO')) {
+                return response()->json([
+                    'error' => "La orden {$order->folio} es a GRANEL y no pasa por el módulo de estibadores (no se registra estiba).",
+                ], 422);
+            }
+        }
+
         return response()->json([
             'order' => $this->formatOrderForPrint($order),
             'history' => $history ? $this->formatProcessHistoryItem($history) : null,
@@ -2055,6 +2068,13 @@ class DocumentationController extends Controller
         }
 
         if ($request->boolean('from_estibadores')) {
+            $pres = strtoupper((string) ($order->presentation ?? ''));
+            if (str_contains($pres, 'GRANEL') && !str_contains($pres, 'ENVASADO')) {
+                return response()->json([
+                    'message' => "La orden {$order->folio} es a GRANEL y no pasa por el módulo de estibadores (no se registra estiba).",
+                ], 422);
+            }
+
             $incomingPlan = $request->input('stowage_plan', []);
             if (is_string($incomingPlan)) {
                 $incomingPlan = json_decode($incomingPlan, true) ?: [];
@@ -2715,6 +2735,15 @@ class DocumentationController extends Controller
             return response()->json(['message' => 'No se encontró la orden ni el registro de historial de embarque.'], 404);
         }
 
+        if ($order) {
+            $pres = strtoupper((string) ($order->presentation ?? ''));
+            if (str_contains($pres, 'GRANEL') && !str_contains($pres, 'ENVASADO')) {
+                return response()->json([
+                    'message' => "La orden {$order->folio} es a GRANEL y no pasa por el módulo de estibadores (no se registra estiba).",
+                ], 422);
+            }
+        }
+
         $existingPlan = $history?->stowage_plan ?: $order?->stowage_plan ?: [];
         if (is_string($existingPlan)) {
             $existingPlan = json_decode($existingPlan, true) ?: [];
@@ -3197,6 +3226,13 @@ class DocumentationController extends Controller
 
         foreach ($stowageOrders as $so) {
             $historyItems->push($this->formatLoadingHistoryItem($so));
+        }
+
+        if ($forEstibadores) {
+            $historyItems = $historyItems->filter(function ($item) {
+                $pres = strtoupper((string) ($item['presentation'] ?? ''));
+                return !(str_contains($pres, 'GRANEL') && !str_contains($pres, 'ENVASADO'));
+            });
         }
 
         if ($lotId) {

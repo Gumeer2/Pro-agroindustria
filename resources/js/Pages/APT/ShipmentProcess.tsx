@@ -1036,8 +1036,28 @@ export default function ShipmentProcess({
                 );
                 const targetOrder = matchedHistory ? { ...matchedHistory, ...order } : order;
 
+                const isTargetEnvasado = (() => {
+                    const pres = (targetOrder?.presentation || "").toString().toUpperCase();
+                    if (pres.includes("ENVASADO")) return true;
+                    if (pres.includes("GRANEL")) return false;
+                    const text = `${targetOrder?.product || targetOrder?.product_text || ""}`.toUpperCase();
+                    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
+                })();
+
                 // 1. Para Estibadores:
                 if (isEstibadorUser) {
+                    if (!isTargetEnvasado) {
+                        setSearchQr("");
+                        setScannedOrder(null);
+                        Swal.fire({
+                            icon: "info",
+                            title: "Orden a Granel",
+                            text: `La orden ${targetOrder.folio || ""} es a GRANEL y no pasa por el módulo de estibadores (no se registra estiba).`,
+                            confirmButtonColor: "#4f46e5",
+                        });
+                        return;
+                    }
+
                     // Si la Nota de Estiba ya tiene VoBo de Supervisión PROAGRO, abrir directamente la Toma de Muestras (Paso 3)
                     if (isVoBoApproved(targetOrder)) {
                         setSearchQr("");
@@ -1085,14 +1105,6 @@ export default function ShipmentProcess({
                 }
 
                 // 2. Si NO es Estibador (Supervisión PROAGRO en Gestión de Proceso de Embarques - APT):
-                const isTargetEnvasado = (() => {
-                    const pres = (targetOrder?.presentation || "").toString().toUpperCase();
-                    if (pres.includes("ENVASADO")) return true;
-                    if (pres.includes("GRANEL")) return false;
-                    const text = `${targetOrder?.product || targetOrder?.product_text || ""}`.toUpperCase();
-                    return text.includes("ENVASADO") || text.includes("SACO") || text.includes("25KG") || text.includes("50KG");
-                })();
-
                 if (isTargetEnvasado) {
                     setSearchQr("");
                     setScannedOrder(null);
@@ -1383,12 +1395,14 @@ export default function ShipmentProcess({
             cancelButtonText: "Cancelar",
             confirmButtonColor: "#16a34a",
             cancelButtonColor: "#6b7280",
+            customClass: { container: "!z-[999999]" },
         });
 
         if (!result.isConfirmed) return;
 
         try {
             await axios.patch(route("documentation.shipment-orders.finish-loading", id));
+            setIsSamplingModalOpen(false);
             await refreshHistory();
             Swal.fire({
                 icon: "success",
@@ -1484,8 +1498,12 @@ export default function ShipmentProcess({
             return false;
         }
 
-        // Para el módulo de Estibadores: mostrar órdenes con nota de estiba guardada o productos envasados
+        // Para el módulo de Estibadores: mostrar órdenes con nota de estiba guardada o productos envasados (excluyendo granel)
         if (isEstibadorUser) {
+            const pres = (item.presentation || "").toString().toUpperCase();
+            if (pres.includes("GRANEL") && !pres.includes("ENVASADO")) {
+                return false;
+            }
             const hasStowage = Boolean(
                 item.stowage_plan ||
                 item.stowage_plan_status === "completed" ||
@@ -2627,9 +2645,9 @@ export default function ShipmentProcess({
                                                                     ) : !isSamplingReleased(row) && samplingStatus.isCompleted ? (
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => handleFinish(row.id, row.folio)}
+                                                                            onClick={() => handleOpenSampling(row)}
                                                                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                            title="Paso 4: Liberar toma de muestras al finalizar"
+                                                                            title="Paso 4: Ver toma de muestras y liberar al finalizar"
                                                                         >
                                                                             <Unlock className="w-3 h-3" />
                                                                             <span>Liberar Muestras</span>
@@ -2808,6 +2826,17 @@ export default function ShipmentProcess({
                 onSave={async () => {
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
+                }}
+                canRelease={
+                    !isEstibadorUser &&
+                    Boolean(activeSamplingOrder) &&
+                    isRowEnvasado(activeSamplingOrder) &&
+                    isVoBoApproved(activeSamplingOrder) &&
+                    !isSamplingReleased(activeSamplingOrder)
+                }
+                onRelease={async () => {
+                    if (!activeSamplingOrder) return;
+                    await handleFinish(String(activeSamplingOrder.id), activeSamplingOrder.folio || "");
                 }}
                 onUnlockSuccess={async (newIncident) => {
                     setSamplingRevision((r) => r + 1);

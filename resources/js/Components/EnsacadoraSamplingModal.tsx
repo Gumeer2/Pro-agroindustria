@@ -129,6 +129,8 @@ interface Props {
     onOpenPrintDocuments?: (samples: SampleRecord[]) => void;
     onSave?: (samples: SampleRecord[]) => void;
     onUnlockSuccess?: (incident: any) => void;
+    canRelease?: boolean;
+    onRelease?: () => Promise<void> | void;
 }
 
 export default function EnsacadoraSamplingModal({
@@ -140,6 +142,8 @@ export default function EnsacadoraSamplingModal({
     onOpenPrintDocuments,
     onSave,
     onUnlockSuccess,
+    canRelease = false,
+    onRelease,
 }: Props) {
     const [selectedEnsacadora, setSelectedEnsacadora] = useState<1 | 2>(1);
     const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
@@ -2310,6 +2314,17 @@ export default function EnsacadoraSamplingModal({
                                                 </>
                                             )}
                                         </button>
+                                        {canRelease && onRelease && samples.length >= maxSamples && !isBlocked && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onRelease()}
+                                                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-md shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95 ring-2 ring-emerald-400/40 cursor-pointer"
+                                                title="Liberar toma de muestras y finalizar el proceso"
+                                            >
+                                                <Unlock className="w-4 h-4" />
+                                                <span>Liberar Muestras</span>
+                                            </button>
+                                        )}
                                         {onOpenPrintDocuments && (
                                             <button
                                                 type="button"
