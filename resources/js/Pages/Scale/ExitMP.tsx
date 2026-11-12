@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, useForm, router, Link } from "@inertiajs/react";
 import {
@@ -28,6 +28,81 @@ import { useScale } from "@/Contexts/ScaleContext";
 import ReferenceDropdown from "@/Components/ReferenceDropdown";
 import ActiveScaleIndicator from "@/Components/ActiveScaleIndicator";
 import ScaleModal from "@/Components/ScaleModal";
+
+interface ToleranceRow {
+    programmedTons: number;
+    pesoIdealKg: number;
+    pesoLimiteInferiorKg: number;
+    pesoLimiteSuperiorKg: number;
+    redondeadoInferiorKg: number;
+    redondeadoSuperiorKg: number;
+}
+
+// GUIA PARA TOLERANCIA DE PESOS DE SACOS DE 25 KG (Oficial Almacenes de Producto Terminado)
+const TOLERANCE_TABLE_25KG: Record<number, ToleranceRow> = {
+    8:  { programmedTons: 8,  pesoIdealKg: 8026,  pesoLimiteInferiorKg: 8006,  pesoLimiteSuperiorKg: 8046,  redondeadoInferiorKg: 8000,  redondeadoSuperiorKg: 8050 },
+    20: { programmedTons: 20, pesoIdealKg: 20064, pesoLimiteInferiorKg: 20044, pesoLimiteSuperiorKg: 20084, redondeadoInferiorKg: 20040, redondeadoSuperiorKg: 20080 },
+    21: { programmedTons: 21, pesoIdealKg: 21067, pesoLimiteInferiorKg: 21047, pesoLimiteSuperiorKg: 21087, redondeadoInferiorKg: 21050, redondeadoSuperiorKg: 21090 },
+    22: { programmedTons: 22, pesoIdealKg: 22070, pesoLimiteInferiorKg: 22050, pesoLimiteSuperiorKg: 22090, redondeadoInferiorKg: 22050, redondeadoSuperiorKg: 22090 },
+    23: { programmedTons: 23, pesoIdealKg: 23074, pesoLimiteInferiorKg: 23054, pesoLimiteSuperiorKg: 23094, redondeadoInferiorKg: 23050, redondeadoSuperiorKg: 23090 },
+    24: { programmedTons: 24, pesoIdealKg: 24077, pesoLimiteInferiorKg: 24057, pesoLimiteSuperiorKg: 24097, redondeadoInferiorKg: 24060, redondeadoSuperiorKg: 24100 },
+    25: { programmedTons: 25, pesoIdealKg: 25080, pesoLimiteInferiorKg: 25060, pesoLimiteSuperiorKg: 25100, redondeadoInferiorKg: 25060, redondeadoSuperiorKg: 25100 },
+    26: { programmedTons: 26, pesoIdealKg: 26083, pesoLimiteInferiorKg: 26063, pesoLimiteSuperiorKg: 26103, redondeadoInferiorKg: 26060, redondeadoSuperiorKg: 26100 },
+    27: { programmedTons: 27, pesoIdealKg: 27086, pesoLimiteInferiorKg: 27066, pesoLimiteSuperiorKg: 27106, redondeadoInferiorKg: 27070, redondeadoSuperiorKg: 27110 },
+    28: { programmedTons: 28, pesoIdealKg: 28090, pesoLimiteInferiorKg: 28070, pesoLimiteSuperiorKg: 28110, redondeadoInferiorKg: 28070, redondeadoSuperiorKg: 28110 },
+    29: { programmedTons: 29, pesoIdealKg: 29093, pesoLimiteInferiorKg: 29073, pesoLimiteSuperiorKg: 29113, redondeadoInferiorKg: 29070, redondeadoSuperiorKg: 29110 },
+    30: { programmedTons: 30, pesoIdealKg: 30096, pesoLimiteInferiorKg: 30076, pesoLimiteSuperiorKg: 30116, redondeadoInferiorKg: 30080, redondeadoSuperiorKg: 30120 },
+    31: { programmedTons: 31, pesoIdealKg: 31099, pesoLimiteInferiorKg: 31079, pesoLimiteSuperiorKg: 31119, redondeadoInferiorKg: 31080, redondeadoSuperiorKg: 31120 },
+    32: { programmedTons: 32, pesoIdealKg: 32102, pesoLimiteInferiorKg: 32082, pesoLimiteSuperiorKg: 32122, redondeadoInferiorKg: 32080, redondeadoSuperiorKg: 32120 },
+    33: { programmedTons: 33, pesoIdealKg: 33106, pesoLimiteInferiorKg: 33086, pesoLimiteSuperiorKg: 33126, redondeadoInferiorKg: 33090, redondeadoSuperiorKg: 33130 },
+    34: { programmedTons: 34, pesoIdealKg: 34109, pesoLimiteInferiorKg: 34089, pesoLimiteSuperiorKg: 34129, redondeadoInferiorKg: 34090, redondeadoSuperiorKg: 34130 },
+    35: { programmedTons: 35, pesoIdealKg: 35112, pesoLimiteInferiorKg: 35092, pesoLimiteSuperiorKg: 35132, redondeadoInferiorKg: 35090, redondeadoSuperiorKg: 35130 },
+    36: { programmedTons: 36, pesoIdealKg: 36115, pesoLimiteInferiorKg: 36095, pesoLimiteSuperiorKg: 36135, redondeadoInferiorKg: 36100, redondeadoSuperiorKg: 36140 },
+};
+
+// GUIA PARA TOLERANCIA DE PESOS DE SACOS DE 50 KG (Oficial Almacenes de Producto Terminado)
+const TOLERANCE_TABLE_50KG: Record<number, ToleranceRow> = {
+    8:  { programmedTons: 8,  pesoIdealKg: 8019,  pesoLimiteInferiorKg: 7999,  pesoLimiteSuperiorKg: 8039,  redondeadoInferiorKg: 8000,  redondeadoSuperiorKg: 8040 },
+    20: { programmedTons: 20, pesoIdealKg: 20048, pesoLimiteInferiorKg: 20028, pesoLimiteSuperiorKg: 20068, redondeadoInferiorKg: 20030, redondeadoSuperiorKg: 20070 },
+    21: { programmedTons: 21, pesoIdealKg: 21050, pesoLimiteInferiorKg: 21030, pesoLimiteSuperiorKg: 21070, redondeadoInferiorKg: 21030, redondeadoSuperiorKg: 21070 },
+    22: { programmedTons: 22, pesoIdealKg: 22053, pesoLimiteInferiorKg: 22033, pesoLimiteSuperiorKg: 22073, redondeadoInferiorKg: 22030, redondeadoSuperiorKg: 22070 },
+    23: { programmedTons: 23, pesoIdealKg: 23055, pesoLimiteInferiorKg: 23035, pesoLimiteSuperiorKg: 23075, redondeadoInferiorKg: 23040, redondeadoSuperiorKg: 23080 },
+    24: { programmedTons: 24, pesoIdealKg: 24058, pesoLimiteInferiorKg: 24038, pesoLimiteSuperiorKg: 24078, redondeadoInferiorKg: 24040, redondeadoSuperiorKg: 24080 },
+    25: { programmedTons: 25, pesoIdealKg: 25060, pesoLimiteInferiorKg: 25040, pesoLimiteSuperiorKg: 25080, redondeadoInferiorKg: 25040, redondeadoSuperiorKg: 25080 },
+    26: { programmedTons: 26, pesoIdealKg: 26062, pesoLimiteInferiorKg: 26042, pesoLimiteSuperiorKg: 26082, redondeadoInferiorKg: 26040, redondeadoSuperiorKg: 26080 },
+    27: { programmedTons: 27, pesoIdealKg: 27065, pesoLimiteInferiorKg: 27045, pesoLimiteSuperiorKg: 27085, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
+    28: { programmedTons: 28, pesoIdealKg: 28067, pesoLimiteInferiorKg: 28047, pesoLimiteSuperiorKg: 28087, redondeadoInferiorKg: 28050, redondeadoSuperiorKg: 28090 },
+    29: { programmedTons: 29, pesoIdealKg: 29070, pesoLimiteInferiorKg: 29050, pesoLimiteSuperiorKg: 29090, redondeadoInferiorKg: 29050, redondeadoSuperiorKg: 29090 },
+    30: { programmedTons: 30, pesoIdealKg: 30072, pesoLimiteInferiorKg: 30052, pesoLimiteSuperiorKg: 30092, redondeadoInferiorKg: 30050, redondeadoSuperiorKg: 30090 },
+    31: { programmedTons: 31, pesoIdealKg: 31074, pesoLimiteInferiorKg: 31054, pesoLimiteSuperiorKg: 31094, redondeadoInferiorKg: 31050, redondeadoSuperiorKg: 31090 },
+    32: { programmedTons: 32, pesoIdealKg: 32077, pesoLimiteInferiorKg: 32057, pesoLimiteSuperiorKg: 32097, redondeadoInferiorKg: 32060, redondeadoSuperiorKg: 32100 },
+    33: { programmedTons: 33, pesoIdealKg: 33079, pesoLimiteInferiorKg: 33059, pesoLimiteSuperiorKg: 33099, redondeadoInferiorKg: 33060, redondeadoSuperiorKg: 33100 },
+    34: { programmedTons: 34, pesoIdealKg: 34082, pesoLimiteInferiorKg: 34062, pesoLimiteSuperiorKg: 34102, redondeadoInferiorKg: 34060, redondeadoSuperiorKg: 34100 },
+    35: { programmedTons: 35, pesoIdealKg: 35084, pesoLimiteInferiorKg: 35064, pesoLimiteSuperiorKg: 35104, redondeadoInferiorKg: 35060, redondeadoSuperiorKg: 35100 },
+    36: { programmedTons: 36, pesoIdealKg: 36086, pesoLimiteInferiorKg: 36066, pesoLimiteSuperiorKg: 36106, redondeadoInferiorKg: 36070, redondeadoSuperiorKg: 36110 },
+};
+
+// GUIA PARA TOLERANCIA DE PESOS DE SACOS DE 1000 KG (Oficial Almacenes de Producto Terminado)
+const TOLERANCE_TABLE_1000KG: Record<number, ToleranceRow> = {
+    8:  { programmedTons: 8,  pesoIdealKg: 8020,  pesoLimiteInferiorKg: 8000,  pesoLimiteSuperiorKg: 8040,  redondeadoInferiorKg: 8000,  redondeadoSuperiorKg: 8040 },
+    20: { programmedTons: 20, pesoIdealKg: 20050, pesoLimiteInferiorKg: 20030, pesoLimiteSuperiorKg: 20070, redondeadoInferiorKg: 20030, redondeadoSuperiorKg: 20070 },
+    21: { programmedTons: 21, pesoIdealKg: 21053, pesoLimiteInferiorKg: 21033, pesoLimiteSuperiorKg: 21073, redondeadoInferiorKg: 21030, redondeadoSuperiorKg: 21070 },
+    22: { programmedTons: 22, pesoIdealKg: 22055, pesoLimiteInferiorKg: 22035, pesoLimiteSuperiorKg: 22075, redondeadoInferiorKg: 22040, redondeadoSuperiorKg: 22080 },
+    23: { programmedTons: 23, pesoIdealKg: 23058, pesoLimiteInferiorKg: 23038, pesoLimiteSuperiorKg: 23078, redondeadoInferiorKg: 23040, redondeadoSuperiorKg: 23080 },
+    24: { programmedTons: 24, pesoIdealKg: 24060, pesoLimiteInferiorKg: 24040, pesoLimiteSuperiorKg: 24080, redondeadoInferiorKg: 24040, redondeadoSuperiorKg: 24080 },
+    25: { programmedTons: 25, pesoIdealKg: 25063, pesoLimiteInferiorKg: 25043, pesoLimiteSuperiorKg: 25083, redondeadoInferiorKg: 25040, redondeadoSuperiorKg: 25080 },
+    26: { programmedTons: 26, pesoIdealKg: 26065, pesoLimiteInferiorKg: 26045, pesoLimiteSuperiorKg: 26085, redondeadoInferiorKg: 26050, redondeadoSuperiorKg: 26080 },
+    27: { programmedTons: 27, pesoIdealKg: 27068, pesoLimiteInferiorKg: 27048, pesoLimiteSuperiorKg: 27088, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
+    28: { programmedTons: 28, pesoIdealKg: 28070, pesoLimiteInferiorKg: 28050, pesoLimiteSuperiorKg: 28090, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
+    29: { programmedTons: 29, pesoIdealKg: 29073, pesoLimiteInferiorKg: 29053, pesoLimiteSuperiorKg: 29093, redondeadoInferiorKg: 27050, redondeadoSuperiorKg: 27090 },
+    30: { programmedTons: 30, pesoIdealKg: 30075, pesoLimiteInferiorKg: 30055, pesoLimiteSuperiorKg: 30095, redondeadoInferiorKg: 30060, redondeadoSuperiorKg: 30100 },
+    31: { programmedTons: 31, pesoIdealKg: 31078, pesoLimiteInferiorKg: 31058, pesoLimiteSuperiorKg: 31098, redondeadoInferiorKg: 31060, redondeadoSuperiorKg: 31100 },
+    32: { programmedTons: 32, pesoIdealKg: 32080, pesoLimiteInferiorKg: 32060, pesoLimiteSuperiorKg: 32100, redondeadoInferiorKg: 32060, redondeadoSuperiorKg: 32100 },
+    33: { programmedTons: 33, pesoIdealKg: 33083, pesoLimiteInferiorKg: 33063, pesoLimiteSuperiorKg: 33103, redondeadoInferiorKg: 33060, redondeadoSuperiorKg: 33100 },
+    34: { programmedTons: 34, pesoIdealKg: 34085, pesoLimiteInferiorKg: 34065, pesoLimiteSuperiorKg: 34105, redondeadoInferiorKg: 34070, redondeadoSuperiorKg: 34110 },
+    35: { programmedTons: 35, pesoIdealKg: 35088, pesoLimiteInferiorKg: 35068, pesoLimiteSuperiorKg: 35108, redondeadoInferiorKg: 35070, redondeadoSuperiorKg: 35110 },
+    36: { programmedTons: 36, pesoIdealKg: 36090, pesoLimiteInferiorKg: 36070, pesoLimiteSuperiorKg: 36110, redondeadoInferiorKg: 36070, redondeadoSuperiorKg: 36110 },
+};
 
 export default function ExitMP({
     auth,
@@ -165,10 +240,6 @@ export default function ExitMP({
         }
     }, [errors]);
 
-    const handleCapture = () => {
-        setCapturedWeight(weight);
-    };
-
     // Cleanup logic handled globally by ScaleContext
 
     const handleSerialConnect = async () => {
@@ -183,14 +254,130 @@ export default function ExitMP({
         }
     };
 
-    const submit = (e: React.FormEvent) => {
+    const toleranceLimits = useMemo(() => {
+        if (!order) return null;
+
+        const progWeightRaw = parseFloat(order.programmed_weight || order.programmed_tons) || 0;
+        if (progWeightRaw <= 0) return null;
+
+        // Si el peso programado está en TM (< 100) o tipo sale, convertir a kg
+        const progKg = (order.type === 'sale' || progWeightRaw < 100)
+            ? progWeightRaw * 1000
+            : progWeightRaw;
+
+        const tons = Math.max(1, Math.round(progKg / 1000));
+        const presentation = (order.presentation || "").toUpperCase();
+        const productText = `${order.product || ""} ${order.packaging_type || ""}`.toUpperCase();
+
+        if (presentation === "ENVASADO") {
+            let sackSize: 25 | 50 | 1000 = 25;
+            if (productText.includes("1000") || productText.includes("1,000") || productText.includes("BIG") || productText.includes("TONELADA")) {
+                sackSize = 1000;
+            } else if (productText.includes("50")) {
+                sackSize = 50;
+            }
+
+            const sackTara = sackSize === 1000 ? 2.5 : (sackSize === 50 ? 0.12 : 0.08);
+            const idealSack = sackSize + sackTara;
+            const sacks = Math.round(progKg / sackSize);
+
+            // Búsqueda en tablas oficiales
+            const table = sackSize === 1000 ? TOLERANCE_TABLE_1000KG : (sackSize === 50 ? TOLERANCE_TABLE_50KG : TOLERANCE_TABLE_25KG);
+            const row = table[tons];
+
+            let minKg = row ? row.redondeadoInferiorKg : 0;
+            let maxKg = row ? row.redondeadoSuperiorKg : 0;
+            let idealKg = row ? row.pesoIdealKg : (sacks * idealSack);
+
+            if (!minKg || !maxKg) {
+                // Cálculo dinámico para cualquier tonelaje
+                const totalIdeal = sacks * idealSack;
+                const inf = totalIdeal - 20; // incertidumbre báscula +-20kg
+                const sup = totalIdeal + 20;
+                minKg = Math.floor(inf / 10) * 10;
+                maxKg = Math.ceil(sup / 10) * 10;
+                idealKg = totalIdeal;
+            }
+
+            return {
+                minKg,
+                maxKg,
+                idealKg,
+                progKg,
+                isEnvasado: true,
+                sackSize,
+            };
+        } else {
+            // GRANEL u otra presentación: +- 1% o +- 50 kg de tolerancia estándar
+            const margin = Math.max(50, progKg * 0.01);
+            return {
+                minKg: Math.round(progKg - margin),
+                maxKg: Math.round(progKg + margin),
+                idealKg: progKg,
+                progKg,
+                isEnvasado: false,
+                sackSize: null,
+            };
+        }
+    }, [order]);
+
+    const handleCapture = async () => {
+        if (weight <= 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Atención',
+                text: 'El peso de salida debe ser mayor a 0 para poder capturar.',
+                confirmButtonColor: '#4f46e5',
+            });
+            return;
+        }
+
+        // --- ALERTA: Si el peso está fuera del límite de rango al presionar Capturar ---
+        if (toleranceLimits) {
+            const currentNet = Math.abs(weight - (parseFloat(order?.entry_weight) || 0));
+            const isOutOfRange = currentNet < toleranceLimits.minKg || currentNet > toleranceLimits.maxKg;
+
+            if (isOutOfRange) {
+                const diffText = currentNet < toleranceLimits.minKg
+                    ? `Faltan ${(toleranceLimits.minKg - currentNet).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg para el límite inferior`
+                    : `Excede por ${(currentNet - toleranceLimits.maxKg).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg el límite superior`;
+
+                const result = await Swal.fire({
+                    icon: 'warning',
+                    title: '¡Alerta: Peso Fuera de Rango!',
+                    html: `
+                        <div style="text-align: left; font-size: 0.9rem;">
+                            <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 0.75rem; padding: 0.75rem; font-family: monospace; font-size: 0.8rem; line-height: 1.5; color: #78350f;">
+                                <div><b>Peso Neto a Capturar:</b> <span style="color: #dc2626; font-weight: bold;">${currentNet.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</span> (${(currentNet / 1000).toFixed(3)} TM)</div>
+                                <div><b>Rango Permitido:</b> <span style="color: #047857; font-weight: bold;">${toleranceLimits.minKg.toLocaleString('es-MX')} kg - ${toleranceLimits.maxKg.toLocaleString('es-MX')} kg</span> (${(toleranceLimits.minKg / 1000).toFixed(3)} - ${(toleranceLimits.maxKg / 1000).toFixed(3)} TM)</div>
+                                <div><b>Diferencia:</b> <span style="font-weight: bold;">${diffText}</span></div>
+                            </div>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, continuar y capturar',
+                    cancelButtonText: 'Cancelar / Verificar',
+                    confirmButtonColor: '#4f46e5',
+                    cancelButtonColor: '#6b7280',
+                });
+
+                if (!result.isConfirmed) {
+                    return;
+                }
+            }
+        }
+
+        setCapturedWeight(weight);
+    };
+
+    const submit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         if ((capturedWeight || 0) <= 0) {
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'El peso de salida no puede ser 0.',
+                text: 'Debe capturar el peso de salida antes de continuar.',
             });
             return;
         }

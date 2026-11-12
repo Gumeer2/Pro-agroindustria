@@ -699,6 +699,14 @@ export default function Create({
         const errorsMap: Record<string, string> = {};
 
         // 1. Información General & Cliente
+        if (!data.folio || !data.folio.trim()) {
+            missing.push("Folio O.E.");
+            errorsMap.folio = "El folio es obligatorio";
+        }
+        if (!data.date) {
+            missing.push("Fecha");
+            errorsMap.date = "La fecha es obligatoria";
+        }
         if (!data.sales_order_id) {
             missing.push("Vincular a Orden de Venta (OV)");
             errorsMap.sales_order_id = "Seleccione una Orden de Venta";
@@ -778,6 +786,12 @@ export default function Create({
         if (!data.state || !data.state.trim()) {
             missing.push("Estado");
             errorsMap.state = "Seleccione el estado de destino";
+        }
+
+        // 4. Báscula
+        if (!data.scale_operator_id) {
+            missing.push("Báscula");
+            errorsMap.scale_operator_id = "Debe seleccionar un operador de báscula";
         }
 
         return {
@@ -1713,26 +1727,41 @@ export default function Create({
                                 <div className="text-gray-500 text-sm italic whitespace-nowrap">
                                     Documentador: <span className="font-bold text-indigo-600">{data.documenter_name}</span>
                                 </div>
-                                <div className="flex items-center gap-3 bg-indigo-50/50 px-3 py-1.5 rounded-lg border border-indigo-100 w-full sm:w-auto">
-                                    <label className="text-gray-600 text-xs font-bold uppercase tracking-wider whitespace-nowrap">BÁSCULA:</label>
-                                    <select
-                                        value={data.scale_operator_id}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            const selectedOp = scale_operators?.find((op: { id: number; name: string }) => op.id.toString() === val);
-                                            setData((prev) => ({
-                                                ...prev,
-                                                scale_operator_id: val,
-                                                scale_name: selectedOp ? selectedOp.name : "",
-                                            }));
-                                        }}
-                                        className="text-xs p-1.5 border-none bg-transparent focus:ring-0 font-bold text-indigo-700 cursor-pointer min-w-[150px] flex-1"
-                                    >
-                                        <option value="">-- SELECCIONAR --</option>
-                                        {scale_operators?.map((op: { id: number; name: string }) => (
-                                            <option key={op.id} value={op.id}>{op.name.toUpperCase()}</option>
-                                        ))}
-                                    </select>
+                                <div className="flex flex-col">
+                                    <div className={`flex items-center gap-3 px-3 py-1.5 rounded-lg border transition-all ${
+                                        (clientErrors.scale_operator_id || errors.scale_operator_id)
+                                            ? 'bg-red-50 border-red-500 ring-2 ring-red-500'
+                                            : 'bg-indigo-50/50 border-indigo-100'
+                                    } w-full sm:w-auto`}>
+                                        <label className="text-gray-700 text-xs font-bold uppercase tracking-wider whitespace-nowrap flex items-center gap-1">
+                                            BÁSCULA: <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            name="scale_operator_id"
+                                            value={data.scale_operator_id}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const selectedOp = scale_operators?.find((op: { id: number; name: string }) => op.id.toString() === val);
+                                                setData((prev) => ({
+                                                    ...prev,
+                                                    scale_operator_id: val,
+                                                    scale_name: selectedOp ? selectedOp.name : "",
+                                                }));
+                                                clearClientError("scale_operator_id");
+                                            }}
+                                            className="text-xs p-1.5 border-none bg-transparent focus:ring-0 font-bold text-indigo-700 cursor-pointer min-w-[150px] flex-1"
+                                        >
+                                            <option value="">-- SELECCIONAR --</option>
+                                            {scale_operators?.map((op: { id: number; name: string }) => (
+                                                <option key={op.id} value={op.id}>{op.name.toUpperCase()}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {(clientErrors.scale_operator_id || errors.scale_operator_id) && (
+                                        <span className="text-xs text-red-500 mt-1 font-bold">
+                                            {clientErrors.scale_operator_id || errors.scale_operator_id}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                             <div className="w-full md:w-auto flex justify-end">

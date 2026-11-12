@@ -160,7 +160,10 @@ class DocumentationController extends Controller
             'scale_name' => 'nullable|string',
             'observations' => 'nullable|string',
             'state' => 'required|string',
-            'scale_operator_id' => 'nullable|exists:users,id',
+            'scale_operator_id' => 'required|exists:users,id',
+        ], [
+            'scale_operator_id.required' => 'Debe seleccionar un operador de báscula.',
+            'scale_operator_id.exists' => 'El operador de báscula seleccionado no es válido.',
         ]);
 
         if (empty($validated['destination_id']) && empty($validated['destination'])) {
@@ -1153,7 +1156,10 @@ class DocumentationController extends Controller
             'state' => 'required|string',
             // Allow Operator/Unit IDs to be updated if re-selected
             'operator_id' => 'nullable',
-            'scale_operator_id' => 'nullable|exists:users,id',
+            'scale_operator_id' => 'required|exists:users,id',
+        ], [
+            'scale_operator_id.required' => 'Debe seleccionar un operador de báscula.',
+            'scale_operator_id.exists' => 'El operador de báscula seleccionado no es válido.',
         ]);
 
         if (empty($validated['destination_id']) && empty($validated['destination'])) {

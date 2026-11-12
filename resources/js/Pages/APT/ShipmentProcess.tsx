@@ -2609,26 +2609,28 @@ export default function ShipmentProcess({
                                                     <div className="flex items-center justify-center gap-1 flex-nowrap">
                                                         {samplingStatus.isEnvasado ? (
                                                             <>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleOpenStowagePlan(row)}
-                                                                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
-                                                                    title="Revisar Nota de Estiba (GLS-AP-FO-002)"
-                                                                >
-                                                                    <FileSpreadsheet className="w-3 h-3 text-emerald-700" />
-                                                                    <span>Nota Estiba</span>
-                                                                </button>
-
                                                                 {!isVoBoApproved(row) && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleApproveVoBo(row)}
-                                                                        className="bg-green-600 hover:bg-green-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
-                                                                        title="Paso 2: Dar visto bueno (VoBo) a la Nota de Estiba para habilitar la toma de muestras"
-                                                                    >
-                                                                        <CheckCircle2 className="w-3 h-3" />
-                                                                        <span>VoBo</span>
-                                                                    </button>
+                                                                    <>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenStowagePlan(row)}
+                                                                            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                            title="Revisar Nota de Estiba (GLS-AP-FO-002)"
+                                                                        >
+                                                                            <FileSpreadsheet className="w-3 h-3 text-emerald-700" />
+                                                                            <span>Nota Estiba</span>
+                                                                        </button>
+
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleApproveVoBo(row)}
+                                                                            className="bg-green-600 hover:bg-green-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                            title="Paso 2: Dar visto bueno (VoBo) a la Nota de Estiba para habilitar la toma de muestras"
+                                                                        >
+                                                                            <CheckCircle2 className="w-3 h-3" />
+                                                                            <span>VoBo</span>
+                                                                        </button>
+                                                                    </>
                                                                 )}
 
                                                                 {isVoBoApproved(row) && (
@@ -2827,6 +2829,7 @@ export default function ShipmentProcess({
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
                 }}
+                hideSaveButton={!isEstibadorUser}
                 canRelease={
                     !isEstibadorUser &&
                     Boolean(activeSamplingOrder) &&

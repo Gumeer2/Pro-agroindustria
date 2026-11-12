@@ -131,6 +131,7 @@ interface Props {
     onUnlockSuccess?: (incident: any) => void;
     canRelease?: boolean;
     onRelease?: () => Promise<void> | void;
+    hideSaveButton?: boolean;
 }
 
 export default function EnsacadoraSamplingModal({
@@ -144,6 +145,7 @@ export default function EnsacadoraSamplingModal({
     onUnlockSuccess,
     canRelease = false,
     onRelease,
+    hideSaveButton = false,
 }: Props) {
     const [selectedEnsacadora, setSelectedEnsacadora] = useState<1 | 2>(1);
     const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
@@ -2279,41 +2281,43 @@ export default function EnsacadoraSamplingModal({
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2 w-full sm:w-auto">
-                                        <button
-                                            type="button"
-                                            onClick={handleSave}
-                                            className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-sm font-bold shadow-md transition flex items-center justify-center gap-2 ${
-                                                samples.length >= maxSamples
-                                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 active:scale-95 ring-2 ring-emerald-400/40 cursor-pointer"
-                                                    : isLocked
-                                                    ? "bg-emerald-700 hover:bg-emerald-800 text-white shadow-emerald-700/30 active:scale-95 cursor-pointer"
-                                                    : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30 active:scale-95 cursor-pointer"
-                                            }`}
-                                            title={
-                                                samples.length >= maxSamples
-                                                    ? `Guardar y certificar las ${maxSamples} muestras en historial`
-                                                    : isLocked
-                                                    ? "Muestreo finalizado y guardado - Salir"
-                                                    : `Guardar avance (${samples.length}/${maxSamples} muestras) y salir`
-                                            }
-                                        >
-                                            {isLocked ? (
-                                                <>
-                                                    <CheckCircle2 className="w-4 h-4 text-white" />
-                                                    <span>Guardado ({maxSamples}/{maxSamples}) - Salir</span>
-                                                </>
-                                            ) : samples.length >= maxSamples ? (
-                                                <>
-                                                    <CheckCircle2 className="w-4 h-4 text-white" />
-                                                    <span>Guardar Muestreo Final ({maxSamples}/{maxSamples})</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Save className="w-4 h-4 text-white" />
-                                                    <span>Guardar Avance ({samples.length}/{maxSamples}) y Salir</span>
-                                                </>
-                                            )}
-                                        </button>
+                                        {!hideSaveButton && (
+                                            <button
+                                                type="button"
+                                                onClick={handleSave}
+                                                className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-sm font-bold shadow-md transition flex items-center justify-center gap-2 ${
+                                                    samples.length >= maxSamples
+                                                        ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 active:scale-95 ring-2 ring-emerald-400/40 cursor-pointer"
+                                                        : isLocked
+                                                        ? "bg-emerald-700 hover:bg-emerald-800 text-white shadow-emerald-700/30 active:scale-95 cursor-pointer"
+                                                        : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30 active:scale-95 cursor-pointer"
+                                                }`}
+                                                title={
+                                                    samples.length >= maxSamples
+                                                        ? `Guardar y certificar las ${maxSamples} muestras en historial`
+                                                        : isLocked
+                                                        ? "Muestreo finalizado y guardado - Salir"
+                                                        : `Guardar avance (${samples.length}/${maxSamples} muestras) y salir`
+                                                }
+                                            >
+                                                {isLocked ? (
+                                                    <>
+                                                        <CheckCircle2 className="w-4 h-4 text-white" />
+                                                        <span>Guardado ({maxSamples}/{maxSamples}) - Salir</span>
+                                                    </>
+                                                ) : samples.length >= maxSamples ? (
+                                                    <>
+                                                        <CheckCircle2 className="w-4 h-4 text-white" />
+                                                        <span>Guardar Muestreo Final ({maxSamples}/{maxSamples})</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Save className="w-4 h-4 text-white" />
+                                                        <span>Guardar Avance ({samples.length}/{maxSamples}) y Salir</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        )}
                                         {canRelease && onRelease && samples.length >= maxSamples && !isBlocked && (
                                             <button
                                                 type="button"
@@ -2323,16 +2327,6 @@ export default function EnsacadoraSamplingModal({
                                             >
                                                 <Unlock className="w-4 h-4" />
                                                 <span>Liberar Muestras</span>
-                                            </button>
-                                        )}
-                                        {onOpenPrintDocuments && (
-                                            <button
-                                                type="button"
-                                                onClick={() => onOpenPrintDocuments(samples)}
-                                                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-md shadow-indigo-600/20 transition flex items-center justify-center gap-2"
-                                            >
-                                                <Printer className="w-4 h-4" />
-                                                <span>Ver / Imprimir Documentos PDF</span>
                                             </button>
                                         )}
                                     </div>

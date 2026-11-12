@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 // @ts-ignore
 import { pickBy } from "lodash";
+import Swal from "sweetalert2";
 
 interface Operator {
     id: number;
@@ -317,9 +318,20 @@ export default function Index({
 
                                                 <button
                                                     onClick={() => {
-                                                        if (confirm("¿Estás seguro de que deseas eliminar este operador? Esta acción no se puede deshacer.")) {
-                                                            router.delete(route("documentation.operators.destroy", operator.id));
-                                                        }
+                                                        Swal.fire({
+                                                            title: '¿Eliminar Operador?',
+                                                            text: '¿Estás seguro de que deseas eliminar este operador? Esta acción no se puede deshacer.',
+                                                            icon: 'warning',
+                                                            showCancelButton: true,
+                                                            confirmButtonColor: '#ef4444',
+                                                            cancelButtonColor: '#6b7280',
+                                                            confirmButtonText: 'Sí, eliminar',
+                                                            cancelButtonText: 'Cancelar',
+                                                        }).then((result) => {
+                                                            if (result.isConfirmed) {
+                                                                router.delete(route("documentation.operators.destroy", operator.id));
+                                                            }
+                                                        });
                                                     }}
                                                     className="inline-flex items-center text-red-600 hover:text-red-900 bg-red-50 p-2 rounded-md hover:bg-red-100 transition-colors ml-2"
                                                     title="Eliminar Operador"
