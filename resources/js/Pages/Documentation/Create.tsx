@@ -185,6 +185,7 @@ export default function Create({
 
     const [queryClient, setQueryClient] = useState("");
     const [qrInput, setQrInput] = useState(""); // Replaces queryOperator
+    const [selectedOperator, setSelectedOperator] = useState<any>(null);
     const [operatorAssignments, setOperatorAssignments] = useState<any[]>([]);
     const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | number>("");
     const [showQrScanner, setShowQrScanner] = useState(false);
@@ -307,15 +308,79 @@ export default function Create({
                 return;
             }
 
+            // Validar si la unidad ya tiene todas sus asignaciones documentadas (SOLO APLICA SI ES FULL POR TIPO DE UNIDAD)
+            const isFullUnit = Boolean(
+                selectedOperator.unit_type && selectedOperator.unit_type.toUpperCase().includes('FULL')
+            );
+
+            const hasAssignments = Boolean(selectedOperator.assignments && selectedOperator.assignments.length > 0);
+            const allAssignmentsDocumented = isFullUnit && hasAssignments && selectedOperator.assignments.every((a: any) => a.is_documented);
+
+            if (isFullUnit && (selectedOperator.all_documented || allAssignmentsDocumented)) {
+                const folios = (selectedOperator.documented_folios && selectedOperator.documented_folios.length > 0)
+                    ? selectedOperator.documented_folios.join(", ")
+                    : (selectedOperator.assignments ? selectedOperator.assignments.map((a: any) => a.documented_folio).filter(Boolean).join(", ") : "");
+                const foliosText = folios ? ` (Folios OE: <strong>${folios}</strong>)` : "";
+
+                Swal.fire({
+                    icon: "warning",
+                    title: '<span style="font-size:22px; font-weight:800; color:#b45309;">Asignación Ya Documentada</span>',
+                    html: `
+                        <div style="text-align:left; color:#1f2937; font-size:15px; line-height:1.5;">
+                            <p>El operador <strong>${selectedOperator.operator_name}</strong> ya cuenta con todas sus asignaciones documentadas con Orden de Embarque${foliosText}.</p>
+                            <p style="margin-top:12px; color:#92400e; font-size:14px; background:#fffbeb; padding:10px; border-radius:8px; border:1px solid #fef3c7;">
+                                ⚠️ <strong>No se puede documentar de nuevo esta unidad</strong> a menos que se le registre una nueva asignación pendiente en el sistema.
+                            </p>
+                        </div>
+                    `,
+                    confirmButtonText: "Entendido",
+                    confirmButtonColor: "#4f46e5",
+                    backdrop: "rgba(15, 23, 42, 0.45)",
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                });
+
+                setData((prev) => ({
+                    ...prev,
+                    operator_id: "",
+                    operator_name: "",
+                    transport_company: "",
+                    unit_type: "",
+                    tractor_plate: "",
+                    trailer_plate: "",
+                    economic_number: "",
+                    unit_number: "",
+                    license_number: "",
+                    sales_order_id: "",
+                    client_id: "",
+                    client_name: "",
+                    rfc: "",
+                    address: "",
+                    product: "",
+                    balance: "0",
+                    assignment_id: "",
+                    observations: "",
+                    presentation: "GRANEL",
+                    sack_type: "",
+                    programmed_tons: "",
+                }));
+                setOperatorAssignments([]);
+                setSelectedAssignmentId("");
+                setSelectedOperator(null);
+                return;
+            }
+
             handleOperatorSelect(selectedOperator);
 
-            // Aviso conciso, con letras más grandes y que no se cierra hasta hacer clic en "Entendido"
-            if (selectedOperator.assignments && selectedOperator.assignments.length > 1) {
+            // Aviso conciso de asignaciones activas ÚNICAMENTE si la unidad es FULL
+            if (isFullUnit && selectedOperator.assignments && selectedOperator.assignments.length > 1) {
                 if (!Swal.isVisible()) {
                     const ovBadges = selectedOperator.assignments
                         .map((a, idx) => {
                             const pNum = a.part_number || idx + 1;
-                            const partLabel = `${pNum === 1 ? "1ra Parte" : `${pNum}da Parte`}${a.trailer_plate ? ` (Rem. ${a.trailer_plate})` : ""}`;
+                            const partLabel = isFullUnit
+                                ? `${pNum === 1 ? "1ra Parte" : `${pNum}da Parte`}${a.trailer_plate ? ` (Rem. ${a.trailer_plate})` : ""}`
+                                : `Asignación ${idx + 1}${a.trailer_plate ? ` (Rem. ${a.trailer_plate})` : ""}`;
                             const docBadge = a.is_documented
                                 ? `<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:800;">🔒 DOCUMENTADA (${a.documented_folio || "OE"})</span>`
                                 : `<span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:4px; font-size:12px;">${a.presentation || "GRANEL"}</span>`;
@@ -325,7 +390,9 @@ export default function Create({
 
                     Swal.fire({
                         icon: "info",
-                        title: '<span style="font-size:24px; font-weight:800; color:#1e1b4b;">Unidad FULL — Asignaciones Activas</span>',
+                        title: isFullUnit
+                            ? '<span style="font-size:24px; font-weight:800; color:#1e1b4b;">Unidad FULL — Asignaciones Activas</span>'
+                            : '<span style="font-size:24px; font-weight:800; color:#1e1b4b;">Asignaciones Activas del Operador</span>',
                         html: `
                             <div style="text-align:left; color:#1f2937;">
                                 <p style="font-size:16px; line-height:1.5; margin-bottom:12px;">
@@ -474,8 +541,13 @@ export default function Create({
             setOperatorAssignments(operator.assignments);
             const firstUndocumented = operator.assignments.find((a) => !a.is_documented);
             undocumentedCount = operator.assignments.filter((a) => !a.is_documented).length;
-            defaultAsgId = firstUndocumented?.id || operator.default_assignment_id || operator.assignments[0]?.id || "";
-            setSelectedAssignmentId(defaultAsgId);
+            if (firstUndocumented) {
+                defaultAsgId = firstUndocumented.id;
+                setSelectedAssignmentId(defaultAsgId);
+            } else {
+                defaultAsgId = "";
+                setSelectedAssignmentId("");
+            }
         } else if (operator.sales_order_id) {
             setOperatorAssignments([
                 {
@@ -495,16 +567,25 @@ export default function Create({
             setSelectedAssignmentId("");
         }
 
+        if (operator.assignments && operator.assignments.length > 0 && undocumentedCount === 0) {
+            // No hay asignaciones pendientes disponibles para documentar
+            return;
+        }
+
         const autoFields: any = {
             assignment_id: defaultAsgId,
         };
 
-        // Auto-llenar campos si el operador tiene Orden de Venta asignada
-        if (operator.sales_order_id) {
-            const soId = operator.sales_order_id.toString();
-            const matchedSo = sales_orders.find((s) => s.id.toString() === soId);
+        const activeAssignment = (operator.assignments && operator.assignments.length > 0)
+            ? (operator.assignments.find((a) => !a.is_documented) || null)
+            : null;
+        const targetSoId = (activeAssignment?.sales_order_id || operator.sales_order_id || "").toString();
 
-            autoFields.sales_order_id = soId;
+        // Auto-llenar campos si el operador tiene Orden de Venta asignada
+        if (targetSoId) {
+            const matchedSo = sales_orders.find((s) => s.id.toString() === targetSoId);
+
+            autoFields.sales_order_id = targetSoId;
 
             // Cliente
             const clientName = matchedSo?.client?.business_name || operator.sales_order?.client_name || "";
@@ -526,28 +607,38 @@ export default function Create({
                 : (operator.sales_order?.balance !== undefined ? String(operator.sales_order.balance) : "0");
             autoFields.balance = balanceVal;
 
-            // Presentación
-            if (operator.presentation) {
-                const presUpper = operator.presentation.toUpperCase();
-                autoFields.presentation = presUpper;
-                if (presUpper === "ENVASADO" && operator.sack) {
-                    const sackDigits = operator.sack.replace(/[^0-9]/g, "");
-                    autoFields.sack_type = sackDigits || "25";
-                } else if (presUpper === "GRANEL") {
-                    autoFields.sack_type = "";
-                }
+            // Presentación y detalles de la asignación activa
+            const activeAsg = (operator.assignments && operator.assignments.length > 0)
+                ? (operator.assignments.find((a) => !a.is_documented) || operator.assignments[0])
+                : null;
+            const effectivePres = (activeAsg?.presentation || operator.presentation || "GRANEL").toUpperCase();
+            autoFields.presentation = effectivePres;
+
+            if (effectivePres === "ENVASADO") {
+                const sackDigits = (activeAsg?.sack || operator.sack || "").replace(/[^0-9]/g, "");
+                autoFields.sack_type = sackDigits || "25";
+            } else {
+                autoFields.sack_type = "";
             }
 
             // Ton. Programadas
-            if (operator.programmed_tons !== undefined && operator.programmed_tons !== null && operator.programmed_tons !== "") {
-                autoFields.programmed_tons = String(operator.programmed_tons);
+            const effectiveTm = (activeAsg?.tm !== undefined && activeAsg?.tm !== null && activeAsg?.tm !== "")
+                ? activeAsg.tm
+                : operator.programmed_tons;
+            if (effectiveTm !== undefined && effectiveTm !== null && effectiveTm !== "") {
+                autoFields.programmed_tons = String(effectiveTm);
+            }
+
+            // Remolque
+            if (activeAsg?.trailer_plate) {
+                autoFields.trailer_plate = activeAsg.trailer_plate;
             }
 
             // Observaciones con buque y tipo de saco si aplica
             const vesselName = matchedSo?.vessel?.name || operator.sales_order?.vessel_name;
             const vesselObs = vesselName ? `PRODUCTO PROPIEDAD DE ${clientName}, PROVENIENTE DEL BUQUE "${vesselName}".` : "";
-            const isEnvasado = (operator.presentation || "").toUpperCase() === "ENVASADO";
-            const sackTypeVal = isEnvasado ? (operator.type || operator.sack || "") : "";
+            const isEnvasado = effectivePres === "ENVASADO";
+            const sackTypeVal = isEnvasado ? (activeAsg?.type || activeAsg?.sack || operator.type || operator.sack || "") : "";
             const sackObs = sackTypeVal ? `TIPO DE SACO: ${sackTypeVal.toUpperCase()}` : "";
             const combinedObs = [vesselObs, sackObs].filter(Boolean).join(" ");
             if (combinedObs) {
@@ -555,6 +646,7 @@ export default function Create({
             }
         }
 
+        setSelectedOperator(operator);
         setData((data) => ({
             ...data,
             operator_id: operator.id.toString(),
@@ -563,9 +655,9 @@ export default function Create({
             unit_type: operator.unit_type,
             tractor_plate: operator.tractor_plate,
             trailer_plate: operator.trailer_plate,
-            economic_number: operator.economic_number,
-            unit_number: operator.brand_model, // Map Brand/Model to Unit Number
-            license_number: operator.license, // Map License
+            economic_number: operator.economic_number || "S/N",
+            unit_number: operator.brand_model || operator.unit_type || "TRACTOCAMION", // Map Brand/Model to Unit Number
+            license_number: operator.license || "S/L", // Map License
             ...autoFields,
         }));
         setQrInput(""); // Clear the search/scan field once selected
@@ -754,8 +846,8 @@ export default function Create({
             errorsMap.license_number = "La licencia es obligatoria";
         }
         if (!data.unit_number || !data.unit_number.trim()) {
-            missing.push("Unidad / Marca");
-            errorsMap.unit_number = "La unidad / marca es obligatoria";
+            const fallbackUnit = data.unit_type?.trim() || "TRACTOCAMION";
+            data.unit_number = fallbackUnit;
         }
 
         // 3. Detalle del Embarque
@@ -827,8 +919,56 @@ export default function Create({
             return;
         }
 
+        // Bloqueo estricto SOLO EN FULL: No permitir guardar si la asignación seleccionada ya está documentada (SOLO SI EL TIPO DE UNIDAD ES FULL)
+        const isFullUnit = Boolean(
+            (data.unit_type && data.unit_type.toUpperCase().includes('FULL')) ||
+            (selectedOperator?.unit_type && selectedOperator.unit_type.toUpperCase().includes('FULL'))
+        );
+
+        if (isFullUnit && operatorAssignments.length > 0) {
+            const currentAsg = operatorAssignments.find((a) => String(a.id) === String(data.assignment_id || selectedAssignmentId));
+            if (currentAsg && currentAsg.is_documented) {
+                Swal.fire({
+                    icon: "error",
+                    title: "Asignación Ya Documentada",
+                    text: `Esta asignación (${currentAsg.documented_folio || "OE"}) ya fue documentada previamente. No se puede generar otra Orden de Embarque para esta asignación.`,
+                    confirmButtonColor: "#dc2626",
+                });
+                return;
+            }
+
+            const pending = operatorAssignments.filter((a) => !a.is_documented);
+            if (pending.length === 0) {
+                Swal.fire({
+                    icon: "error",
+                    title: "Sin Asignaciones Pendientes",
+                    text: "Todas las asignaciones de este operador ya han sido documentadas con Orden de Embarque. No se puede crear una nueva OE a menos que tenga otra asignación pendiente registrada.",
+                    confirmButtonColor: "#dc2626",
+                });
+                return;
+            }
+        }
+
         setClientErrors({});
-        post(route("documentation.store"));
+        post(route("documentation.store"), {
+            onError: (errs) => {
+                const errorList = Object.values(errs).flat();
+                Swal.fire({
+                    icon: "error",
+                    title: "Error al Guardar la Orden",
+                    html: `
+                        <div style="text-align: left; font-size: 14px;">
+                            <p>No se pudo guardar la orden debido a los siguientes errores:</p>
+                            <ul style="margin-top: 8px; list-style-type: disc; padding-left: 20px; color: #dc2626; font-weight: 600;">
+                                ${errorList.map((err) => `<li>${err}</li>`).join("")}
+                            </ul>
+                        </div>
+                    `,
+                    confirmButtonColor: "#dc2626",
+                    confirmButtonText: "Entendido",
+                });
+            },
+        });
     };
 
     const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
@@ -888,7 +1028,7 @@ export default function Create({
                         </div>
                     </div>
 
-                    <form onSubmit={submit} onKeyDown={handleFormKeyDown} className="p-8">
+                    <form noValidate onSubmit={submit} onKeyDown={handleFormKeyDown} className="p-8">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                             {/* SECTION: Información General */}
                             <div className="md:col-span-2">
@@ -939,89 +1079,96 @@ export default function Create({
                             </div>
 
                             <div className="md:col-span-2">
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="block text-sm font-bold text-gray-700">
-                                        Vincular a Orden de Venta (OV) <span className="text-red-500">*</span>
-                                    </label>
-                                    {operatorAssignments.length > 1 && (
-                                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                                            <span>📦</span> {operatorAssignments.length} asignaciones activas
-                                        </span>
-                                    )}
-                                </div>
+                                {(() => {
+                                    const isFull = Boolean((data.unit_type || selectedOperator?.unit_type || "").toUpperCase().includes('FULL'));
+                                    return (
+                                        <>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-sm font-bold text-gray-700">
+                                                    Vincular a Orden de Venta (OV) <span className="text-red-500">*</span>
+                                                </label>
+                                                {isFull && operatorAssignments.length > 1 && (
+                                                    <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                                        <span>📦</span> {operatorAssignments.length} asignaciones activas
+                                                    </span>
+                                                )}
+                                            </div>
 
-                                {operatorAssignments.length > 1 && (
-                                    <div className="mb-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
-                                        <span className="text-xs font-extrabold text-indigo-900 uppercase block">
-                                            Seleccione la parte / asignación a documentar (Unidad FULL):
-                                        </span>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            {operatorAssignments.map((asg, idx) => {
-                                                const isDocumented = Boolean(asg.is_documented);
-                                                const isActiveAsg = !isDocumented && String(selectedAssignmentId) === String(asg.id);
-                                                const pNum = asg.part_number || idx + 1;
-                                                const partLabel = pNum === 1 ? "Asignación 1 (1ra Parte)" : `Asignación ${pNum} (${pNum}da Parte)`;
-                                                return (
-                                                    <button
-                                                        key={asg.id || idx}
-                                                        type="button"
-                                                        disabled={isDocumented}
-                                                        onClick={() => {
-                                                            if (!isDocumented) {
-                                                                applyOperatorAssignment(asg);
-                                                            }
-                                                        }}
-                                                        className={`p-2.5 rounded-lg border text-left transition-all flex flex-col justify-between gap-1 ${
-                                                            isDocumented
-                                                                ? "bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed opacity-75"
-                                                                : isActiveAsg
-                                                                    ? "bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-300"
-                                                                    : "bg-white text-gray-800 border-indigo-200 hover:bg-indigo-100/60"
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-center justify-between gap-2 text-xs font-black uppercase">
-                                                            <span>{isDocumented ? "🔒" : "🚛"} {partLabel}</span>
-                                                            <div className="flex items-center gap-1">
-                                                                {isDocumented && (
-                                                                    <span className="font-mono px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold">
-                                                                        YA DOCUMENTADA {asg.documented_folio ? `(${asg.documented_folio})` : ""}
-                                                                    </span>
-                                                                )}
-                                                                {asg.trailer_plate && (
-                                                                    <span
-                                                                        className={`font-mono px-1.5 py-0.5 rounded text-[10.5px] ${
-                                                                            isDocumented
-                                                                                ? "bg-gray-200 text-gray-600 border border-gray-300"
-                                                                                : isActiveAsg
-                                                                                    ? "bg-white/20 text-white"
-                                                                                    : "bg-indigo-50 text-indigo-900 border border-indigo-200"
-                                                                        }`}
-                                                                    >
-                                                                        Rem: {asg.trailer_plate}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center justify-between gap-2 text-xs font-semibold">
-                                                            <span className="font-mono">OV: {asg.folio || "OV"}</span>
-                                                            <span
-                                                                className={
-                                                                    isDocumented
-                                                                        ? "text-gray-500 font-bold"
-                                                                        : isActiveAsg
-                                                                            ? "text-emerald-200 font-black"
-                                                                            : "text-emerald-700 font-black"
-                                                                }
-                                                            >
-                                                                {asg.presentation || "GRANEL"} • {Number(asg.tm || 0).toFixed(2)} TM
-                                                            </span>
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
+                                            {isFull && operatorAssignments.length > 1 && (
+                                                <div className="mb-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+                                                    <span className="text-xs font-extrabold text-indigo-900 uppercase block">
+                                                        Seleccione la parte / asignación a documentar (Unidad FULL):
+                                                    </span>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {operatorAssignments.map((asg, idx) => {
+                                                            const isDocumented = Boolean(asg.is_documented);
+                                                            const isActiveAsg = !isDocumented && String(selectedAssignmentId) === String(asg.id);
+                                                            const pNum = asg.part_number || idx + 1;
+                                                            const partLabel = pNum === 1 ? "Asignación 1 (1ra Parte)" : `Asignación ${pNum} (${pNum}da Parte)`;
+                                                            return (
+                                                                <button
+                                                                    key={asg.id || idx}
+                                                                    type="button"
+                                                                    disabled={isDocumented}
+                                                                    onClick={() => {
+                                                                        if (!isDocumented) {
+                                                                            applyOperatorAssignment(asg);
+                                                                        }
+                                                                    }}
+                                                                    className={`p-2.5 rounded-lg border text-left transition-all flex flex-col justify-between gap-1 ${
+                                                                        isDocumented
+                                                                            ? "bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed opacity-75"
+                                                                            : isActiveAsg
+                                                                                ? "bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-300"
+                                                                                : "bg-white text-gray-800 border-indigo-200 hover:bg-indigo-100/60"
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center justify-between gap-2 text-xs font-black uppercase">
+                                                                        <span>{isDocumented ? "🔒" : "🚛"} {partLabel}</span>
+                                                                        <div className="flex items-center gap-1">
+                                                                            {isDocumented && (
+                                                                                <span className="font-mono px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold">
+                                                                                    YA DOCUMENTADA {asg.documented_folio ? `(${asg.documented_folio})` : ""}
+                                                                                </span>
+                                                                            )}
+                                                                            {asg.trailer_plate && (
+                                                                                <span
+                                                                                    className={`font-mono px-1.5 py-0.5 rounded text-[10.5px] ${
+                                                                                        isDocumented
+                                                                                            ? "bg-gray-200 text-gray-600 border border-gray-300"
+                                                                                            : isActiveAsg
+                                                                                                ? "bg-white/20 text-white"
+                                                                                                : "bg-indigo-50 text-indigo-900 border border-indigo-200"
+                                                                                    }`}
+                                                                                >
+                                                                                    Rem: {asg.trailer_plate}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center justify-between gap-2 text-xs font-semibold">
+                                                                        <span className="font-mono">OV: {asg.folio || "OV"}</span>
+                                                                        <span
+                                                                            className={
+                                                                                isDocumented
+                                                                                    ? "text-gray-500 font-bold"
+                                                                                    : isActiveAsg
+                                                                                        ? "text-emerald-200 font-black"
+                                                                                        : "text-emerald-700 font-black"
+                                                                            }
+                                                                        >
+                                                                            {asg.presentation || "GRANEL"} • {Number(asg.tm || 0).toFixed(2)} TM
+                                                                        </span>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                                 <div className="relative">
                                     <select
                                         name="sales_order_id"
@@ -1429,13 +1576,13 @@ export default function Create({
                                     type="text"
                                     required
                                     value={data.unit_number}
-                                    readOnly={!!data.operator_id}
+                                    readOnly={!!data.operator_id && !!data.unit_number}
                                     onChange={(e) => {
                                         setData("unit_number", e.target.value);
                                         clearClientError("unit_number");
                                     }}
                                     placeholder="KENWORTH, FREIGHTLINER..."
-                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.unit_number || errors.unit_number) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                                    className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${data.operator_id && data.unit_number ? 'bg-gray-100 cursor-not-allowed font-medium' : ''} ${(clientErrors.unit_number || errors.unit_number) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                                 />
                                 {(clientErrors.unit_number || errors.unit_number) && <span className="text-xs text-red-500 mt-1 block font-bold">{clientErrors.unit_number || errors.unit_number}</span>}
                             </div>
@@ -1513,7 +1660,19 @@ export default function Create({
                                         name="presentation"
                                         value={data.presentation}
                                         onChange={(e) => {
-                                            setData("presentation", e.target.value);
+                                            const newPres = e.target.value;
+                                            setData((prev) => {
+                                                let obs = prev.observations || "";
+                                                if (newPres !== "ENVASADO") {
+                                                    obs = obs.replace(/\bTIPO DE SACO:\s*[^,\r\n;\.]+/gi, "").trim();
+                                                }
+                                                return {
+                                                    ...prev,
+                                                    presentation: newPres,
+                                                    sack_type: newPres === "ENVASADO" ? prev.sack_type : "",
+                                                    observations: obs,
+                                                };
+                                            });
                                             clearClientError("presentation");
                                         }}
                                         className={`w-full rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 uppercase ${(clientErrors.presentation || errors.presentation) ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
@@ -1767,8 +1926,9 @@ export default function Create({
                             <div className="w-full md:w-auto flex justify-end">
                                 <button
                                     type="submit"
+                                    onClick={runSubmit}
                                     disabled={processing}
-                                    className="w-full md:w-auto inline-flex items-center justify-center px-8 py-3.5 border border-transparent text-sm font-bold rounded-md shadow-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-200 transition-all transform hover:-translate-y-0.5"
+                                    className="w-full md:w-auto inline-flex items-center justify-center px-8 py-3.5 border border-transparent text-sm font-bold rounded-md shadow-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-200 transition-all transform hover:-translate-y-0.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <Save className="w-5 h-5 mr-2" />
                                     {processing ? "Guardando..." : "GUARDAR ORDEN DE EMBARQUE"}

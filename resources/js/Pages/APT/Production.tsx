@@ -50,7 +50,7 @@ export default function Production({ auth }: { auth: any }) {
             name: "Gestión de equipos envasado",
             description: "Control de equipos y unidades de envasado.",
             icon: Box,
-            href: `${route("apt.unit-status")}?from=production`,
+            href: route("apt.packaging-equipments"),
         },
         {
             id: 7,

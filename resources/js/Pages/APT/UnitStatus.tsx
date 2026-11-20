@@ -7,10 +7,12 @@ import {
     Clock,
     User,
     Activity,
-    Filter
+    Filter,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Pagination from "@/Components/Pagination";
+import PackagingEquipmentManager, { PackagingEquipment } from "@/Components/PackagingEquipmentManager";
+import WarehouseBaggingManager, { WarehouseBaggingConfig } from "@/Components/WarehouseBaggingManager";
 import { pickBy } from "lodash";
 
 const Timer = ({ entryAt }: { entryAt: string }) => {
@@ -57,21 +59,55 @@ export default function UnitStatus({
     clients = [],
     products = [],
     warehouses = [],
-    filters = { client_id: '', product_id: '', warehouse: '', presentation: '', search: '', tab: 'sale' }
+    packaging_equipments = [],
+    warehouse_bagging_machines = [],
+    filters = { client_id: '', product_id: '', warehouse: '', presentation: '', search: '', tab: 'sale', view: 'destare' }
 }: {
     auth: any;
     pending_exit: any;
     clients?: any[];
     products?: any[];
     warehouses?: string[];
-    filters?: { client_id: string, product_id: string, warehouse: string, presentation: string, search: string, tab: string };
+    packaging_equipments?: PackagingEquipment[];
+    warehouse_bagging_machines?: WarehouseBaggingConfig[];
+    filters?: { client_id: string, product_id: string, warehouse: string, presentation: string, search: string, tab: string, view?: string };
 }) {
+    const isFromProduction = typeof window !== 'undefined' && (
+        new URLSearchParams(window.location.search).get("from") === "production" ||
+        window.location.pathname.includes("equipos-envasado")
+    );
+
+    const [mainView, setMainView] = useState<'destare' | 'pro-agro' | 'fertinal' | 'warehouse-config'>(() => {
+        const fromParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get("from") : null;
+        const isEquipos = typeof window !== 'undefined' && window.location.pathname.includes("equipos-envasado");
+        const viewParam = (filters as any)?.view;
+        if (viewParam === 'fertinal') return 'fertinal';
+        if (viewParam === 'pro-agro') return 'pro-agro';
+        if (viewParam === 'warehouse-config') return 'warehouse-config';
+        if (fromParam === 'production' || isEquipos) return 'pro-agro';
+        return 'destare';
+    });
+
+    useEffect(() => {
+        if (isFromProduction && mainView === 'destare') {
+            setMainView('pro-agro');
+        }
+    }, [isFromProduction]);
     const [operationType, setOperationType] = useState<'sale' | 'vessel'>(filters?.tab as 'sale' | 'vessel' || 'sale');
     const [selectedClient, setSelectedClient] = useState(filters?.client_id || '');
     const [selectedProduct, setSelectedProduct] = useState(filters?.product_id || '');
     const [selectedWarehouse, setSelectedWarehouse] = useState(filters?.warehouse || '');
     const [selectedPresentation, setSelectedPresentation] = useState(filters?.presentation || '');
     const [searchQuery, setSearchQuery] = useState(filters?.search || '');
+
+    const proAgroCount = useMemo(
+        () => packaging_equipments.filter((e) => e.company === "PRO-AGRO").length,
+        [packaging_equipments]
+    );
+    const fertinalCount = useMemo(
+        () => packaging_equipments.filter((e) => e.company === "FERTINAL").length,
+        [packaging_equipments]
+    );
 
     const handleFilterChange = (key: string, value: string) => {
         if (key === 'client_id') setSelectedClient(value);
@@ -97,29 +133,163 @@ export default function UnitStatus({
         });
     };
 
+    const currentHeader = isFromProduction
+        ? (mainView === 'fertinal'
+            ? "Gestión de Equipos Envasado (Fertinal)"
+            : mainView === 'warehouse-config'
+            ? "Configuración de Ensacadoras por Almacén"
+            : "Gestión de Equipos Envasado (Pro-Agro)")
+        : (mainView === 'destare'
+            ? "APT - Estatus de Unidades"
+            : mainView === 'pro-agro'
+            ? "Gestión de Equipos Envasado (Pro-Agro)"
+            : mainView === 'warehouse-config'
+            ? "Configuración de Ensacadoras por Almacén"
+            : "Gestión de Equipos Envasado (Fertinal)");
+
+    const currentTitle = isFromProduction
+        ? (mainView === 'fertinal' ? "Equipos Envasado Fertinal" : mainView === 'warehouse-config' ? "Ensacadoras por Almacén" : "Equipos Envasado Pro-Agro")
+        : (mainView === 'destare'
+            ? "Estatus de Unidades"
+            : mainView === 'pro-agro'
+            ? "Equipos Envasado Pro-Agro"
+            : mainView === 'warehouse-config'
+            ? "Ensacadoras por Almacén"
+            : "Equipos Envasado Fertinal");
+
     return (
-        <DashboardLayout user={auth.user} header="APT - Estatus de Unidades">
-            <Head title="Estatus de Unidades" />
+        <DashboardLayout user={auth.user} header={currentHeader}>
+            <Head title={currentTitle} />
 
             <div className="max-w-[98%] mx-auto py-8 px-4 space-y-8">
                 <div className="flex flex-col gap-6">
-                    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-3.5 rounded-2xl border border-gray-200 shadow-sm">
                         <div className="flex items-center gap-4">
                             <Link
-                                href={new URLSearchParams(window.location.search).get("from") === "production" ? route("apt.production") : route("apt.index")}
-                                className="flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium"
+                                href={isFromProduction ? route("apt.production") : route("apt.index")}
+                                className="flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold shadow-xs whitespace-nowrap"
+                                title={isFromProduction ? "Volver al menú de submódulos" : "Volver"}
                             >
-                                <ArrowLeft className="w-4 h-4 mr-1" />
-                                {new URLSearchParams(window.location.search).get("from") === "production" ? "Volver al menú de submódulos" : "Volver"}
+                                <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+                                Volver
                             </Link>
                             <h2 className="text-xl font-bold text-gray-800 flex items-center border-l-4 border-indigo-500 pl-4">
-                                <Truck className="w-6 h-6 mr-2 text-indigo-600" />
-                                Pendientes de Salida (Destare)
+                                {isFromProduction ? (
+                                    mainView === 'fertinal' ? (
+                                        <>Líneas de Envasado (Fertinal)</>
+                                    ) : mainView === 'warehouse-config' ? (
+                                        <>Ensacadoras por Almacén</>
+                                    ) : (
+                                        <>Líneas de Envasado (Pro-Agro)</>
+                                    )
+                                ) : mainView === 'destare' ? (
+                                    <>
+                                        <Truck className="w-6 h-6 mr-2 text-indigo-600" />
+                                        Pendientes de Salida (Destare)
+                                    </>
+                                ) : mainView === 'pro-agro' ? (
+                                    <>Líneas de Envasado (Pro-Agro)</>
+                                ) : mainView === 'warehouse-config' ? (
+                                    <>Ensacadoras por Almacén</>
+                                ) : (
+                                    <>Líneas de Envasado (Fertinal)</>
+                                )}
                             </h2>
+                        </div>
+
+                        {/* Switcher: in production mode, show Pro-Agro, Fertinal and Ensacadoras por Almacén */}
+                        <div className="flex flex-wrap items-center gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-200">
+                            {!isFromProduction && (
+                                <button
+                                    type="button"
+                                    onClick={() => setMainView('destare')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                                        mainView === 'destare'
+                                            ? 'bg-white text-indigo-700 shadow-sm'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                                >
+                                    <Truck className="w-4 h-4 text-indigo-600" />
+                                    <span>Pendientes de Salida (Destare)</span>
+                                    {pending_exit?.total ? (
+                                        <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 font-black">
+                                            {pending_exit.total}
+                                        </span>
+                                    ) : null}
+                                </button>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => setMainView('pro-agro')}
+                                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    mainView === 'pro-agro'
+                                        ? 'bg-white text-indigo-700 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <span>Equipos Envasado (Pro-Agro)</span>
+                                <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 font-black">
+                                    {proAgroCount}
+                                </span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setMainView('fertinal')}
+                                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    mainView === 'fertinal'
+                                        ? 'bg-white text-emerald-700 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <span>Equipos Envasado (Fertinal)</span>
+                                <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-black">
+                                    {fertinalCount}
+                                </span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setMainView('warehouse-config')}
+                                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    mainView === 'warehouse-config'
+                                        ? 'bg-white text-indigo-700 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <span>Ensacadoras por Almacén</span>
+                                <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 font-black">
+                                    {warehouse_bagging_machines?.length || 5}
+                                </span>
+                            </button>
                         </div>
                     </div>
 
-                    <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 border-b border-gray-200 pb-4">
+                    {mainView === 'pro-agro' && (
+                        <PackagingEquipmentManager
+                            company="PRO-AGRO"
+                            equipments={packaging_equipments}
+                        />
+                    )}
+
+                    {mainView === 'fertinal' && (
+                        <PackagingEquipmentManager
+                            company="FERTINAL"
+                            equipments={packaging_equipments}
+                        />
+                    )}
+
+                    {mainView === 'warehouse-config' && (
+                        <WarehouseBaggingManager
+                            configs={warehouse_bagging_machines || []}
+                            equipments={packaging_equipments}
+                        />
+                    )}
+
+                    {!isFromProduction && mainView === 'destare' && (
+                        <>
+                            <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 border-b border-gray-200 pb-4">
                         <div className="flex p-1 bg-gray-100 rounded-lg">
                             <button
                                 onClick={() => handleFilterChange('tab', 'sale')}
@@ -379,6 +549,8 @@ export default function UnitStatus({
                         </div>
                     </div>
                     <Pagination links={pending_exit.links} />
+                        </>
+                    )}
                 </div>
             </div>
         </DashboardLayout>

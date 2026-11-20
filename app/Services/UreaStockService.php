@@ -502,6 +502,13 @@ class UreaStockService
             default => 'Fertilizante',
         };
 
+        // Check if available stock is zero or depleted
+        if ($availableStock <= 0) {
+            throw new \Exception(
+                "ALERTA: Operación Bloqueada. No hay inventario disponible en {$warehouseKey} para {$productLabel} (Stock disponible: " . number_format($availableStock, 2) . " TM)."
+            );
+        }
+
         // Check if net tons requested exceeds available stock in warehouse
         if ($netTons > $availableStock) {
             throw new \Exception(

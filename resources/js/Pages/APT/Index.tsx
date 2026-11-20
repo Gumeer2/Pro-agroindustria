@@ -35,10 +35,11 @@ export default function Index({ auth, productionMode = false }: { auth: any; pro
         { name: "Gestión de proceso de embarques", description: "Seguimiento de órdenes y procesos de embarque.", icon: Truck, href: route("apt.shipment-process"), color: "bg-blue-50 text-blue-600", hover: "hover:border-blue-500" },
         { name: "Gestión de inventarios", description: "Control de existencias, producción diaria e inventario inicial de Urea Agrícola.", icon: Package, href: `${route("apt.inventory.index")}?from=production`, color: "bg-purple-50 text-purple-600", hover: "hover:border-purple-500" },
         { name: "Gestión de maquinarias", description: "Registro y mantenimiento de maquinaria operativa.", icon: Wrench, href: `${route("apt.status")}?from=production`, color: "bg-orange-50 text-orange-600", hover: "hover:border-orange-500" },
-        { name: "Gestión de equipos envasado", description: "Control de equipos y unidades de envasado.", icon: Box, href: `${route("apt.unit-status")}?from=production`, color: "bg-yellow-50 text-yellow-600", hover: "hover:border-yellow-500" },
+        { name: "Gestión de equipos envasado", description: "Control de equipos y unidades de envasado.", icon: Box, href: route("apt.packaging-equipments"), color: "bg-yellow-50 text-yellow-600", hover: "hover:border-yellow-500" },
         { name: "Gestión de equipos de seguridad", description: "Administración y control de equipos de seguridad.", icon: Shield, href: route("apt.scanner"), color: "bg-slate-100 text-slate-600", hover: "hover:border-slate-500" },
         { name: "Gestión prestadores de servicios", description: "Control de asistencias de personal y contratistas (GLS-AP-FO-005).", icon: Users, href: route("apt.attendance.index"), color: "bg-indigo-50 text-indigo-600", hover: "hover:border-indigo-500" },
         { name: "Gestión de requerimientos", description: "Registro y seguimiento de solicitudes operativas.", icon: AlertCircle, href: `${route("apt.status")}?from=production`, color: "bg-cyan-50 text-cyan-600", hover: "hover:border-cyan-500" },
+        { name: "Gestión de lotes", description: "Administración de folios y estados de lotes.", icon: Database, href: `${route("apt.lots.index")}?from=production`, color: "bg-emerald-50 text-emerald-600", hover: "hover:border-emerald-500" },
     ];
 
     const productionSubmodules = allProductionSubmodules;
@@ -99,14 +100,6 @@ export default function Index({ auth, productionMode = false }: { auth: any; pro
             hover: "hover:border-purple-500",
         },
         {
-            name: "Status Unidades",
-            icon: Truck,
-            href: route("apt.unit-status"),
-            description: "Unidades en planta esperando destare.",
-            color: "bg-blue-50 text-blue-600",
-            hover: "hover:border-blue-500",
-        },
-        {
             name: "Seguimiento de OE del Día",
             icon: Clock,
             href: route("apt.oe-tracker"),
@@ -116,14 +109,6 @@ export default function Index({ auth, productionMode = false }: { auth: any; pro
         },
         ...(!isAlmacenOnly
             ? [
-                  {
-                      name: "Gestión de lotes",
-                      icon: Database,
-                      href: route("apt.lots.index"),
-                      description: "Administración de folios y estados de lotes.",
-                      color: "bg-emerald-50 text-emerald-600",
-                      hover: "hover:border-emerald-500",
-                  },
                   {
                       name: "Status APT",
                       icon: LayoutDashboard,

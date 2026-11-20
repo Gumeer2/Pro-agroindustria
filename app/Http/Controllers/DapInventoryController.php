@@ -360,6 +360,37 @@ class DapInventoryController extends Controller
     }
 
     /**
+     * Store a warehouse inventory adjustment factor for DAP.
+     */
+    public function storeAdjustment(Request $request)
+    {
+        $validated = $request->validate([
+            'date' => 'required|date',
+            'warehouse' => 'required|string',
+            'cubicle' => 'nullable|string',
+            'plant_origin' => 'required|string',
+            'adjustment_tons' => 'required|numeric|not_in:0',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        UreaInitialInventory::create([
+            'date' => $validated['date'],
+            'warehouse' => $validated['warehouse'],
+            'cubicle' => $validated['cubicle'] ?? null,
+            'plant_origin' => $validated['plant_origin'],
+            'product_type' => 'dap',
+            'packaging' => 'Factor de Ajuste',
+            'quantity_tons' => $validated['adjustment_tons'],
+            'sacks_count' => 0,
+            'lot_folio' => null,
+            'notes' => '[Factor de Ajuste] ' . ($validated['notes'] ? trim($validated['notes']) : 'Ajuste de inventario en almacén'),
+            'user_id' => auth()->id(),
+        ]);
+
+        return redirect()->back()->with('success', 'Factor de ajuste de almacén aplicado exitosamente.');
+    }
+
+    /**
      * Update an Initial Inventory base record for DAP.
      */
     public function updateInitial(Request $request, $id)

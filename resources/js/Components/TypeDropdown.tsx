@@ -20,19 +20,29 @@ export interface ExitOperatorTypeItem {
 interface TypeDropdownProps {
     value?: string;
     initialTypes?: ExitOperatorTypeItem[];
+    allowedTypes?: ExitOperatorTypeItem[];
     onChange: (name: string) => void;
     label?: string;
     error?: string;
+    disabled?: boolean;
+    placeholder?: string;
 }
 
 export default function TypeDropdown({
     value = "",
     initialTypes = [],
+    allowedTypes,
     onChange,
     label = "Tipo:",
-    error
+    error,
+    disabled = false,
+    placeholder = "Seleccione tipo..."
 }: TypeDropdownProps) {
-    const [types, setTypes] = useState<ExitOperatorTypeItem[]>(initialTypes);
+    const isRestricted = allowedTypes !== undefined && Array.isArray(allowedTypes);
+    const [types, setTypes] = useState<ExitOperatorTypeItem[]>(() => {
+        if (isRestricted) return allowedTypes || [];
+        return initialTypes;
+    });
     const [loading, setLoading] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingType, setEditingType] = useState<ExitOperatorTypeItem | null>(null);
@@ -40,6 +50,7 @@ export default function TypeDropdown({
     const [isSaving, setIsSaving] = useState(false);
 
     const fetchTypes = async () => {
+        if (isRestricted) return;
         setLoading(true);
         try {
             const response = await axios.get(route('exit-operator-types.index'));
@@ -54,14 +65,18 @@ export default function TypeDropdown({
     };
 
     useEffect(() => {
+        if (isRestricted) {
+            setTypes(allowedTypes || []);
+            return;
+        }
         fetchTypes();
-    }, []);
+    }, [isRestricted, allowedTypes]);
 
     useEffect(() => {
-        if (initialTypes && initialTypes.length > 0) {
+        if (!isRestricted && initialTypes && initialTypes.length > 0) {
             setTypes(initialTypes);
         }
-    }, [initialTypes]);
+    }, [isRestricted, initialTypes]);
 
     const handleSave = async () => {
         if (!newName.trim()) return;
@@ -125,14 +140,21 @@ export default function TypeDropdown({
                 </label>
             )}
 
-            <Listbox value={value} onChange={(val) => onChange(val)}>
+            <Listbox value={value} onChange={(val) => onChange(val)} disabled={disabled}>
                 <div className="relative">
-                    <Listbox.Button className={`relative w-full cursor-default rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-10 text-left shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold sm:text-sm transition-all ${error ? 'border-red-500 ring-1 ring-red-500' : ''}`}>
+                    <Listbox.Button
+                        disabled={disabled}
+                        className={`relative w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-10 text-left shadow-sm font-bold sm:text-sm transition-all ${
+                            disabled
+                                ? 'bg-gray-100 cursor-not-allowed opacity-75 text-gray-400'
+                                : 'bg-white cursor-default focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500'
+                        } ${error ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                    >
                         <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                            <FileText className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                            <FileText className={`h-5 w-5 ${disabled ? 'text-gray-300' : 'text-gray-400'}`} aria-hidden="true" />
                         </span>
-                        <span className={`block truncate ${selectedType || value ? 'text-indigo-900 font-bold' : 'text-gray-400 font-normal'}`}>
-                            {selectedType?.name || value || "Seleccione tipo..."}
+                        <span className={`block truncate ${disabled ? 'text-gray-400 font-normal italic' : (selectedType || value ? 'text-indigo-900 font-bold' : 'text-gray-400 font-normal')}`}>
+                            {disabled ? placeholder : (selectedType?.name || value || placeholder)}
                         </span>
                         <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
                             <ChevronsUpDown className="h-5 w-5 text-gray-400" aria-hidden="true" />
@@ -146,16 +168,18 @@ export default function TypeDropdown({
                         leaveTo="opacity-0"
                     >
                         <Listbox.Options className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-                            <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-100">
-                                <button
-                                    type="button"
-                                    onClick={() => openDialog()}
-                                    className="flex w-full items-center px-4 py-2.5 text-indigo-600 hover:bg-indigo-50 font-bold transition-colors"
-                                >
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Agregar Nuevo Tipo
-                                </button>
-                            </div>
+                            {!isRestricted && (
+                                <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-100">
+                                    <button
+                                        type="button"
+                                        onClick={() => openDialog()}
+                                        className="flex w-full items-center px-4 py-2.5 text-indigo-600 hover:bg-indigo-50 font-bold transition-colors cursor-pointer"
+                                    >
+                                        <Plus className="mr-2 h-4 w-4" />
+                                        Agregar Nuevo Tipo
+                                    </button>
+                                </div>
+                            )}
 
                             {value && (
                                 <Listbox.Option
@@ -172,7 +196,9 @@ export default function TypeDropdown({
                             {loading && types.length === 0 ? (
                                 <div className="px-4 py-2 text-gray-400 italic text-xs">Cargando tipos...</div>
                             ) : types.length === 0 ? (
-                                <div className="px-4 py-2 text-gray-400 italic text-xs">No hay tipos registrados. Haga clic en Agregar Nuevo Tipo.</div>
+                                <div className="px-4 py-2 text-gray-400 italic text-xs">
+                                    {isRestricted ? "El cliente no tiene este tipo de saco configurado." : "No hay tipos registrados. Haga clic en Agregar Nuevo Tipo."}
+                                </div>
                             ) : (
                                 types.map((item) => (
                                     <Listbox.Option

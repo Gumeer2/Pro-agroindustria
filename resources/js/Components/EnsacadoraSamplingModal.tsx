@@ -30,6 +30,7 @@ import {
     FileSpreadsheet,
     ChevronDown,
     ChevronUp,
+    Clock,
 } from "lucide-react";
 
 interface SampleRecord {
@@ -132,6 +133,8 @@ interface Props {
     canRelease?: boolean;
     onRelease?: () => Promise<void> | void;
     hideSaveButton?: boolean;
+    isEstibadorUser?: boolean;
+    warehouseBaggingMachines?: any[];
 }
 
 export default function EnsacadoraSamplingModal({
@@ -146,10 +149,104 @@ export default function EnsacadoraSamplingModal({
     canRelease = false,
     onRelease,
     hideSaveButton = false,
+    isEstibadorUser = true,
+    warehouseBaggingMachines,
 }: Props) {
     const [selectedEnsacadora, setSelectedEnsacadora] = useState<1 | 2>(1);
     const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
     const [pendingWeight, setPendingWeight] = useState<number | null>(null);
+
+    // Ensacadora Tag Configuration per Warehouse
+    const [baggingConfigs, setBaggingConfigs] = useState<any[]>(() => {
+        if (warehouseBaggingMachines && warehouseBaggingMachines.length > 0) {
+            return warehouseBaggingMachines;
+        }
+        try {
+            const stored = localStorage.getItem("warehouse_bagging_machines");
+            if (stored) return JSON.parse(stored);
+        } catch (e) {}
+        return [];
+    });
+
+    useEffect(() => {
+        if (warehouseBaggingMachines && warehouseBaggingMachines.length > 0) {
+            setBaggingConfigs(warehouseBaggingMachines);
+            try {
+                localStorage.setItem("warehouse_bagging_machines", JSON.stringify(warehouseBaggingMachines));
+            } catch (e) {}
+        } else {
+            fetch(route("apt.warehouse-bagging-machines.index"))
+                .then((res) => res.json())
+                .then((data) => {
+                    if (Array.isArray(data) && data.length > 0) {
+                        setBaggingConfigs(data);
+                        try {
+                            localStorage.setItem("warehouse_bagging_machines", JSON.stringify(data));
+                        } catch (e) {}
+                    }
+                })
+                .catch(() => {});
+        }
+    }, [warehouseBaggingMachines]);
+
+    const baggingTags = useMemo(() => {
+        const orderWh = order?.warehouse || order?.lot?.warehouse || "";
+        let whNum = 1;
+        if (orderWh) {
+            const m = String(orderWh).match(/\d+/);
+            if (m) whNum = parseInt(m[0], 10);
+        } else {
+            try {
+                const activeWh = localStorage.getItem("shipment_process_selected_warehouse");
+                if (activeWh) whNum = parseInt(activeWh, 10);
+            } catch (e) {}
+        }
+        if (!whNum || isNaN(whNum)) whNum = 1;
+
+        const defaultMap: Record<number, { left: string; right: string; hopper: string }> = {
+            1: { left: "ENS-P01", right: "ENS-P02", hopper: "LE-P01" },
+            2: { left: "ENS-P03", right: "ENS-P04", hopper: "LE-P02" },
+            3: { left: "ENS-P05", right: "ENS-P06", hopper: "LE-P03" },
+            4: { left: "ENS-P07", right: "ENS-P08", hopper: "LE-P04" },
+            5: { left: "ENS-P09", right: "ENS-P10", hopper: "LE-P05" },
+        };
+
+        const match = Array.isArray(baggingConfigs)
+            ? baggingConfigs.find((c: any) => {
+                  const cNum = c.warehouse_number || (c.warehouse && c.warehouse.match(/\d+/) ? parseInt(c.warehouse.match(/\d+/)[0], 10) : null);
+                  return cNum === whNum;
+              })
+            : null;
+
+        const getHopperLabel = (tag?: string | null) => {
+            if (!tag) return `Tolva ${whNum}`;
+            const matchNum = tag.match(/\d+/);
+            if (matchNum) {
+                return `Tolva ${parseInt(matchNum[0], 10)}`;
+            }
+            return `Tolva (${tag})`;
+        };
+
+        if (match && (match.left_tag || match.right_tag)) {
+            const hTag = match.hopper_tag || `LE-P0${whNum}`;
+            return {
+                leftTag: match.left_tag,
+                rightTag: match.right_tag,
+                hopperTag: hTag,
+                hopperLabel: getHopperLabel(hTag),
+                warehouseName: match.warehouse || `Almacén 0${whNum}`,
+            };
+        }
+
+        const def = defaultMap[whNum] || defaultMap[1];
+        return {
+            leftTag: def.left,
+            rightTag: def.right,
+            hopperTag: def.hopper,
+            hopperLabel: getHopperLabel(def.hopper),
+            warehouseName: `Almacén 0${whNum}`,
+        };
+    }, [order, baggingConfigs]);
     const [sampleInput, setSampleInput] = useState<string>("");
     const [inputError, setInputError] = useState<string>("");
     const [samples, setSamples] = useState<SampleRecord[]>([]);
@@ -428,6 +525,16 @@ export default function EnsacadoraSamplingModal({
         };
     }, [targetBaseWeight, orderTons, totalSacks]);
 
+    // Muestras que violaron los límites de tolerancia
+    const outOfRangeSamplesList = useMemo(() => {
+        return samples.filter(
+            (s) =>
+                s.weight < limits.inferior ||
+                s.weight > limits.superior ||
+                (s.validation_result || "").toLowerCase().includes("fuera")
+        );
+    }, [samples, limits]);
+
     // Load samples or restore draft when modal opens
     useEffect(() => {
         if (isOpen && order) {
@@ -444,7 +551,6 @@ export default function EnsacadoraSamplingModal({
             setIsBlocked(initialBlocked);
             if (initialBlocked) {
                 setBlockReason("Muestreo bloqueado por validación de tolerancia");
-                setIsUnlockModalOpen(true);
             }
             const initialUnlockCount = Number(order.sampling_unlock_count || 0);
             setUnlockCount(initialUnlockCount);
@@ -501,7 +607,6 @@ export default function EnsacadoraSamplingModal({
                             setIsBlocked(b);
                             if (b) {
                                 setBlockReason("Muestreo bloqueado por validación de tolerancia");
-                                setIsUnlockModalOpen(true);
                             }
                         }
                         if (res.data?.sampling_unlock_count !== undefined) {
@@ -528,6 +633,70 @@ export default function EnsacadoraSamplingModal({
             isLoadedRef.current = false;
         }
     }, [isOpen, order?.id, order?.order_number, order?.folio]);
+
+    // Sondeo automático a distancia: Si el muestreo está bloqueado, consultar al servidor si el supervisor ya lo desbloqueó a distancia
+    useEffect(() => {
+        if (!isOpen || !isBlocked) return;
+        const targetId = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
+        if (!targetId) return;
+
+        const interval = setInterval(async () => {
+            try {
+                const res = await axios.get(route("documentation.shipment-orders.get-sampling", targetId));
+                if (res.data && res.data.is_sampling_blocked === false) {
+                    setIsBlocked(false);
+                    setIsAuthorizedAfterLock(true);
+                    setIsEndOfSamplingBlock(false);
+                    setConsecutiveOutCount(0);
+                    setIsUnlockModalOpen(false);
+                    const newCount = Number(res.data.sampling_unlock_count || 1);
+                    setUnlockCount(newCount);
+
+                    // Limpiar almacenamiento local bloqueado
+                    const ids = [order?.id, order?.order_number, order?.folio, targetId].filter(Boolean);
+                    ids.forEach((id) => {
+                        const keys = [
+                            `ensacadora_sampling_order_${id}`,
+                            `envasadora_sampling_order_${id}`,
+                            `ensacadora_sampling_${id}`,
+                            `envasadora_sampling_${id}`,
+                        ];
+                        keys.forEach((k) => {
+                            try {
+                                const raw = localStorage.getItem(k);
+                                if (raw) {
+                                    const parsed = JSON.parse(raw);
+                                    parsed.isBlocked = false;
+                                    localStorage.setItem(k, JSON.stringify(parsed));
+                                }
+                            } catch (e) {}
+                        });
+                    });
+
+                    Swal.fire({
+                        icon: "success",
+                        title: "¡Muestreo Desbloqueado!",
+                        html: `<div class="text-left space-y-2 text-sm text-slate-700">
+                            <p>El <b>Supervisor PROAGRO</b> ha autorizado y desbloqueado la orden.</p>
+                            <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 text-xs font-semibold">
+                                Ya puede continuar con la captura de muestras en ensacadora.
+                            </div>
+                        </div>`,
+                        confirmButtonColor: "#16a34a",
+                        confirmButtonText: "Continuar Muestreo",
+                    });
+
+                    setTimeout(() => {
+                        sampleInputRef.current?.focus();
+                    }, 200);
+                }
+            } catch (err) {
+                // Silencioso en caso de error de conexión
+            }
+        }, 2500);
+
+        return () => clearInterval(interval);
+    }, [isOpen, isBlocked, order?.id, order?.folio]);
 
     const persistSamplingData = (payload: any) => {
         const primaryKey = getStorageKey();
@@ -613,6 +782,7 @@ export default function EnsacadoraSamplingModal({
                     stowage_count: stowageCount || order?.stowage_count || null,
                     is_completed: isCompleted,
                     is_blocked: effectiveBlocked,
+                    block_reason: effectiveBlocked ? blockReason : null,
                     shipment_order_id: order?.id || order?.shipment_order_id,
                     folio: order?.folio,
                     history_id: order?.history_id,
@@ -681,14 +851,14 @@ export default function EnsacadoraSamplingModal({
             Swal.fire({
                 icon: "error",
                 title: "Validación de Cierre - Captura Bloqueada",
-                text: "Se requiere usuario y contraseña del Supervisor PROAGRO o Jefe de Almacén para autorizar y desbloquear la captura.",
+                text: isEstibadorUser
+                    ? "La captura ha sido BLOQUEADA por peso fuera de tolerancia. El sistema permanece bloqueado hasta que el Supervisor PROAGRO autorice el desbloqueo."
+                    : "Se requiere usuario y contraseña del Supervisor PROAGRO o Jefe de Almacén para autorizar y desbloquear la captura.",
                 confirmButtonColor: "#dc2626",
                 confirmButtonText: "Entendido",
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 customClass: { container: "!z-[999999]" },
-            }).then(() => {
-                setIsUnlockModalOpen(true);
             });
             return;
         }
@@ -793,13 +963,13 @@ export default function EnsacadoraSamplingModal({
             setPendingWeight(null);
             Swal.fire({
                 icon: "error",
-                title: "Atención",
-                text: "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. Ingrese el usuario y contraseña del Jefe de Almacén para desbloquear.",
+                title: "Atención - Muestreo Bloqueado",
+                text: isEstibadorUser
+                    ? "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. El sistema permanece bloqueado hasta que el Supervisor PROAGRO autorice el desbloqueo."
+                    : "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. Ingrese el usuario y contraseña del Jefe de Almacén para desbloquear.",
                 confirmButtonColor: "#dc2626",
                 confirmButtonText: "Entendido",
                 customClass: { container: "!z-[999999]" },
-            }).then(() => {
-                setIsUnlockModalOpen(true);
             });
             return;
         }
@@ -887,14 +1057,14 @@ export default function EnsacadoraSamplingModal({
                     Swal.fire({
                         icon: "error",
                         title: "Validación de Cierre - Captura Bloqueada",
-                        text: "Se requiere usuario y contraseña del Supervisor PROAGRO o Jefe de Almacén para autorizar y desbloquear la captura.",
+                        text: isEstibadorUser
+                            ? "La captura ha sido BLOQUEADA por peso fuera de tolerancia. El sistema permanece bloqueado hasta que el Supervisor PROAGRO autorice el desbloqueo a distancia."
+                            : "Se requiere usuario y contraseña del Supervisor PROAGRO o Jefe de Almacén para autorizar y desbloquear la captura.",
                         confirmButtonColor: "#dc2626",
                         confirmButtonText: "Entendido",
                         allowOutsideClick: false,
                         allowEscapeKey: false,
                         customClass: { container: "!z-[999999]" },
-                    }).then(() => {
-                        setIsUnlockModalOpen(true);
                     });
                 } else {
                     setConsecutiveOutCount(0);
@@ -970,15 +1140,15 @@ export default function EnsacadoraSamplingModal({
                         saveSamplesToDatabase(updated, false, true);
                         Swal.fire({
                             icon: "error",
-                            title: "Atención",
-                            text: `ALERTA: Se han detectado 3 controles consecutivos fuera de tolerancia a las ${updated.length} muestras (${diffText}).${netInfo}${avgInfo}. La toma de muestras ha sido BLOQUEADA. Se requiere usuario y contraseña del Jefe de Almacén para desbloquear la captura.`,
+                            title: "Atención - Muestreo Bloqueado",
+                            text: isEstibadorUser
+                                ? `ALERTA: Se han detectado 3 controles consecutivos fuera de tolerancia a las ${updated.length} muestras (${diffText}).${netInfo}${avgInfo}. La toma de muestras ha sido BLOQUEADA. El sistema permanece bloqueado hasta que el Supervisor PROAGRO autorice el desbloqueo.`
+                                : `ALERTA: Se han detectado 3 controles consecutivos fuera de tolerancia a las ${updated.length} muestras (${diffText}).${netInfo}${avgInfo}. La toma de muestras ha sido BLOQUEADA. Se requiere usuario y contraseña del Jefe de Almacén o Supervisor para desbloquear la captura.`,
                             confirmButtonColor: "#dc2626",
                             confirmButtonText: "Entendido",
                             allowOutsideClick: false,
                             allowEscapeKey: false,
                             customClass: { container: "!z-[999999]" },
-                        }).then(() => {
-                            setIsUnlockModalOpen(true);
                         });
                     }
                 }
@@ -1072,12 +1242,8 @@ export default function EnsacadoraSamplingModal({
 
     const currentAssistantName = detailedOrder?.loading_assistant || order?.loading_assistant || "Auxiliar no especificado";
 
-    const handleUnlockSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!unlockUser.trim() || !unlockPassword) {
-            setUnlockError(isFinalSamplingBlock ? "Por favor ingrese el usuario/correo y contraseña del Jefe de Almacén o Supervisor." : "Por favor ingrese el usuario/correo y contraseña del Jefe de Almacén.");
-            return;
-        }
+    const handleUnlockSubmit = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
         setIsSubmittingUnlock(true);
         setUnlockError("");
 
@@ -1086,10 +1252,10 @@ export default function EnsacadoraSamplingModal({
             const res = await axios.post(
                 route("documentation.shipment-orders.unlock-sampling", targetId),
                 {
-                    username_or_email: unlockUser.trim(),
-                    password: unlockPassword,
+                    username_or_email: unlockUser.trim() || undefined,
+                    password: unlockPassword || undefined,
                     assistant_name: currentAssistantName,
-                    notes: unlockNotes.trim() || ((samples.length >= 36 || isWithinTolerance === false) ? "El Jefe de Almacen o Supervisor Autoriza Peso Fuera de Rango" : ""),
+                    notes: unlockNotes.trim() || ((samples.length >= 36 || isWithinTolerance === false) ? "El Jefe de Almacen o Supervisor Autoriza Peso Fuera de Rango" : "Autorizado por Supervisión PROAGRO tras revisión de capturas"),
                 }
             );
 
@@ -1129,28 +1295,40 @@ export default function EnsacadoraSamplingModal({
                     } catch (e) {}
                 });
 
-                Swal.fire({
-                    icon: "success",
-                    title: "¡Muestreo Desbloqueado!",
-                    html: `<div class="text-left space-y-2 text-sm text-slate-700">
-                        <p>La captura de muestras ha sido autorizada y desbloqueada por <b>${res.data.incident?.unlocked_by_name || "el Jefe de Almacén"}</b>.</p>
-                        <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 text-xs font-semibold">
-                            Desbloqueo registrado como <b>Desbloqueo #${newCount}</b> en la tabla de Incidencias.
-                        </div>
-                        <p class="text-[11px] text-slate-500">
-                            Aviso: Si las capturas posteriores vuelven a situarse fuera de tolerancia, las alertas y el bloqueo seguirán activos normalmente.
-                        </p>
-                    </div>`,
-                    confirmButtonColor: "#16a34a",
-                    confirmButtonText: "Continuar Muestreo",
-                });
-
                 if (onUnlockSuccess) {
                     onUnlockSuccess(res.data.incident);
                 }
-                setTimeout(() => {
-                    sampleInputRef.current?.focus();
-                }, 200);
+
+                if (!isEstibadorUser) {
+                    onClose();
+                    Swal.fire({
+                        icon: "success",
+                        title: "¡Muestreo Desbloqueado!",
+                        text: "La orden ha sido autorizada y desbloqueada con éxito.",
+                        timer: 2500,
+                        showConfirmButton: false,
+                        customClass: { container: "!z-[999999]" },
+                    });
+                } else {
+                    Swal.fire({
+                        icon: "success",
+                        title: "¡Muestreo Desbloqueado!",
+                        html: `<div class="text-left space-y-2 text-sm text-slate-700">
+                            <p>La captura de muestras ha sido autorizada y desbloqueada por <b>${res.data.incident?.unlocked_by_name || "el Jefe de Almacén"}</b>.</p>
+                            <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 text-xs font-semibold">
+                                Desbloqueo registrado como <b>Desbloqueo #${newCount}</b> en la tabla de Incidencias.
+                            </div>
+                            <p class="text-[11px] text-slate-500">
+                                Aviso: Si las capturas posteriores vuelven a situarse fuera de tolerancia, las alertas y el bloqueo seguirán activos normalmente.
+                            </p>
+                        </div>`,
+                        confirmButtonColor: "#16a34a",
+                        confirmButtonText: "Continuar Muestreo",
+                    });
+                    setTimeout(() => {
+                        sampleInputRef.current?.focus();
+                    }, 200);
+                }
             }
         } catch (err: any) {
             const msg = err.response?.data?.message || "Error al validar credenciales del Jefe de Almacén.";
@@ -1160,19 +1338,118 @@ export default function EnsacadoraSamplingModal({
         }
     };
 
+    const handleDirectSupervisorUnlock = async () => {
+        const result = await Swal.fire({
+            title: "¿Desbloquear Toma de Muestras?",
+            html: `
+                <div style="text-align: left; font-size: 14px; line-height: 1.5; color: #1e293b;">
+                    <p>Orden: <strong>${order?.folio || order?.order_number || ""}</strong></p>
+                    <p style="margin-top: 6px; color: #b91c1c; font-weight: 700;">${blockReason || "Validación de tolerancia de pesos"}</p>
+                    <p style="margin-top: 8px;">¿Desea autorizar y desbloquear la captura de muestras para que los estibadores continúen?</p>
+                </div>
+            `,
+            icon: "warning",
+            input: "textarea",
+            inputPlaceholder: "Observaciones de la autorización (opcional)...",
+            inputValue: "Autorizado por Supervisión PROAGRO tras revisión de capturas",
+            showCancelButton: true,
+            confirmButtonText: "✓ Sí, Desbloquear",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#16a34a",
+            cancelButtonColor: "#64748b",
+            customClass: { container: "!z-[999999]" },
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            const targetId = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
+            const res = await axios.post(
+                route("documentation.shipment-orders.unlock-sampling", targetId),
+                {
+                    notes: result.value || "Autorizado por Supervisión PROAGRO tras revisión de capturas",
+                    assistant_name: currentAssistantName,
+                }
+            );
+
+            if (res.data?.success) {
+                setIsBlocked(false);
+                setIsAuthorizedAfterLock(true);
+                setIsEndOfSamplingBlock(false);
+                setConsecutiveOutCount(0);
+                setIsSaved(false);
+                setSavedAt(null);
+                setIsUnlockModalOpen(false);
+                const newCount = res.data.unlock_count || (unlockCount + 1);
+                setUnlockCount(newCount);
+
+                // Limpiar cualquier estado previo guardado o bloqueado en localStorage
+                const id = order?.id || order?.shipment_order_id || order?.folio || order?.order_number;
+                const candidateKeys = [
+                    `sampling_order_${id}`,
+                    order?.id ? `sampling_order_${order.id}` : null,
+                    order?.folio ? `sampling_order_${order.folio}` : null,
+                ].filter(Boolean) as string[];
+                candidateKeys.forEach((k) => {
+                    try {
+                        const raw = localStorage.getItem(k);
+                        if (raw) {
+                            const parsed = JSON.parse(raw);
+                            parsed.isBlocked = false;
+                            parsed.isSaved = false;
+                            parsed.savedAt = null;
+                            localStorage.setItem(k, JSON.stringify(parsed));
+                        }
+                    } catch (e) {}
+                });
+
+                window.dispatchEvent(
+                    new CustomEvent("sampling-unlocked", {
+                        detail: { id: targetId, folio: order?.folio },
+                    })
+                );
+
+                if (onUnlockSuccess) {
+                    onUnlockSuccess(res.data.incident);
+                }
+
+                if (!isEstibadorUser) {
+                    onClose();
+                }
+
+                Swal.fire({
+                    icon: "success",
+                    title: "¡Muestreo Desbloqueado!",
+                    text: res.data?.message || "La orden ha sido desbloqueada. El personal estibador ya puede continuar con la captura.",
+                    timer: 3000,
+                    showConfirmButton: false,
+                    customClass: { container: "!z-[999999]" },
+                });
+            }
+        } catch (error: any) {
+            Swal.fire({
+                icon: "error",
+                title: "Error al desbloquear",
+                text: error.response?.data?.message || "No se pudo realizar el desbloqueo.",
+                confirmButtonColor: "#4f46e5",
+                customClass: { container: "!z-[999999]" },
+            });
+        }
+    };
+
     const handleAddSample = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (isLocked) return;
         if (isBlocked) {
             Swal.fire({
                 icon: "error",
-                title: "Atención",
-                text: "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. Ingrese el usuario y contraseña del Jefe de Almacén para autorizar el desbloqueo.",
+                title: "Atención - Muestreo Bloqueado",
+                text: isEstibadorUser
+                    ? "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. El sistema permanece bloqueado hasta que el Supervisor PROAGRO autorice el desbloqueo."
+                    : "La toma de muestras se encuentra bloqueada por registrar pesos fuera de tolerancia. Ingrese el usuario y contraseña del Jefe de Almacén para autorizar el desbloqueo.",
                 confirmButtonColor: "#dc2626",
                 confirmButtonText: "Entendido",
                 customClass: { container: "!z-[999999]" },
-            }).then(() => {
-                setIsUnlockModalOpen(true);
             });
             return;
         }
@@ -1235,14 +1512,14 @@ export default function EnsacadoraSamplingModal({
             Swal.fire({
                 icon: "error",
                 title: "Validación de Cierre - Captura Bloqueada",
-                text: "Se requiere usuario y contraseña del Supervisor PROAGRO o Jefe de Almacén para autorizar y desbloquear la captura.",
+                text: isEstibadorUser
+                    ? "La captura ha sido BLOQUEADA por peso fuera de tolerancia. El sistema permanece bloqueado hasta que el Supervisor PROAGRO autorice el desbloqueo."
+                    : "Se requiere usuario y contraseña del Supervisor PROAGRO o Jefe de Almacén para autorizar y desbloquear la captura.",
                 confirmButtonColor: "#dc2626",
                 confirmButtonText: "Entendido",
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 customClass: { container: "!z-[999999]" },
-            }).then(() => {
-                setIsUnlockModalOpen(true);
             });
         } else {
             saveSamplesToDatabase(updated, isSaved && updated.length >= maxSamples, isBlocked);
@@ -1421,7 +1698,7 @@ export default function EnsacadoraSamplingModal({
                                             </div>
                                             <p className="text-xs font-medium text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
                                                 <span>
-                                                    Monitoreo estadístico de peso por saco • Tolva 1 • Presentación {targetBaseWeight} kg
+                                                    Monitoreo estadístico de peso por saco • {baggingTags.hopperLabel || "Tolva 1"} • Presentación {targetBaseWeight} kg
                                                 </span>
                                                 {totalSacks > 0 && (
                                                     <strong className="text-indigo-700 font-bold">
@@ -1451,15 +1728,15 @@ export default function EnsacadoraSamplingModal({
 
                                     {/* Action Buttons */}
                                     <div className="flex items-center gap-2.5 self-end sm:self-auto flex-wrap">
-                                        {isBlocked && (
+                                        {isBlocked && !isEstibadorUser && (
                                             <button
                                                 type="button"
-                                                onClick={() => setIsUnlockModalOpen(true)}
+                                                onClick={handleDirectSupervisorUnlock}
                                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/30 transition transform active:scale-95 animate-pulse cursor-pointer"
-                                                title="Desbloquear captura de muestras con usuario del Jefe de Almacén"
+                                                title="Desbloquear captura de muestras para los estibadores"
                                             >
-                                                <KeyRound className="w-4 h-4" />
-                                                <span>Desbloquear con Jefe</span>
+                                                <Unlock className="w-4 h-4" />
+                                                <span>Desbloquear</span>
                                             </button>
                                         )}
 
@@ -1489,7 +1766,7 @@ export default function EnsacadoraSamplingModal({
                                     <div className="bg-gradient-to-br from-indigo-50/70 to-slate-50 border border-indigo-100 rounded-2xl p-3.5 shadow-sm">
                                         <div className="flex items-center justify-between text-indigo-700 mb-1.5">
                                             <span className="text-[11px] font-bold uppercase tracking-wider">
-                                                ENSACADORA 1 (ENS-1)
+                                                IZQUIERDA ENSACADORA ({baggingTags.leftTag})
                                             </span>
                                             <span className="text-[10px] font-semibold bg-indigo-100/80 px-2 py-0.5 rounded-md text-indigo-800">
                                                 {samplesEnv1.length} / {maxSamplesPerEnv} mstr.
@@ -1523,7 +1800,7 @@ export default function EnsacadoraSamplingModal({
                                     <div className="bg-gradient-to-br from-emerald-50/70 to-slate-50 border border-emerald-100 rounded-2xl p-3.5 shadow-sm">
                                         <div className="flex items-center justify-between text-emerald-700 mb-1.5">
                                             <span className="text-[11px] font-bold uppercase tracking-wider">
-                                                ENSACADORA 2 (ENS-2)
+                                                DERECHA ENSACADORA ({baggingTags.rightTag})
                                             </span>
                                             <span className="text-[10px] font-semibold bg-emerald-100/80 px-2 py-0.5 rounded-md text-emerald-800">
                                                 {samplesEnv2.length} / {maxSamplesPerEnv} mstr.
@@ -1608,18 +1885,34 @@ export default function EnsacadoraSamplingModal({
                                                             </span>
                                                         </h4>
                                                         <p className="text-xs text-rose-800 mt-0.5">
-                                                            {blockReason ? `${blockReason}.` : `Toma de muestras fuera de tolerancia (${limits.totalInferiorTons.toFixed(3)} - ${limits.totalSuperiorTons.toFixed(3)} ton).`} Se requiere autorización y contraseña del <b>Jefe de Almacén</b> para desbloquear la captura.
+                                                            {blockReason ? `${blockReason}.` : `Toma de muestras fuera de tolerancia (${limits.totalInferiorTons.toFixed(3)} - ${limits.totalSuperiorTons.toFixed(3)} ton).`}{" "}
+                                                            {isEstibadorUser ? (
+                                                                <>El sistema para los estibadores permanece <b>bloqueado</b> hasta que el <b>Supervisor PROAGRO</b> autorice el desbloqueo.</>
+                                                            ) : (
+                                                                <>Se requiere autorización del <b>Supervisor PROAGRO o Jefe de Almacén</b> para desbloquear la captura.</>
+                                                            )}
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIsUnlockModalOpen(true)}
-                                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/30 transition transform active:scale-95 shrink-0 whitespace-nowrap cursor-pointer"
-                                                >
-                                                    <KeyRound className="w-4 h-4" />
-                                                    <span>Desbloquear con Jefe</span>
-                                                </button>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {isEstibadorUser && (
+                                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold animate-pulse">
+                                                            <Clock className="w-4 h-4 text-amber-700" />
+                                                            <span>Esperando desbloqueo...</span>
+                                                        </div>
+                                                    )}
+                                                    {!isEstibadorUser && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleDirectSupervisorUnlock}
+                                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/30 transition transform active:scale-95 shrink-0 whitespace-nowrap cursor-pointer animate-pulse"
+                                                            title="Autorizar y desbloquear la captura de muestras para los estibadores"
+                                                        >
+                                                            <Unlock className="w-4 h-4" />
+                                                            <span>Desbloquear</span>
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
 
@@ -1732,7 +2025,7 @@ export default function EnsacadoraSamplingModal({
                                         <div className="bg-gradient-to-r from-indigo-50 to-white px-4 py-2.5 border-b border-indigo-100 flex items-center justify-between">
                                             <span className="text-xs font-bold text-indigo-900 flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                                                Últimos Muestreos ENS-1
+                                                Últimos Muestreos Izquierda Ensacadora ({baggingTags.leftTag})
                                             </span>
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[11px] font-semibold text-indigo-600 font-mono">
@@ -1830,7 +2123,7 @@ export default function EnsacadoraSamplingModal({
                                         <div className="bg-gradient-to-r from-emerald-50 to-white px-4 py-2.5 border-b border-emerald-100 flex items-center justify-between">
                                             <span className="text-xs font-bold text-emerald-900 flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                                                Últimos Muestreos ENS-2
+                                                Últimos Muestreos Derecha Ensacadora ({baggingTags.rightTag})
                                             </span>
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[11px] font-semibold text-emerald-600 font-mono">
@@ -2394,7 +2687,7 @@ export default function EnsacadoraSamplingModal({
                                                 </p>
 
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                    {/* Botón ENS-1 */}
+                                                    {/* Botón Izquierda Ensacadora */}
                                                     <button
                                                         type="button"
                                                         disabled={samplesEnv1.length >= maxSamplesPerEnv}
@@ -2413,7 +2706,9 @@ export default function EnsacadoraSamplingModal({
                                                         <div>
                                                             <div className="flex items-center justify-between mb-3">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="px-3 py-1 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-sm">ENS-1</span>
+                                                                    <span className="px-3 py-1 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-sm">
+                                                                        {baggingTags.leftTag || "ENS-1"}
+                                                                    </span>
                                                                     <span
                                                                         className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
                                                                             samplesEnv1.length >= maxSamplesPerEnv
@@ -2428,18 +2723,23 @@ export default function EnsacadoraSamplingModal({
                                                                     <CheckCircle2 className="w-5 h-5 text-indigo-600" />
                                                                 )}
                                                             </div>
-                                                            <h4 className="text-base font-black text-gray-900 group-hover:text-indigo-900">
-                                                                Ensacadora 01
-                                                            </h4>
-                                                            <p className="text-xs text-gray-500 mt-1">
-                                                                Línea de ensacado 1 • Tolva 1
+                                                            <div className="space-y-1">
+                                                                <h4 className="text-base font-black text-gray-900 group-hover:text-indigo-900">
+                                                                    Izquierda Ensacadora
+                                                                </h4>
+                                                                <div className="inline-block text-xs font-extrabold px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                                                    TAG: {baggingTags.leftTag || "Sin Asignar"}
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-xs text-gray-500 mt-1.5">
+                                                                Línea de ensacado 1 • {baggingTags.hopperLabel || "Tolva 1"}
                                                             </p>
                                                         </div>
                                                         <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-indigo-600">
                                                             <span>
                                                                 {samplesEnv1.length >= maxSamplesPerEnv
                                                                     ? `Límite de ${maxSamplesPerEnv} completado`
-                                                                    : "Guardar en ENS-1"}
+                                                                    : `Guardar en Izquierda (${baggingTags.leftTag || "ENS-1"})`}
                                                             </span>
                                                             {samplesEnv1.length < maxSamplesPerEnv && (
                                                                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -2447,7 +2747,7 @@ export default function EnsacadoraSamplingModal({
                                                         </div>
                                                     </button>
 
-                                                    {/* Botón ENS-2 */}
+                                                    {/* Botón Derecha Ensacadora */}
                                                     <button
                                                         type="button"
                                                         disabled={samplesEnv2.length >= maxSamplesPerEnv}
@@ -2466,7 +2766,9 @@ export default function EnsacadoraSamplingModal({
                                                         <div>
                                                             <div className="flex items-center justify-between mb-3">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-600 text-white shadow-sm">ENS-2</span>
+                                                                    <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-600 text-white shadow-sm">
+                                                                        {baggingTags.rightTag || "ENS-2"}
+                                                                    </span>
                                                                     <span
                                                                         className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
                                                                             samplesEnv2.length >= maxSamplesPerEnv
@@ -2481,18 +2783,23 @@ export default function EnsacadoraSamplingModal({
                                                                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                                                                 )}
                                                             </div>
-                                                            <h4 className="text-base font-black text-gray-900 group-hover:text-emerald-900">
-                                                                Ensacadora 02
-                                                            </h4>
-                                                            <p className="text-xs text-gray-500 mt-1">
-                                                                Línea de ensacado 2 • Tolva 1
+                                                            <div className="space-y-1">
+                                                                <h4 className="text-base font-black text-gray-900 group-hover:text-emerald-900">
+                                                                    Derecha Ensacadora
+                                                                </h4>
+                                                                <div className="inline-block text-xs font-extrabold px-2.5 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                    TAG: {baggingTags.rightTag || "Sin Asignar"}
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-xs text-gray-500 mt-1.5">
+                                                                Línea de ensacado 2 • {baggingTags.hopperLabel || "Tolva 1"}
                                                             </p>
                                                         </div>
                                                         <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-emerald-600">
                                                             <span>
                                                                 {samplesEnv2.length >= maxSamplesPerEnv
                                                                     ? `Límite de ${maxSamplesPerEnv} completado`
-                                                                    : "Guardar en ENS-2"}
+                                                                    : `Guardar en Derecha (${baggingTags.rightTag || "ENS-2"})`}
                                                             </span>
                                                             {samplesEnv2.length < maxSamplesPerEnv && (
                                                                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -2528,13 +2835,12 @@ export default function EnsacadoraSamplingModal({
         </Transition.Root>
 
         {/* Modal de Desbloqueo con Jefe de Almacén */}
-        <Transition.Root show={isUnlockModalOpen} as={Fragment}>
+        <Transition.Root show={isUnlockModalOpen && !isEstibadorUser} as={Fragment}>
             <Dialog
                 as="div"
                 className="relative z-[60]"
                 onClose={() => {
-                    // Si está bloqueado, no permitir salir haciendo clic en el fondo ni con Escape
-                    if (!isBlocked && !isSubmittingUnlock) {
+                    if (!isSubmittingUnlock) {
                         setIsUnlockModalOpen(false);
                     }
                 }}
@@ -2579,17 +2885,15 @@ export default function EnsacadoraSamplingModal({
                                             )}
                                         </div>
                                     </div>
-                                    {!isBlocked && (
-                                        <button
-                                            type="button"
-                                            disabled={isSubmittingUnlock}
-                                            onClick={() => setIsUnlockModalOpen(false)}
-                                            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 disabled:opacity-30 cursor-pointer"
-                                            title="Cerrar"
-                                        >
-                                            <X className="w-5 h-5" />
-                                        </button>
-                                    )}
+                                    <button
+                                        type="button"
+                                        disabled={isSubmittingUnlock}
+                                        onClick={() => setIsUnlockModalOpen(false)}
+                                        className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 disabled:opacity-30 cursor-pointer"
+                                        title="Cerrar"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
                                 </div>
 
                                 {isFinalSamplingBlock ? (
@@ -2641,6 +2945,35 @@ export default function EnsacadoraSamplingModal({
                                                 <span>Pantalla Bloqueada: Ingrese usuario y contraseña del Jefe de Almacén para autorizar y continuar.</span>
                                             </div>
                                         )}
+
+                                        {outOfRangeSamplesList.length > 0 && (
+                                            <div className="mt-3 p-3 bg-rose-50/90 border border-rose-200 rounded-2xl text-xs space-y-1.5">
+                                                <div className="font-bold text-rose-950 flex items-center justify-between text-[11px]">
+                                                    <span className="flex items-center gap-1">
+                                                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                                        Muestras fuera de tolerancia ({outOfRangeSamplesList.length}):
+                                                    </span>
+                                                    <span className="font-mono text-[10px] text-rose-700 bg-white/70 px-1.5 py-0.5 rounded">
+                                                        Rango: {limits.inferior.toFixed(3)} - {limits.superior.toFixed(3)} kg
+                                                    </span>
+                                                </div>
+                                                <div className="max-h-28 overflow-y-auto divide-y divide-rose-100 pr-1">
+                                                    {outOfRangeSamplesList.map((s, idx) => (
+                                                        <div key={s.id || idx} className="flex justify-between py-1 text-[11px] font-mono">
+                                                            <span className="font-bold text-rose-900">
+                                                                #{s.num} (ENS-{s.ensacadora || s.envasadora || 1}):
+                                                            </span>
+                                                            <span className="font-black text-rose-700">
+                                                                {s.weight.toFixed(3)} kg{" "}
+                                                                <span className="font-normal text-[10px] text-slate-500">
+                                                                    ({s.weight > limits.ideal ? `+${(s.weight - limits.ideal).toFixed(3)}` : (s.weight - limits.ideal).toFixed(3)} kg)
+                                                                </span>
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </>
                                 )}
 
@@ -2652,37 +2985,14 @@ export default function EnsacadoraSamplingModal({
                                 )}
 
                                 <form onSubmit={handleUnlockSubmit} className="mt-4 space-y-3.5">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 mb-1">
-                                            {isFinalSamplingBlock
-                                                ? "Usuario o Correo del Jefe de Almacén o Supervisor *"
-                                                : "Usuario o Correo del Jefe de Almacén *"}
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={unlockUser}
-                                            onChange={(e) => setUnlockUser(e.target.value)}
-                                            placeholder={isFinalSamplingBlock ? "Ej. admin@proagro.com o nombre del jefe o supervisor" : "Ej. admin@proagro.com o nombre del jefe"}
-                                            className="w-full rounded-xl border-gray-300 text-xs font-medium focus:border-rose-500 focus:ring-rose-500 px-3 py-2.5 shadow-xs"
-                                            required
-                                            autoFocus
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 mb-1">
-                                            {isFinalSamplingBlock
-                                                ? "Contraseña del Jefe de Almacén o Supervisor *"
-                                                : "Contraseña del Jefe de Almacén *"}
-                                        </label>
-                                        <input
-                                            type="password"
-                                            value={unlockPassword}
-                                            onChange={(e) => setUnlockPassword(e.target.value)}
-                                            placeholder="••••••••"
-                                            className="w-full rounded-xl border-gray-300 text-xs font-medium focus:border-rose-500 focus:ring-rose-500 px-3 py-2.5 shadow-xs"
-                                            required
-                                        />
+                                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-950 font-medium">
+                                        <ShieldAlert className="w-5 h-5 text-emerald-600 shrink-0" />
+                                        <div>
+                                            <span className="font-bold block text-emerald-900">Sesión de Supervisión Activa</span>
+                                            <span className="text-[11px] text-emerald-800">
+                                                No se requiere ingresar contraseña. Presione el botón inferior para otorgar la autorización directa.
+                                            </span>
+                                        </div>
                                     </div>
 
                                     <div>
@@ -2692,30 +3002,33 @@ export default function EnsacadoraSamplingModal({
                                         <textarea
                                             value={unlockNotes}
                                             onChange={(e) => setUnlockNotes(e.target.value)}
-                                            placeholder={isFinalSamplingBlock ? "El Jefe de Almacen o Supervisor Autoriza Peso Fuera de Rango" : "Ej. Se re-calibró la báscula de ensacadora y se autoriza continuar..."}
+                                            placeholder={
+                                                isFinalSamplingBlock
+                                                    ? "El Jefe de Almacen o Supervisor Autoriza Peso Fuera de Rango"
+                                                    : "Autorizado por Supervisión PROAGRO tras revisión de capturas"
+                                            }
                                             rows={2}
                                             className="w-full rounded-xl border-gray-300 text-xs font-medium focus:border-rose-500 focus:ring-rose-500 px-3 py-2 shadow-xs resize-none"
+                                            autoFocus
                                         />
                                     </div>
 
                                     <div className="pt-2 flex items-center justify-end gap-2">
-                                        {!isBlocked && (
-                                            <button
-                                                type="button"
-                                                disabled={isSubmittingUnlock}
-                                                onClick={() => setIsUnlockModalOpen(false)}
-                                                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-                                            >
-                                                Cancelar
-                                            </button>
-                                        )}
+                                        <button
+                                            type="button"
+                                            disabled={isSubmittingUnlock}
+                                            onClick={() => setIsUnlockModalOpen(false)}
+                                            className="px-4 py-2 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+                                        >
+                                            Cancelar
+                                        </button>
                                         <button
                                             type="submit"
                                             disabled={isSubmittingUnlock}
-                                            className={`${isBlocked ? "w-full" : ""} inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/20 transition disabled:opacity-50 cursor-pointer`}
+                                            className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md shadow-emerald-600/20 transition disabled:opacity-50 cursor-pointer"
                                         >
-                                            <KeyRound className="w-3.5 h-3.5" />
-                                            <span>{isSubmittingUnlock ? "Validando..." : "Autorizar y Desbloquear"}</span>
+                                            <Unlock className="w-3.5 h-3.5" />
+                                            <span>{isSubmittingUnlock ? "Autorizando..." : "Autorizar y Desbloquear"}</span>
                                         </button>
                                     </div>
                                 </form>

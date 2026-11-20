@@ -17,6 +17,7 @@ import {
     Printer,
     Activity,
     LayoutGrid,
+    CheckCircle2,
 } from "lucide-react";
 import PrimaryButton from "@/Components/PrimaryButton";
 import InputLabel from "@/Components/InputLabel";
@@ -354,12 +355,18 @@ export default function ExitMP({
                             </div>
                         </div>
                     `,
-                    showCancelButton: true,
+                    showCancelButton: false,
+                    showDenyButton: true,
                     confirmButtonText: 'Sí, continuar y capturar',
-                    cancelButtonText: 'Cancelar / Verificar',
+                    denyButtonText: 'Ajuste de Peso',
                     confirmButtonColor: '#4f46e5',
-                    cancelButtonColor: '#6b7280',
+                    denyButtonColor: '#d97706',
                 });
+
+                if (result.isDenied) {
+                    handleWeightAdjustment();
+                    return;
+                }
 
                 if (!result.isConfirmed) {
                     return;
@@ -368,6 +375,118 @@ export default function ExitMP({
         }
 
         setCapturedWeight(weight);
+    };
+
+    const handleWeightAdjustment = async () => {
+        if (!order?.id) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Sin orden activa',
+                text: 'No hay ninguna orden seleccionada para regresar a ajuste de peso.',
+            });
+            return;
+        }
+
+        const effectiveWeight = capturedWeight !== null ? capturedWeight : weight;
+        const entryW = parseFloat(order?.entry_weight) || 0;
+        const currentNet = effectiveWeight > 0 ? Math.abs(effectiveWeight - entryW) : 0;
+
+        let diffText = "";
+        let diffHtml = "";
+
+        if (toleranceLimits && currentNet > 0) {
+            if (currentNet < toleranceLimits.minKg) {
+                const diff = toleranceLimits.minKg - currentNet;
+                diffText = `Faltan ${diff.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg (por debajo de tolerancia)`;
+                diffHtml = `<div><b>Condición:</b> <span style="color: #dc2626; font-weight: bold;">Faltante de ${diff.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</span> (Límite Mín: ${toleranceLimits.minKg.toLocaleString('es-MX')} kg)</div>`;
+            } else if (currentNet > toleranceLimits.maxKg) {
+                const diff = currentNet - toleranceLimits.maxKg;
+                diffText = `Excede por ${diff.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg (por arriba de tolerancia)`;
+                diffHtml = `<div><b>Condición:</b> <span style="color: #dc2626; font-weight: bold;">Sobrepeso de ${diff.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</span> (Límite Máx: ${toleranceLimits.maxKg.toLocaleString('es-MX')} kg)</div>`;
+            } else {
+                diffText = "Peso dentro de tolerancia";
+                diffHtml = `<div><b>Condición:</b> <span style="color: #047857; font-weight: bold;">Dentro de tolerancia</span></div>`;
+            }
+        } else if (order.programmed_weight > 0 && currentNet > 0) {
+            const progKg = order.programmed_weight * 1000;
+            const diff = currentNet - progKg;
+            diffText = diff > 0 ? `Sobrepeso de ${diff.toFixed(2)} kg` : `Faltante de ${Math.abs(diff).toFixed(2)} kg`;
+            diffHtml = `<div><b>Diferencia vs Programado:</b> <span style="font-weight: bold;">${diffText}</span></div>`;
+        }
+
+        const result = await Swal.fire({
+            title: 'Regresar Unidad para Ajuste de Peso',
+            html: `
+                <div style="text-align: left; font-size: 0.88rem;">
+                    <p style="margin-bottom: 0.6rem; color: #4b5563;">
+                        La unidad <b>${order.oe_folio || order.folio}</b> (${order.vehicle_plate || 'Sin placas'}) regresará a <b>Gestión de Proceso de Embarque (APT)</b> para que el supervisor modifique las estibas y el ajuste de sacos.
+                    </p>
+                    <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 0.6rem; padding: 0.6rem; font-family: monospace; font-size: 0.82rem; line-height: 1.4; color: #78350f; margin-bottom: 0.75rem;">
+                        <div><b>Peso Báscula Salida:</b> ${effectiveWeight > 0 ? `${effectiveWeight.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : 'Sin capturar'}</div>
+                        <div><b>Peso Neto Calculado:</b> ${currentNet > 0 ? `${currentNet.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg (${(currentNet / 1000).toFixed(3)} TM)` : 'N/A'}</div>
+                        ${diffHtml}
+                    </div>
+                    <label style="display: block; font-weight: bold; font-size: 0.82rem; margin-bottom: 0.3rem; color: #374151;">
+                        Observación para Incidencias / Supervisor de APT (Obligatorio):
+                    </label>
+                    <textarea id="swal_adjustment_reason" class="swal2-textarea" style="margin: 0; width: 100%; box-sizing: border-box; font-size: 0.85rem; border-radius: 0.5rem; height: 80px;" placeholder="Ej. Unidad con sobrepeso de 340 kg detectado en báscula salida. Se requiere retirar sacos de la estiba.">${diffText ? `${diffText}. Se solicita ajuste de peso en almacén.` : ''}</textarea>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Regresar a APT',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#d97706',
+            cancelButtonColor: '#6b7280',
+            preConfirm: () => {
+                const reason = (document.getElementById('swal_adjustment_reason') as HTMLTextAreaElement)?.value?.trim();
+                if (!reason) {
+                    Swal.showValidationMessage('Debe ingresar una observación explicando el motivo del ajuste.');
+                    return false;
+                }
+                return reason;
+            }
+        });
+
+        if (!result.isConfirmed || !result.value) {
+            return;
+        }
+
+        try {
+            Swal.fire({
+                title: 'Procesando...',
+                text: 'Regresando unidad a APT y registrando incidencia...',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            await axios.post(route('scale.exit.return-adjustment', order.id), {
+                reason: result.value,
+                weight: currentNet > 0 ? currentNet : null,
+                diff_text: diffText,
+            });
+
+            await Swal.fire({
+                icon: 'success',
+                title: '¡Unidad Regresada a APT!',
+                html: `La orden <b>${order.oe_folio || order.folio}</b> fue regresada a Supervisión de APT para su ajuste de peso.<br/><br/>Se ha registrado la observación en el módulo de <b>Incidencias</b>.<br/>El destare en báscula permanecerá bloqueado hasta que el supervisor lo autorice nuevamente.`,
+                confirmButtonColor: '#16a34a',
+                confirmButtonText: 'Aceptar',
+            });
+
+            router.visit(route('scale.index', { scale_id: active_scale_id, view: 'table', tab: 'sale' }));
+        } catch (error: any) {
+            console.error("Error al regresar orden para ajuste:", error);
+            const msg = error.response?.data?.message || 'Ocurrió un error al regresar la unidad a APT.';
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: msg,
+                confirmButtonColor: '#4f46e5',
+            });
+        }
     };
 
     const submit = async (e: React.FormEvent) => {
@@ -391,6 +510,31 @@ export default function ExitMP({
                 confirmButtonColor: '#3085d6',
             });
             return;
+        }
+
+        // --- VALIDATION: Inventory Stock ---
+        if (order?.warehouse_stock !== undefined && order?.warehouse_stock !== null && order.warehouse_stock <= 0) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Operación Bloqueada',
+                text: `No hay inventario disponible en ${order.warehouse || 'el almacén'} (${order.warehouse_stock} TM). No es posible destarar la unidad.`,
+                confirmButtonColor: '#d33',
+            });
+            return;
+        }
+
+        if (order?.warehouse_stock !== undefined && order?.warehouse_stock !== null && order.warehouse_stock > 0) {
+            const currentNetKg = Math.abs((capturedWeight || 0) - (parseFloat(order.entry_weight) || 0));
+            const currentNetTons = currentNetKg >= 100 ? currentNetKg / 1000 : currentNetKg;
+            if (currentNetTons > order.warehouse_stock) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Stock Insuficiente',
+                    html: `El peso neto capturado (<b>${currentNetTons.toFixed(2)} TM</b>) supera el stock disponible en <b>${order.warehouse}</b> (<b>${order.warehouse_stock.toFixed(2)} TM</b>).`,
+                    confirmButtonColor: '#d33',
+                });
+                return;
+            }
         }
 
         post(route("scale.exit.store"));
@@ -763,6 +907,48 @@ export default function ExitMP({
 
                     {/* RIGHT: Details */}
                     <div className="lg:col-span-8 space-y-6">
+                        {order?.weight_adjustment_status === 'adjusted' && (
+                            <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 shadow-sm flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-700">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-bold text-sm text-emerald-900 uppercase tracking-wide">
+                                            Unidad Regresada para Verificación de Peso (Ajuste Realizado por APT)
+                                        </h4>
+                                        {order.adjustment && (
+                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-200 text-emerald-900 border border-emerald-300">
+                                                Ajuste: {order.adjustment} sacos
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-emerald-800 mt-1">
+                                        <b>Observación de Supervisión APT:</b> {order.weight_adjustment_resolution_notes || "Ajuste de estiba aplicado en almacén."}
+                                    </p>
+                                    <p className="text-[11px] text-emerald-700 mt-1 font-medium">
+                                        Por favor capture el peso en báscula para verificar que ahora se encuentre dentro del rango de tolerancia y proceda a generar el ticket.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {order?.warehouse_stock !== undefined && order?.warehouse_stock !== null && order.warehouse_stock <= 0 && (
+                            <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 shadow-sm flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0 text-red-700">
+                                    <AlertCircle className="w-5 h-5" />
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-sm text-red-900 uppercase tracking-wide">
+                                        Destare Bloqueado por Inventario
+                                    </h4>
+                                    <p className="text-xs text-red-800 mt-1 font-semibold">
+                                        No hay inventario disponible en {order.warehouse || 'el almacén asignado'} (Stock disponible: {order.warehouse_stock} TM). No es posible destarar hasta registrar producción o existencia en el almacén.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Warehouse Assignment Info (Read Only) - Hide for Sales */}
                         {order.type !== 'sale' && (
                             <div className="bg-blue-50 rounded-2xl p-6 border border-blue-100">
@@ -962,7 +1148,7 @@ export default function ExitMP({
 
                         <div className="pt-6">
                             <button
-                                disabled={processing || weight <= 0}
+                                disabled={processing || weight <= 0 || (order?.warehouse_stock !== undefined && order?.warehouse_stock !== null && order.warehouse_stock <= 0)}
                                 className="group relative w-full h-20 bg-indigo-600 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
                             >
                                 <div className="relative z-10 flex items-center justify-center gap-4">

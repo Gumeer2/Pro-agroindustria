@@ -27,7 +27,9 @@ import {
     AlertTriangle,
     Loader2,
     Ship,
+    SlidersHorizontal,
 } from "lucide-react";
+import WarehouseAdjustmentFactorModal from "@/Components/WarehouseAdjustmentFactorModal";
 import Swal from "sweetalert2";
 
 interface DailyProduction {
@@ -207,6 +209,7 @@ export default function DapInventoryIndex({
     const [activeTab, setActiveTab] = useState<"production" | "initial" | "summary">(
         requestedTab || initialTab || (filters?.tab as any) || "production"
     );
+    const [isAdjustmentModalOpen, setIsAdjustmentModalOpen] = useState(false);
 
     // Search and filter state
     const [search, setSearch] = useState(filters?.search || "");
@@ -1265,13 +1268,23 @@ export default function DapInventoryIndex({
                                     Balance y stock inicial base por almacén y planta
                                 </p>
                             </div>
-                            <button
-                                onClick={() => openInitialModal()}
-                                className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 transition-colors"
-                            >
-                                <Plus className="w-4 h-4 mr-1.5" />
-                                Capturar Inventario Inicial
-                            </button>
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAdjustmentModalOpen(true)}
+                                    className="inline-flex items-center px-4 py-2 border border-gray-200 rounded-xl shadow-xs text-sm font-bold text-gray-700 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+                                >
+                                    <SlidersHorizontal className="w-4 h-4 mr-1.5 text-gray-500" />
+                                    Factor de Ajuste
+                                </button>
+                                <button
+                                    onClick={() => openInitialModal()}
+                                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 transition-colors cursor-pointer"
+                                >
+                                    <Plus className="w-4 h-4 mr-1.5" />
+                                    Capturar Inventario Inicial
+                                </button>
+                            </div>
                         </div>
 
                         <div className="overflow-x-auto">
@@ -1449,7 +1462,7 @@ export default function DapInventoryIndex({
 
                         {/* Warehouse Breakdown Table */}
                         <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
-                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-900 flex items-center">
                                         <Database className="w-5 h-5 mr-2 text-amber-600" />
@@ -1459,6 +1472,14 @@ export default function DapInventoryIndex({
                                         Fórmula: (Inventario Inicial + Producción Diaria) − Embarques Despachados = Stock Neto Disponible
                                     </p>
                                 </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAdjustmentModalOpen(true)}
+                                    className="inline-flex items-center px-3.5 py-1.5 border border-gray-200 rounded-xl shadow-xs text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 transition-colors cursor-pointer shrink-0"
+                                >
+                                    <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5 text-gray-500" />
+                                    Factor de Ajuste
+                                </button>
                             </div>
 
                             <div className="overflow-x-auto">
@@ -2373,6 +2394,17 @@ export default function DapInventoryIndex({
                     </div>
                 </div>
             )}
+            {/* Modal de Factor de Ajuste en Almacén */}
+            <WarehouseAdjustmentFactorModal
+                isOpen={isAdjustmentModalOpen}
+                onClose={() => setIsAdjustmentModalOpen(false)}
+                productName="DAP"
+                productType="dap"
+                postRoute={route("apt.inventory.dap.adjustment.store")}
+                plantOptions={["PLANTA DAP", "UREA 1", "UREA 2"]}
+                currentStockByWarehouse={metrics?.byWarehouse || {}}
+                totalGlobalStock={metrics?.totalStockTons ?? 0}
+            />
         </DashboardLayout>
     );
 }

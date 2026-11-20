@@ -17,6 +17,7 @@ interface Client {
     rfc: string;
     contact_info: string;
     address?: string;
+    bag_types?: string[] | null;
 }
 
 interface PageProps {
@@ -166,6 +167,18 @@ export default function Directory({ auth, clients, filters }: PageProps) {
                                                         <div className="text-sm font-medium text-gray-900">
                                                             {client.business_name}
                                                         </div>
+                                                        {Array.isArray(client.bag_types) && client.bag_types.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                                {client.bag_types.map((bt) => (
+                                                                    <span
+                                                                        key={bt}
+                                                                        className="inline-flex items-center text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded-md"
+                                                                    >
+                                                                        {bt}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </td>

@@ -1590,10 +1590,10 @@ class SurveillanceController extends Controller
 
         $code = preg_replace('/^QR\s*[:#-]?\s*/i', '', $raw);
 
-        // Find ShipmentOrder
+        // Find ShipmentOrder: búsqueda estrictamente exacta por folio completo o ID
         $order = ShipmentOrder::where('folio', $code)
+            ->orWhere('folio', strtoupper($code))
             ->orWhere('id', $code)
-            ->orWhere('carta_porte', $code)
             ->with([
                 'client',
                 'items.product',
@@ -1606,22 +1606,7 @@ class SurveillanceController extends Controller
             ->first();
 
         if (!$order) {
-            // Partial match fallback
-            $order = ShipmentOrder::where('folio', 'like', "%{$code}%")
-                ->with([
-                    'client',
-                    'items.product',
-                    'origin',
-                    'loadingOrders.exit_operator',
-                    'loadingOrders.vessel_operator',
-                    'loadingOrders.weight_ticket',
-                    'weight_ticket',
-                ])
-                ->first();
-        }
-
-        if (!$order) {
-            return response()->json(['error' => "No se encontró ninguna orden de embarque con el folio o código '{$raw}'."], 404);
+            return response()->json(['error' => "No se encontró ninguna orden de embarque con el folio '{$raw}'. Ingrese el folio completo de la orden (ej. PA2026-0031) o escanee el código QR."], 404);
         }
 
         // Validate that order is NOT cancelled
@@ -1720,11 +1705,9 @@ class SurveillanceController extends Controller
             ->values()
             ->all();
 
-        // Check if unit is FULL to automatically link all active orders of this operator
+        // Check if unit is FULL to automatically link all active orders of this operator (ONLY IF UNIT TYPE CONTAINS FULL)
         $unitTypeRaw = strtoupper(trim((string) ($order->unit_type ?: ($subject->unit_type ?? ''))));
-        $isFullUnit = (bool) ($order->is_full ?? false)
-            || str_contains($unitTypeRaw, 'FULL')
-            || str_contains($unitTypeRaw, 'DOBLE');
+        $isFullUnit = str_contains($unitTypeRaw, 'FULL');
 
         $ordersToLinkIds = [$order->id];
         $linkedFolios = [$order->folio ?? $order->id];

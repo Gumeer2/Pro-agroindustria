@@ -1,6 +1,6 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, Link } from "@inertiajs/react";
-import { FileText, Anchor, ClipboardList, Clock, SlidersHorizontal } from "lucide-react";
+import { FileText, Anchor, ClipboardList, Clock, SlidersHorizontal, Package } from "lucide-react";
 
 export default function Index({ auth }: { auth: any }) {
     const menuItems = [
@@ -51,6 +51,14 @@ export default function Index({ auth }: { auth: any }) {
             description: "Distribución de peso de un embarque entre órdenes de venta sin perder trazabilidad.",
             color: "bg-teal-50 text-teal-600",
             hover: "hover:border-teal-500",
+        },
+        {
+            name: "Alta de Clientes Sacos",
+            icon: Package,
+            href: route("documentation.client-bags.index"),
+            description: "Alta y asignación de tipos de saco por cliente para producto envasado.",
+            color: "bg-emerald-50 text-emerald-600",
+            hover: "hover:border-emerald-500",
         },
     ];
 

@@ -1,5 +1,6 @@
 import DashboardLayout from "@/Layouts/DashboardLayout";
 import { Head, useForm, Link, usePage } from "@inertiajs/react";
+import React from "react";
 import {
     Edit,
     ArrowLeft,
@@ -28,6 +29,7 @@ export default function EditPage({
     client: Client;
 }) {
     const { flash } = usePage<any>().props;
+
     const { data, setData, put, processing, errors, reset } = useForm({
         rfc: client.rfc || "",
         business_name: client.business_name || "",
@@ -37,18 +39,14 @@ export default function EditPage({
 
     const submit = (e: React.FormEvent) => {
         e.preventDefault();
-        put(route("clients.update", client.id), {
-            onSuccess: () => {
-                // Optional: redirect or show success message kept in flash
-            },
-        });
+        put(route("clients.update", client.id));
     };
 
     return (
-        <DashboardLayout user={auth.user} header="Edición de Clientes">
-            <Head title="Editar Cliente" />
+        <DashboardLayout user={auth.user} header="Editar Cliente">
+            <Head title={`Editar ${client.business_name}`} />
 
-            <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
                 <div className="mb-6">
                     <Link
                         href={route("clients.directory")}
@@ -59,43 +57,32 @@ export default function EditPage({
                     </Link>
                 </div>
 
-                {flash?.message && (
-                    <div className="mb-6 bg-green-50 border border-green-200 text-green-800 px-6 py-4 rounded-xl shadow-md flex items-center transition-all duration-300 animate-fade-in-down">
-                        <div className="bg-green-100 p-2 rounded-full mr-4">
-                            <CheckCircle className="w-6 h-6 text-green-600" />
-                        </div>
-                        <div>
-                            <span className="block font-bold text-lg">
-                                ¡Actualización Exitosa!
-                            </span>
-                            <span className="block text-sm font-medium text-green-700">
-                                {flash.message}
-                            </span>
-                        </div>
+                {flash?.success && (
+                    <div className="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg shadow-xs flex items-center">
+                        <CheckCircle className="w-5 h-5 text-green-500 mr-3 shrink-0" />
+                        <p className="text-green-700 text-sm font-medium">
+                            {flash.success}
+                        </p>
                     </div>
                 )}
 
                 <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-                    <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 px-8 py-6 flex items-center justify-between">
-                        <div className="flex items-center">
-                            <div className="p-2 bg-indigo-700 rounded-lg mr-3 shadow-inner">
-                                <Edit className="w-6 h-6 text-white" />
-                            </div>
-                            <div>
-                                <h3 className="text-white font-bold text-xl">
-                                    Editar Cliente
-                                </h3>
-                                <p className="text-indigo-200 text-sm">
-                                    Modifique los detalles del cliente
-                                </p>
-                            </div>
+                    <div className="bg-gradient-to-r from-blue-700 to-indigo-800 px-8 py-6 text-white flex items-center justify-between">
+                        <div>
+                            <h3 className="text-xl font-bold flex items-center">
+                                <Edit className="w-6 h-6 mr-3" />
+                                Modificar Información del Cliente
+                            </h3>
+                            <p className="text-blue-100 text-sm mt-1">
+                                Actualice los datos necesarios del cliente
+                            </p>
                         </div>
                     </div>
 
                     <form onSubmit={submit} className="p-8">
-                        <div className="mb-8 p-6 bg-indigo-50 rounded-xl border border-indigo-100">
-                            <h4 className="text-indigo-800 font-bold mb-4 flex items-center text-lg">
-                                <Building className="w-5 h-5 mr-2" />
+                        <div className="mb-8">
+                            <h4 className="text-gray-900 font-bold mb-4 flex items-center text-lg border-b pb-2">
+                                <Building className="w-5 h-5 mr-2 text-indigo-600" />
                                 Información Fiscal y General
                             </h4>
 

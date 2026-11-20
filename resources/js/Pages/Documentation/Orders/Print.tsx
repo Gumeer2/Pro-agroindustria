@@ -333,7 +333,7 @@ th, td {
                                                             <tr className="border-none">
                                                                 <td className="font-bold pl-2 uppercase border-none text-[9px] w-[65%]">{currentOrder.consigned_to || "N/A"}</td>
                                                                 <td className="bg-header w-[15%] border-l border-r border-[#9ca3af] font-bold px-1 text-[9px] text-right whitespace-nowrap">PEDIDO:</td>
-                                                                <td className="font-bold px-1 text-[9px] w-[20%] text-center border-none">{currentOrder.sales_order?.sale_order || "N/A"}</td>
+                                                                <td className="font-bold px-1 text-[9px] w-[20%] text-center border-none"></td>
                                                             </tr>
                                                         </table>
                                                     </td>
@@ -382,11 +382,11 @@ th, td {
                                                                 <td className="bg-header w-[15%] text-left pl-2 border-l-0 border-b-0">REMOLQUE:</td>
                                                                 <td className="text-center font-bold border-b-0 w-[18%]">{currentOrder.trailer_plate || "N/A"}</td>
 
-                                                                <td className="bg-header w-[16%] text-center border-b-0">DESTINO:</td>
-                                                                <td className="text-center font-bold uppercase border-b-0 w-[33%]">{currentOrder.destination || (currentOrder as any).shipment_destination?.name || "N/A"}</td>
+                                                                <td className="bg-header w-[14%] text-center border-b-0">DESTINO:</td>
+                                                                <td className="text-center font-bold uppercase border-b-0 w-[20%]">{currentOrder.destination || (currentOrder as any).shipment_destination?.name || "N/A"}</td>
 
                                                                 <td className="bg-header w-[12%] text-center border-b-0">ESTADO:</td>
-                                                                <td className="text-center font-bold uppercase border-r-0 border-b-0 w-[6%]">{currentOrder.state || "MX"}</td>
+                                                                <td className="text-center font-bold uppercase border-r-0 border-b-0 w-[21%]">{currentOrder.state || "MX"}</td>
                                                             </tr>
                                                         </table>
                                                     </td>
@@ -560,7 +560,13 @@ th, td {
                                                         <tbody>
                                                             <tr className="h-16">
                                                                 <td className="align-top text-[8px] uppercase p-1.5 no-border border border-gray-400">
-                                                                    {currentOrder.observations}
+                                                                    {(() => {
+                                                                        const isEnvasado = (currentOrder.presentation || "").toUpperCase() === "ENVASADO";
+                                                                        if (!isEnvasado && currentOrder.observations) {
+                                                                            return currentOrder.observations.replace(/\bTIPO DE SACO:\s*[^,\r\n;\.]+/gi, "").trim();
+                                                                        }
+                                                                        return currentOrder.observations;
+                                                                    })()}
                                                                 </td>
                                                             </tr>
                                                         </tbody>

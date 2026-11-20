@@ -208,7 +208,7 @@ export default function StowageNoteTemplate({ order = {}, samples = [] }: Props)
                 </div>
             </div>
 
-            {/* --- GRID E- (1 Fila: 24 Columnas + TM Programada y Peso Neto a la derecha) --- */}
+            {/* --- GRID E- (1 Fila: 24 Columnas + TM Programada y Peso Estimado a la derecha) --- */}
             <div className="w-full mb-1 flex items-end">
                 {/* Table Container */}
                 <div className="w-[82%] flex flex-col">
@@ -242,7 +242,7 @@ export default function StowageNoteTemplate({ order = {}, samples = [] }: Props)
                     </table>
                 </div>
 
-                {/* Box Container on Right with TM Programada & Peso Neto */}
+                {/* Box Container on Right with TM Programada & Peso Estimado */}
                 <div className="w-[9%] flex flex-col items-center pl-1">
                     <span className="text-[6px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
                         TM Programada
@@ -253,7 +253,7 @@ export default function StowageNoteTemplate({ order = {}, samples = [] }: Props)
                 </div>
                 <div className="w-[9%] flex flex-col items-center pl-1">
                     <span className="text-[6px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
-                        Peso Neto
+                        Peso Estimado
                     </span>
                     <div className="w-full h-10 border-2 border-black bg-white rounded-xl flex items-center justify-center font-bold text-[8px] text-center px-0.5 leading-tight">
                         {netWeightDisplay}

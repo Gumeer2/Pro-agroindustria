@@ -1229,12 +1229,93 @@ class AptController extends Controller
                 ];
             });
 
+        $packagingEquipments = \App\Models\PackagingEquipment::orderBy('category_number')
+            ->orderBy('id')
+            ->get();
+
+        $activeOrdersByWarehouse = \App\Models\LoadingOrder::with(['driver', 'shipment_order'])
+            ->whereHas('weight_ticket', function ($q) {
+                $q->where('weighing_status', 'in_progress')->where('is_burreo', false);
+            })
+            ->whereNotNull('warehouse')
+            ->get();
+
+        $warehouseBaggingMachines = \App\Models\WarehouseBaggingMachine::orderBy('warehouse_number')
+            ->get()
+            ->map(function ($cfg) use ($activeOrdersByWarehouse) {
+                $active = $activeOrdersByWarehouse->first(function ($order) use ($cfg) {
+                    preg_match('/\d+/', (string)$order->warehouse, $m1);
+                    preg_match('/\d+/', (string)$cfg->warehouse, $m2);
+                    return ($m1 && $m2) ? ($m1[0] === $m2[0]) : ($order->warehouse === $cfg->warehouse);
+                });
+                
+                $plate = 'N/A';
+                $driverName = 'N/A';
+                if ($active) {
+                    $plate = $active->tractor_plate ?? $active->shipment_order?->tractor_plate ?? 'N/A';
+                    $driverName = $active->operator_name ?? $active->driver?->name ?? $active->shipment_order?->operator_name ?? 'N/A';
+                }
+
+                $cfg->active_operation = $active ? [
+                    'vehicle_plate' => $plate,
+                    'driver' => $driverName,
+                    'folio' => $active->folio,
+                ] : null;
+                return $cfg;
+            });
+
         return Inertia::render('APT/UnitStatus', [
             'pending_exit' => $pendingUnits,
-            'filters' => $request->all(['tab', 'client_id', 'product_id', 'warehouse', 'presentation', 'search']),
+            'filters' => $request->all(['tab', 'client_id', 'product_id', 'warehouse', 'presentation', 'search', 'view']),
             'clients' => $clients,
             'products' => $products,
             'warehouses' => $warehouses,
+            'packaging_equipments' => $packagingEquipments,
+            'warehouse_bagging_machines' => $warehouseBaggingMachines,
+        ]);
+    }
+
+    public function packagingEquipments(Request $request)
+    {
+        $packagingEquipments = \App\Models\PackagingEquipment::orderBy('category_number')
+            ->orderBy('id')
+            ->get();
+
+        $activeOrdersByWarehouse = \App\Models\LoadingOrder::with(['driver', 'shipment_order'])
+            ->whereHas('weight_ticket', function ($q) {
+                $q->where('weighing_status', 'in_progress')->where('is_burreo', false);
+            })
+            ->whereNotNull('warehouse')
+            ->get();
+
+        $warehouseBaggingMachines = \App\Models\WarehouseBaggingMachine::orderBy('warehouse_number')
+            ->get()
+            ->map(function ($cfg) use ($activeOrdersByWarehouse) {
+                $active = $activeOrdersByWarehouse->first(function ($order) use ($cfg) {
+                    preg_match('/\d+/', (string)$order->warehouse, $m1);
+                    preg_match('/\d+/', (string)$cfg->warehouse, $m2);
+                    return ($m1 && $m2) ? ($m1[0] === $m2[0]) : ($order->warehouse === $cfg->warehouse);
+                });
+                
+                $plate = 'N/A';
+                $driverName = 'N/A';
+                if ($active) {
+                    $plate = $active->tractor_plate ?? $active->shipment_order?->tractor_plate ?? 'N/A';
+                    $driverName = $active->operator_name ?? $active->driver?->name ?? $active->shipment_order?->operator_name ?? 'N/A';
+                }
+
+                $cfg->active_operation = $active ? [
+                    'vehicle_plate' => $plate,
+                    'driver' => $driverName,
+                    'folio' => $active->folio,
+                ] : null;
+                return $cfg;
+            });
+
+        return Inertia::render('APT/UnitStatus', [
+            'packaging_equipments' => $packagingEquipments,
+            'warehouse_bagging_machines' => $warehouseBaggingMachines,
+            'filters' => $request->all(['tab', 'view']),
         ]);
     }
 

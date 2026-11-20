@@ -11,6 +11,8 @@ import {
     RotateCcw,
     Plus,
     CheckCircle2,
+    AlertTriangle,
+    Scale,
 } from "lucide-react";
 
 interface Props {
@@ -20,6 +22,7 @@ interface Props {
     onSaved?: (updatedHistory?: any) => void;
     isEstibadorUser?: boolean;
     verifiers?: Array<{ id: number; name: string }>;
+    onApproveVoBo?: (order: any) => void;
 }
 
 export default function StowagePlanModal({
@@ -29,6 +32,7 @@ export default function StowagePlanModal({
     onSaved,
     isEstibadorUser = false,
     verifiers = [],
+    onApproveVoBo,
 }: Props) {
     const safeOrder = order || {};
 
@@ -74,6 +78,11 @@ export default function StowagePlanModal({
     const [avgUnitWeight, setAvgUnitWeight] = useState<string>("");
     const [netWeight, setNetWeight] = useState<string>("");
     const [isSaving, setIsSaving] = useState<boolean>(false);
+
+    const isWeightAdjustmentPending = (safeOrder.stowage_plan?.weight_adjustment_status === 'pending') || (order?.stowage_plan?.weight_adjustment_status === 'pending');
+    const weightAdjustmentNotes = safeOrder.stowage_plan?.weight_adjustment_notes || order?.stowage_plan?.weight_adjustment_notes || "";
+    const weightAdjustmentDiff = safeOrder.stowage_plan?.weight_adjustment_diff || order?.stowage_plan?.weight_adjustment_diff || "";
+    const weightAdjustmentRequestedAt = safeOrder.stowage_plan?.weight_adjustment_requested_at || order?.stowage_plan?.weight_adjustment_requested_at || "";
 
     // Initialize data from order when opened
     useEffect(() => {
@@ -282,7 +291,8 @@ export default function StowagePlanModal({
     }, [totalSacksDisplay, safeOrder, netWeight, avgUnitWeight]);
 
     const isPlanCompleted = order?.stowage_plan_status === "completed";
-    const isVoBoApproved = (safeOrder.vobo_status || safeOrder.stowage_plan?.vobo_status) === "approved";
+    const hasVoboBy = Boolean(safeOrder.vobo_by || safeOrder.stowage_plan?.vobo_by || safeOrder.finished_at);
+    const isVoBoApproved = (safeOrder.vobo_status === "approved" || safeOrder.stowage_plan?.vobo_status === "approved") && hasVoboBy;
 
     const borderClass = "border border-green-800";
     const bgColor = "bg-green-200";
@@ -354,12 +364,55 @@ export default function StowagePlanModal({
             return;
         }
 
+        let observationForIncidents = "";
+        if (isWeightAdjustmentPending) {
+            const { value: obs, isConfirmed } = await Swal.fire({
+                title: "Regresar Unidad a Báscula",
+                html: `
+                    <div style="text-align: left; font-size: 0.88rem;">
+                        <p style="margin-bottom: 0.6rem; color: #374151;">
+                            Se guardará el ajuste de estiba y la unidad <b>${safeOrder.folio}</b> regresará a <b>Báscula</b> para verificar su peso.
+                        </p>
+                        <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 0.6rem; padding: 0.6rem; font-family: monospace; font-size: 0.82rem; line-height: 1.4; color: #78350f; margin-bottom: 0.75rem;">
+                            <div><b>Ajuste Aplicado:</b> ${adjustment || "0"} sacos</div>
+                            <div><b>Justificación:</b> ${justification || "Sin justificación"}</div>
+                        </div>
+                        <label style="display: block; font-weight: bold; font-size: 0.82rem; margin-bottom: 0.3rem; color: #1f2937;">
+                            Observación para el Registro de Incidencias (Obligatorio):
+                        </label>
+                        <textarea id="adjustment_resolution_notes" class="swal2-textarea" style="margin: 0; width: 100%; box-sizing: border-box; font-size: 0.85rem; border-radius: 0.5rem; height: 80px;" placeholder="Ej. Se ajustaron ${adjustment || 0} sacos por sobrepeso. Unidad regresa a verificar peso en báscula...">${justification ? `Ajuste de ${adjustment || 0} sacos: ${justification}. Unidad regresa a verificar peso a báscula.` : `Ajuste de ${adjustment || 0} sacos realizado. Unidad regresa a verificar peso a báscula.`}</textarea>
+                    </div>
+                `,
+                icon: "info",
+                showCancelButton: true,
+                confirmButtonText: "Guardar y Enviar a Báscula",
+                cancelButtonText: "Cancelar",
+                confirmButtonColor: "#16a34a",
+                cancelButtonColor: "#6b7280",
+                preConfirm: () => {
+                    const text = (document.getElementById("adjustment_resolution_notes") as HTMLTextAreaElement)?.value?.trim();
+                    if (!text) {
+                        Swal.showValidationMessage("Debe ingresar la observación que quedará registrada en incidencias.");
+                        return false;
+                    }
+                    return text;
+                }
+            });
+
+            if (!isConfirmed) {
+                return;
+            }
+            observationForIncidents = obs;
+        }
+
         const targetId = order.id || order.shipment_order_id || order.history_id;
         setIsSaving(true);
 
         const activeWh = typeof window !== "undefined" ? localStorage.getItem("shipment_process_selected_warehouse") : null;
-        const assignedWarehouse = activeWh ? `Almacen ${activeWh}` : (order.warehouse || "Almacen 2");
-        const payload = {
+        const assignedWarehouse = isEstibadorUser
+            ? (order.warehouse || safeOrder.stowage_plan?.warehouse || null)
+            : (order.warehouse || safeOrder.stowage_plan?.warehouse || (activeWh ? `Almacen ${activeWh}` : null));
+        const payload: any = {
             stowage_plan: {
                 shift,
                 hour,
@@ -383,7 +436,7 @@ export default function StowagePlanModal({
                 avg_unit_weight: avgUnitWeight ? parseFloat(avgUnitWeight) : null,
                 net_weight: computedNetWeightDisplay || netWeight || null,
                 warehouse: assignedWarehouse,
-                vobo_status: safeOrder.vobo_status || safeOrder.stowage_plan?.vobo_status || "pending",
+                vobo_status: isVoBoApproved ? "approved" : "pending",
                 vobo_by: safeOrder.vobo_by || safeOrder.stowage_plan?.vobo_by || null,
                 vobo_at: safeOrder.vobo_at || safeOrder.stowage_plan?.vobo_at || null,
             },
@@ -394,6 +447,13 @@ export default function StowagePlanModal({
             is_estibadores: isEstibadorUser ? 1 : 0,
         };
 
+        if (isWeightAdjustmentPending && observationForIncidents) {
+            payload.send_to_scale_verify = true;
+            payload.weight_adjustment_observation = observationForIncidents;
+            payload.stowage_plan.weight_adjustment_status = "adjusted";
+            payload.stowage_plan.weight_adjustment_resolution_notes = observationForIncidents;
+        }
+
         try {
             const response = await axios.post(
                 route("documentation.shipment-orders.save-stowage-plan", targetId),
@@ -402,10 +462,10 @@ export default function StowagePlanModal({
 
             Swal.fire({
                 icon: "success",
-                title: "¡Nota de Estiba Guardada!",
-                html: isVoBoApproved
-                    ? `Se ha guardado la <b>Nota de Estiba (GLS-AP-FO-002)</b> con <b>${countOccupied} de 24 estibas</b> (${totalSacksDisplay} sacos).<br/><br/><span class="text-emerald-700 font-bold">VoBo Autorizado ✓</span>: Puede continuar con la toma de muestras.`
-                    : `Se ha guardado la <b>Nota de Estiba (GLS-AP-FO-002)</b> con <b>${countOccupied} de 24 estibas</b> (${totalSacksDisplay} sacos).<br/><br/><span class="text-amber-700 font-bold">Estado: Pendiente de VoBo</span> por parte de Supervisión PROAGRO para habilitar la toma de muestras.`,
+                title: isWeightAdjustmentPending ? "¡Ajuste Guardado y Enviado a Báscula!" : "¡Nota de Estiba Guardada!",
+                html: isWeightAdjustmentPending
+                    ? `Se guardó el ajuste en la Nota de Estiba y se registró la observación en el módulo de <b>Incidencias</b>.<br/><br/><b>La unidad ya puede regresar a Báscula para verificar peso y generar su ticket.</b>`
+                    : `Se ha guardado la <b>Nota de Estiba (GLS-AP-FO-002)</b> con <b>${countOccupied} de 24 estibas</b> (${totalSacksDisplay} sacos).<br/><br/>Ya puede continuar con la toma de muestras.`,
                 confirmButtonColor: "#16a34a",
                 confirmButtonText: "Entendido",
             });
@@ -527,7 +587,32 @@ export default function StowagePlanModal({
                                 </div>
 
                                 {/* --- DOCUMENT SHEET BODY (PIXEL-PERFECT GLS-AP-FO-002) --- */}
-                                <div className="p-4 sm:p-5 overflow-y-auto bg-slate-100 flex justify-center">
+                                <div className="p-4 sm:p-5 overflow-y-auto bg-slate-100 flex flex-col items-center">
+                                    {isWeightAdjustmentPending && (
+                                        <div className="w-full bg-amber-50 border-2 border-amber-400 rounded-xl p-3.5 mb-3 text-amber-950 shadow-sm flex items-start gap-3">
+                                            <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+                                            <div className="flex-1">
+                                                <div className="flex items-center justify-between">
+                                                    <h4 className="font-extrabold text-xs uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                                                        Unidad Regresada de Báscula para Ajuste de Peso
+                                                    </h4>
+                                                    {weightAdjustmentRequestedAt && (
+                                                        <span className="text-[10px] text-amber-700 font-mono font-bold">
+                                                            {new Date(weightAdjustmentRequestedAt).toLocaleString('es-MX')}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs font-bold text-amber-900 mt-1">
+                                                    Motivo / Observación de Báscula: <span className="font-semibold text-amber-950 bg-amber-100/80 px-2 py-0.5 rounded border border-amber-300 inline-block mt-0.5">{weightAdjustmentNotes || "Peso fuera de tolerancia"}</span>
+                                                </p>
+                                                {weightAdjustmentDiff && (
+                                                    <p className="text-xs text-amber-800 mt-1 font-mono">
+                                                        <b>Detalle:</b> {weightAdjustmentDiff}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="w-full bg-white font-sans text-[10px] text-black leading-tight p-3 sm:p-4 box-border shadow-md rounded-lg border border-gray-300">
                                         {/* --- HEADER --- */}
                                         <div className="flex w-full mb-1 h-12">
@@ -708,7 +793,7 @@ export default function StowagePlanModal({
                                             </div>
                                         </div>
 
-                                        {/* --- GRID E- (24 CUADROS CON NÚMERO DE SACOS) + TM PROGRAMADA + PESO NETO --- */}
+                                        {/* --- GRID E- (24 CUADROS CON NÚMERO DE SACOS) + TM PROGRAMADA + PESO ESTIMADO --- */}
                                         <div className="w-full mb-1 flex items-end">
                                             {/* Table Container */}
                                             <div className="w-[82%] flex flex-col">
@@ -764,7 +849,7 @@ export default function StowagePlanModal({
                                                 </table>
                                             </div>
 
-                                            {/* Box Container on Right with TM Programada & Peso Neto */}
+                                            {/* Box Container on Right with TM Programada & Peso Estimado */}
                                             <div className="w-[9%] flex flex-col items-center pl-1">
                                                 <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
                                                     TM Programada
@@ -775,7 +860,7 @@ export default function StowagePlanModal({
                                             </div>
                                             <div className="w-[9%] flex flex-col items-center pl-1">
                                                 <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
-                                                    Peso Neto
+                                                    Peso Estimado
                                                 </span>
                                                 <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[9.5px] text-emerald-900 shadow-2xs px-0.5 text-center leading-tight">
                                                     {computedNetWeightDisplay || (
@@ -790,7 +875,7 @@ export default function StowagePlanModal({
                                             {[
                                                 { label: "CÓDIGO", width: "15%", value: safeOrder.product?.code || safeOrder.product_code || "N/A" },
                                                 { label: "DESCRIPCIÓN DEL PRODUCTO", width: "40%", value: safeOrder.product_text || safeOrder.product?.name || safeOrder.product || "UREA INDUSTRIAL" },
-                                                { label: "NO. DE ALMACEN", width: "15%", value: safeOrder.warehouse ? safeOrder.warehouse.replace("Almacen ", "") : "2" },
+                                                { label: "NO. DE ALMACEN", width: "15%", value: isVoBoApproved && (safeOrder.warehouse || safeOrder.stowage_plan?.warehouse) ? String(safeOrder.warehouse || safeOrder.stowage_plan?.warehouse).replace(/Almacen\s*/i, "").trim() : "" },
                                                 { label: "TOTAL DE SACOS", width: "10%", value: totalSacksDisplay },
                                             ].map((col, idx) => (
                                                 <div key={idx} className={`flex flex-col ${borderClass} border-r`} style={{ width: col.width }}>
@@ -933,7 +1018,7 @@ export default function StowagePlanModal({
 
                                 {/* --- MODAL BOTTOM ACTIONS --- */}
                                 <div className="bg-white px-5 py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-                                    <div className="text-xs text-gray-600 flex items-center gap-2">
+                                    <div className="flex items-center gap-2 text-xs text-slate-500">
                                         <span className="font-semibold">
                                             Estibas completadas: <b className="text-emerald-700">{countOccupied} de 24</b> ({totalSacksDisplay} sacos)
                                         </span>
@@ -960,7 +1045,13 @@ export default function StowagePlanModal({
                                         {!isEstibadorUser && !isVoBoApproved && (
                                             <button
                                                 type="button"
-                                                onClick={handleApproveVoBoInModal}
+                                                onClick={() => {
+                                                    if (onApproveVoBo) {
+                                                        onApproveVoBo(safeOrder);
+                                                    } else {
+                                                        handleApproveVoBoInModal();
+                                                    }
+                                                }}
                                                 disabled={isSaving}
                                                 className="px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white font-extrabold shadow-md hover:shadow-lg transition flex items-center gap-2 text-xs disabled:opacity-50"
                                             >
@@ -973,12 +1064,17 @@ export default function StowagePlanModal({
                                             type="button"
                                             onClick={() => handleSave()}
                                             disabled={isSaving}
-                                            className="px-6 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold shadow-md hover:shadow-lg transition flex items-center gap-2 text-xs disabled:opacity-50"
+                                            className={`px-6 py-2.5 rounded-xl text-white font-extrabold shadow-md hover:shadow-lg transition flex items-center gap-2 text-xs disabled:opacity-50 ${isWeightAdjustmentPending ? "bg-amber-600 hover:bg-amber-700" : "bg-emerald-700 hover:bg-emerald-800"}`}
                                         >
                                             {isSaving ? (
                                                 <>
                                                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                                     <span>Guardando...</span>
+                                                </>
+                                            ) : isWeightAdjustmentPending ? (
+                                                <>
+                                                    <Scale className="w-4 h-4" />
+                                                    <span>Guardar Ajuste y Enviar a Báscula</span>
                                                 </>
                                             ) : (
                                                 <>

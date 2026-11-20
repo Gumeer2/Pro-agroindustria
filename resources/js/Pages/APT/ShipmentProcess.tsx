@@ -46,6 +46,7 @@ import QrScannerModal from "@/Components/QrScannerModal";
 import EnsacadoraSamplingModal from "@/Components/EnsacadoraSamplingModal";
 import ShipmentDocumentsPrintModal from "@/Components/ShipmentDocumentsPrintModal";
 import StowagePlanModal from "@/Components/StowagePlanModal";
+import TolvaAssistantManager from "@/Components/TolvaAssistantManager";
 
 interface Lot {
     id: number;
@@ -112,6 +113,8 @@ interface Props {
     verifiers?: Assistant[];
     initial_history: HistoryItem[];
     initial_incidents?: any[];
+    warehouse_bagging_machines?: any[];
+    packaging_equipments?: any[];
 }
 
 function normalizeWarehouseNumber(w?: string | null): number | null {
@@ -461,7 +464,28 @@ export default function ShipmentProcess({
     verifiers = [],
     initial_history = [],
     initial_incidents = [],
+    warehouse_bagging_machines = [],
+    packaging_equipments = [],
 }: Props) {
+    const [estibadoresTab, setEstibadoresTab] = useState<"menu" | "nota_estiba" | "asignacion">(() => {
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            const tabParam = params.get("tab");
+            if (tabParam === "nota_estiba" || tabParam === "asignacion") {
+                return tabParam;
+            }
+        }
+        return "menu";
+    });
+
+    const totalTolvasCount = useMemo(() => {
+        return Math.max(5, (warehouse_bagging_machines || []).length);
+    }, [warehouse_bagging_machines]);
+
+    const assignedTolvasCount = useMemo(() => {
+        return (warehouse_bagging_machines || []).filter((c: any) => c.assistant_name).length;
+    }, [warehouse_bagging_machines]);
+
     const [currentStep, setCurrentStep] = useState<1 | 2>(1);
     const [history, setHistory] = useState<HistoryItem[]>(initial_history);
     const [incidents, setIncidents] = useState<any[]>(initial_incidents || []);
@@ -698,6 +722,78 @@ export default function ShipmentProcess({
     const [printSamplesData, setPrintSamplesData] = useState<any[]>([]);
     const [samplingRevision, setSamplingRevision] = useState(0);
 
+    // VoBo Authorization Modal (Supervisor selects Lote & Almacén)
+    const [isVoboModalOpen, setIsVoboModalOpen] = useState(false);
+    const [voboTargetOrder, setVoboTargetOrder] = useState<any>(null);
+    const [voboSelectedLotId, setVoboSelectedLotId] = useState<string>("");
+    const [voboSelectedWarehouse, setVoboSelectedWarehouse] = useState<string>("");
+    const [voboSelectedCubicle, setVoboSelectedCubicle] = useState<string>("");
+    const [isSubmittingVobo, setIsSubmittingVobo] = useState(false);
+
+    const filteredLotsForVoBo = useMemo(() => {
+        if (!voboSelectedWarehouse) return lots;
+        const whNum = normalizeWarehouseNumber(voboSelectedWarehouse);
+        if (!whNum) return lots;
+        return lots.filter((lot) => normalizeWarehouseNumber(lot.warehouse) === whNum);
+    }, [lots, voboSelectedWarehouse]);
+
+    const playAlertSound = () => {
+        try {
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextClass) return;
+            const audioCtx = new AudioContextClass();
+            const now = audioCtx.currentTime;
+
+            // Primer tono
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.type = "sine";
+            osc1.frequency.setValueAtTime(587.33, now); // D5
+            gain1.gain.setValueAtTime(0.18, now);
+            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+            osc1.connect(gain1);
+            gain1.connect(audioCtx.destination);
+            osc1.start(now);
+            osc1.stop(now + 0.22);
+
+            // Segundo tono
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = "sine";
+            osc2.frequency.setValueAtTime(880, now + 0.16); // A5
+            gain2.gain.setValueAtTime(0.22, now + 0.16);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.start(now + 0.16);
+            osc2.stop(now + 0.45);
+        } catch (e) {
+            // Audio context safely ignored if blocked by autoplay policy
+        }
+    };
+
+    const previousBlockedOrdersRef = useRef<Set<string>>(
+        new Set(
+            (initial_history || [])
+                .filter((h: any) => Boolean(h.is_sampling_blocked))
+                .map((h: any) => String(h.id || h.folio))
+        )
+    );
+
+    const blockedOrders = useMemo(() => {
+        return history.filter((h: any) => Boolean(h.is_sampling_blocked));
+    }, [history]);
+
+    // Sondeo periódico para reflejar bloqueos y desbloqueos en tiempo real
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (!isStowageModalOpen && !isPrintModalOpen && !isSamplingModalOpen) {
+                refreshHistory();
+            }
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [isStowageModalOpen, isPrintModalOpen, isSamplingModalOpen]);
+
     const userRoles: any[] = auth?.user?.roles || [];
     const isAdmin = useMemo(() => {
         return userRoles.some((r: any) => {
@@ -737,7 +833,13 @@ export default function ShipmentProcess({
 
     const isVoBoApproved = (row: any): boolean => {
         if (!row) return false;
-        return (row.vobo_status || row.stowage_plan?.vobo_status) === "approved";
+        let plan = row.stowage_plan;
+        if (typeof plan === "string") {
+            try { plan = JSON.parse(plan); } catch { plan = {}; }
+        }
+        const hasVoboBy = Boolean(row.vobo_by || plan?.vobo_by || row.finished_at || (Array.isArray(row.samples) && row.samples.length > 0));
+        const status = row.vobo_status ?? plan?.vobo_status;
+        return status === "approved" && hasVoboBy;
     };
 
     const isSamplingReleased = (row: any): boolean => {
@@ -753,46 +855,126 @@ export default function ShipmentProcess({
         return false;
     };
 
-    const handleApproveVoBo = async (row: any) => {
+    const handleApproveVoBo = (row: any) => {
         const targetId = row?.id || row?.shipment_order_id || row?.history_id;
         if (!targetId) return;
+        setVoboTargetOrder(row);
+        const wh = row?.warehouse || (selectedWarehouseId ? `Almacen ${selectedWarehouseId}` : "Almacen 1");
+        setVoboSelectedWarehouse(wh);
+        const initLotId = row?.lot_id ? String(row.lot_id) : "";
+        const matchedLot = lots.find(l => String(l.id) === initLotId);
+        if (matchedLot && normalizeWarehouseNumber(matchedLot.warehouse) === normalizeWarehouseNumber(wh)) {
+            setVoboSelectedLotId(initLotId);
+            setVoboSelectedCubicle(row?.cubicle || matchedLot?.cubicle || "");
+        } else {
+            setVoboSelectedLotId("");
+            setVoboSelectedCubicle(row?.cubicle || "");
+        }
+        setIsVoboModalOpen(true);
+    };
 
-        const result = await Swal.fire({
-            title: "¿Dar VoBo a la Nota de Estiba?",
-            html: `¿Confirmas que revisaste la <b>Nota de Estiba (GLS-AP-FO-002)</b> de la orden <b>${row.folio || ""}</b> y autorizas el <b>VoBo</b> para que el personal estibador inicie la toma de muestras?`,
-            icon: "question",
-            showCancelButton: true,
-            confirmButtonText: "✓ Sí, autorizar VoBo",
-            cancelButtonText: "Revisar Nota primero",
-            confirmButtonColor: "#16a34a",
-            cancelButtonColor: "#4f46e5",
-        });
+    const handleConfirmVoBo = async () => {
+        if (!voboTargetOrder) return;
+        const targetId = voboTargetOrder.id || voboTargetOrder.shipment_order_id || voboTargetOrder.history_id;
+        if (!targetId) return;
 
-        if (result.dismiss === Swal.DismissReason.cancel) {
-            handleOpenStowagePlan(row);
+        if (!voboSelectedLotId) {
+            Swal.fire({
+                icon: "warning",
+                title: "Lote requerido",
+                text: "Por favor seleccione el lote que cargará antes de autorizar el VoBo.",
+                confirmButtonColor: "#16a34a",
+            });
             return;
         }
-        if (!result.isConfirmed) return;
 
+        if (!voboSelectedWarehouse) {
+            Swal.fire({
+                icon: "warning",
+                title: "Almacén requerido",
+                text: "Por favor indique el almacén correspondiente antes de autorizar el VoBo.",
+                confirmButtonColor: "#16a34a",
+            });
+            return;
+        }
+
+        setIsSubmittingVobo(true);
         try {
-            const res = await axios.post(route("documentation.shipment-orders.vobo-stowage-plan", targetId));
+            const res = await axios.post(
+                route("documentation.shipment-orders.vobo-stowage-plan", targetId),
+                {
+                    lot_id: voboSelectedLotId,
+                    warehouse: voboSelectedWarehouse,
+                    cubicle: voboSelectedCubicle || null,
+                }
+            );
+            setIsVoboModalOpen(false);
+            setVoboTargetOrder(null);
             await refreshHistory();
             Swal.fire({
                 icon: "success",
                 title: "¡VoBo Autorizado!",
-                text: res.data?.message || "VoBo registrado correctamente. El personal estibador ya puede realizar la toma de muestras.",
+                text: res.data?.message || "VoBo registrado correctamente con lote y almacén asignados. El personal estibador ya puede realizar la toma de muestras.",
                 timer: 2500,
                 showConfirmButton: false,
             });
         } catch (error: any) {
             Swal.fire({
                 icon: "error",
-                title: "Error",
+                title: "Error al autorizar VoBo",
                 text: error.response?.data?.message || "No se pudo registrar el VoBo.",
                 confirmButtonColor: "#4f46e5",
             });
+        } finally {
+            setIsSubmittingVobo(false);
         }
     };
+
+    const handleRemoteUnlock = (row: any) => {
+        handleOpenSampling(row);
+    };
+
+    // Escuchar apertura directa del modal completo de capturas desde alertas globales o parámetros URL (?openSampling=...)
+    useEffect(() => {
+        const handleOpenFromEvent = (e: any) => {
+            const targetId = e.detail?.id || e.detail?.folio;
+            if (targetId && history && history.length > 0) {
+                const match = history.find(
+                    (h: any) =>
+                        String(h.id) === String(targetId) ||
+                        String(h.shipment_order_id) === String(targetId) ||
+                        String(h.folio) === String(targetId)
+                );
+                if (match) {
+                    handleOpenSampling(match);
+                }
+            }
+        };
+
+        window.addEventListener("open-sampling-modal", handleOpenFromEvent);
+
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const openSamplingId = params.get("openSampling");
+            if (openSamplingId && history && history.length > 0) {
+                const match = history.find(
+                    (h: any) =>
+                        String(h.id) === String(openSamplingId) ||
+                        String(h.shipment_order_id) === String(openSamplingId) ||
+                        String(h.folio) === String(openSamplingId)
+                );
+                if (match) {
+                    handleOpenSampling(match);
+                    const newUrl = window.location.pathname;
+                    window.history.replaceState({}, "", newUrl);
+                }
+            }
+        } catch (e) {}
+
+        return () => {
+            window.removeEventListener("open-sampling-modal", handleOpenFromEvent);
+        };
+    }, [history]);
 
     const handleOpenStowagePlan = (order: any) => {
         if (isEstibadorUser && order && isInAptProcess(order)) {
@@ -849,29 +1031,22 @@ export default function ShipmentProcess({
                             Revise la Nota de Estiba y presione el <b>Botón: VoBo</b> para habilitar la toma de muestras.
                         </div>
                     </div>`,
-                    showCancelButton: true,
                     confirmButtonColor: "#16a34a",
-                    cancelButtonColor: "#64748b",
-                    confirmButtonText: "Revisar Nota de Estiba",
-                    cancelButtonText: "Cerrar",
-                }).then((res) => {
-                    if (res.isConfirmed) {
-                        handleOpenStowagePlan(row);
-                    }
+                    confirmButtonText: "Entendido",
                 });
             } else {
                 Swal.fire({
-                    icon: "warning",
-                    title: "Pendiente de VoBo (Paso 2)",
+                    icon: "info",
+                    title: "Paso 2 Pendiente: En Espera de VoBo",
                     html: `<div class="text-left space-y-3">
                         <p class="font-medium text-slate-800">
-                            La Nota de Estiba de la orden <b>${row?.folio || ""}</b> está en estado <b>"Pendiente de VoBo"</b>.
+                            La Nota de Estiba de la orden <b>${row?.folio || ""}</b> fue enviada a revisión y se encuentra en espera de <b>VoBo por parte de Supervisión PROAGRO</b>.
                         </p>
                         <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                            <b>Regla de negocio:</b> El personal de <b>Supervisión PROAGRO</b> en Gestión de Proceso de Embarques (APT) debe revisar la información y dar su <b>VoBo</b> antes de continuar con la toma de muestras.
+                            Una vez que el supervisor autorice el VoBo, este botón se habilitará para capturar las muestras de ensacadora.
                         </div>
                     </div>`,
-                    confirmButtonColor: "#4f46e5",
+                    confirmButtonColor: "#d97706",
                     confirmButtonText: "Entendido",
                 });
             }
@@ -996,6 +1171,45 @@ export default function ShipmentProcess({
             });
             if (Array.isArray(response.data)) {
                 setHistory(response.data);
+
+                // Notificación en tiempo real para Supervisión PROAGRO cuando se bloquea una orden
+                if (!isEstibadorUser) {
+                    const currentBlocked = response.data.filter((row: any) => Boolean(row.is_sampling_blocked));
+                    const currentBlockedIds = new Set(currentBlocked.map((row: any) => String(row.id || row.folio)));
+
+                    const newlyBlocked = currentBlocked.filter(
+                        (row: any) => !previousBlockedOrdersRef.current.has(String(row.id || row.folio))
+                    );
+
+                    if (newlyBlocked.length > 0) {
+                        playAlertSound();
+                        const target = newlyBlocked[0];
+                        if (!Swal.isVisible()) {
+                            Swal.fire({
+                                icon: "warning",
+                                title: `<span style="color:#b91c1c; font-weight:800; font-size:22px;">⚠️ Muestreo Bloqueado: ${target.folio}</span>`,
+                                html: `
+                                    <div style="text-align: center; font-size: 14px; line-height: 1.5; color: #1e293b; margin-top: 6px;">
+                                        El personal estibador ha registrado un peso fuera de tolerancia en la orden <strong>${target.folio}</strong> y la toma de muestras ha quedado <strong>BLOQUEADA</strong>.
+                                    </div>
+                                `,
+                                showCancelButton: true,
+                                confirmButtonText: "Desbloquear",
+                                cancelButtonText: "Cerrar",
+                                confirmButtonColor: "#e11d48",
+                                cancelButtonColor: "#64748b",
+                                backdrop: "rgba(15, 23, 42, 0.45)",
+                                customClass: { container: "!z-[999999]" }
+                            }).then((res) => {
+                                if (res.isConfirmed) {
+                                    handleRemoteUnlock(target);
+                                }
+                            });
+                        }
+                    }
+
+                    previousBlockedOrdersRef.current = currentBlockedIds;
+                }
             }
         } catch (error) {
             console.error("Error refreshing loading history:", error);
@@ -1058,8 +1272,8 @@ export default function ShipmentProcess({
                         return;
                     }
 
-                    // Si la Nota de Estiba ya tiene VoBo de Supervisión PROAGRO, abrir directamente la Toma de Muestras (Paso 3)
-                    if (isVoBoApproved(targetOrder)) {
+                    // Si la Nota de Estiba ya está creada, abrir directamente la Toma de Muestras
+                    if (isStowagePlanCompleted(targetOrder)) {
                         setSearchQr("");
                         setScannedOrder(null);
                         handleOpenSampling(targetOrder);
@@ -1067,11 +1281,19 @@ export default function ShipmentProcess({
                     }
 
                     const plan = targetOrder.stowage_plan || {};
+                    if (isEstibadorUser && !isVoBoApproved(targetOrder)) {
+                        targetOrder.warehouse = null;
+                        if (targetOrder.stowage_plan) {
+                            targetOrder.stowage_plan.warehouse = null;
+                        }
+                    }
                     setScannedOrder(targetOrder);
                     if (targetOrder.warehouse) {
                         setWarehouse(targetOrder.warehouse);
                         const whNum = normalizeWarehouseNumber(targetOrder.warehouse);
                         if (whNum) setSelectedWarehouseId(whNum);
+                    } else {
+                        setWarehouse("");
                     }
                     setSelectedLotId(targetOrder.lot_id ? String(targetOrder.lot_id) : "");
                     if (targetOrder.loading_squad_leader || targetOrder.squad_leader) {
@@ -1117,7 +1339,7 @@ export default function ShipmentProcess({
                                     La orden <b>${targetOrder.folio || ""}</b> aún no cuenta con la <b>Nota de Estiba (GLS-AP-FO-002)</b> registrada por el personal estibador.
                                 </p>
                                 <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
-                                    Una vez que el estibador cree la Nota de Estiba, aparecerá en el <b>Historial de Órdenes de Embarque</b> para su revisión, VoBo y liberación.
+                                    Una vez que el estibador cree la Nota de Estiba, aparecerá en el <b>Historial de Órdenes de Embarque</b> para su revisión y liberación.
                                 </div>
                             </div>`,
                             confirmButtonColor: "#4f46e5",
@@ -1126,7 +1348,7 @@ export default function ShipmentProcess({
                         return;
                     }
 
-                    // Si ya tiene Nota de Estiba, abrirla para revisión y VoBo (y filtrar en el historial)
+                    // Si ya tiene Nota de Estiba, abrirla para revisión (y filtrar en el historial)
                     setHistorySearch(targetOrder.folio || "");
                     handleOpenStowagePlan(targetOrder);
                     return;
@@ -1196,7 +1418,7 @@ export default function ShipmentProcess({
             return;
         }
 
-        if (!selectedLotId) {
+        if (!isEstibadorUser && !selectedLotId) {
             Swal.fire({
                 icon: "warning",
                 title: "Lote requerido",
@@ -1260,13 +1482,13 @@ export default function ShipmentProcess({
                     comments: estibaObservations,
                     avg_unit_weight: existingPlan.avg_unit_weight || null,
                     net_weight: existingPlan.net_weight || null,
-                    warehouse: warehouse || `Almacen ${selectedWarehouseId}`,
+                    warehouse: scannedOrder?.warehouse || null,
                 };
 
                 const response = await axios.post(route("documentation.shipment-orders.save-loading"), {
                     shipment_order_id: scannedOrder.id,
-                    lot_id: selectedLotId,
-                    warehouse: warehouse || `Almacen ${selectedWarehouseId}`,
+                    lot_id: selectedLotId || null,
+                    warehouse: scannedOrder?.warehouse || null,
                     squad_leader: squadLeader || null,
                     loading_assistant: loadingAssistant || null,
                     stowage_count: usedCount || null,
@@ -1277,7 +1499,13 @@ export default function ShipmentProcess({
                 const savedOrder = {
                     ...scannedOrder,
                     ...(response.data?.order || {}),
-                    stowage_plan: stowagePlanPayload,
+                    warehouse: null,
+                    lot_id: null,
+                    stowage_plan: {
+                        ...stowagePlanPayload,
+                        warehouse: null,
+                        lot_id: null,
+                    },
                     stowage_count: usedCount || scannedOrder.stowage_count || null,
                     loading_squad_leader: squadLeader || null,
                     loading_assistant: loadingAssistant || null,
@@ -1383,34 +1611,84 @@ export default function ShipmentProcess({
             }
         }
 
-        const isEnvasadoRow = targetRow ? isRowEnvasado(targetRow) : false;
-        const result = await Swal.fire({
-            title: isEnvasadoRow ? "¿Liberar Toma de Muestras?" : "¿Finalizar orden?",
-            html: isEnvasadoRow
-                ? `¿Confirmas la <b>liberación de la toma de muestras</b> de la orden <b>${folio || ""}</b> (Paso 4) para finalizar el proceso y habilitar el destare en báscula?`
-                : `¿Estás seguro que quieres finalizar esta orden de embarque ${folio ? `(${folio})` : ""}?`,
-            icon: "question",
-            showCancelButton: true,
-            confirmButtonText: isEnvasadoRow ? "✓ Sí, liberar toma de muestras" : "Sí, finalizar",
-            cancelButtonText: "Cancelar",
-            confirmButtonColor: "#16a34a",
-            cancelButtonColor: "#6b7280",
-            customClass: { container: "!z-[999999]" },
-        });
+        let adjustmentObservation = "";
+        const isWeightAdjustmentPending = targetRow?.stowage_plan?.weight_adjustment_status === "pending";
 
-        if (!result.isConfirmed) return;
+        if (isWeightAdjustmentPending) {
+            const { value: obs, isConfirmed } = await Swal.fire({
+                title: "Regresar Unidad a Báscula (Verificación de Peso)",
+                html: `
+                    <div style="text-align: left; font-size: 0.88rem;">
+                        <p style="margin-bottom: 0.6rem; color: #374151;">
+                            La orden <b>${folio}</b> fue regresada de báscula por ajuste de peso.<br/>
+                            ¿Desea dar por finalizado el ajuste y regresar la unidad a báscula para su verificación?
+                        </p>
+                        <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 0.6rem; padding: 0.6rem; font-family: monospace; font-size: 0.82rem; line-height: 1.4; color: #78350f; margin-bottom: 0.75rem;">
+                            <div><b>Motivo Báscula:</b> ${targetRow?.stowage_plan?.weight_adjustment_notes || "Ajuste de peso requerido"}</div>
+                            ${targetRow?.stowage_plan?.adjustment ? `<div><b>Ajuste en Estiba:</b> ${targetRow.stowage_plan.adjustment} sacos</div>` : ""}
+                        </div>
+                        <label style="display: block; font-weight: bold; font-size: 0.82rem; margin-bottom: 0.3rem; color: #1f2937;">
+                            Observación para Incidencias (Obligatorio):
+                        </label>
+                        <textarea id="adjustment_finish_notes" class="swal2-textarea" style="margin: 0; width: 100%; box-sizing: border-box; font-size: 0.85rem; border-radius: 0.5rem; height: 80px;" placeholder="Ej. Se ajustaron estibas en almacén. Unidad regresa a verificar peso en báscula...">${targetRow?.stowage_plan?.justification ? `Ajuste completado (${targetRow.stowage_plan.justification}). Unidad regresa a verificar peso en báscula.` : "Ajuste de estiba completado. Unidad regresa a verificar peso en báscula."}</textarea>
+                    </div>
+                `,
+                icon: "question",
+                showCancelButton: true,
+                confirmButtonText: "✓ Finalizar y Enviar a Báscula",
+                cancelButtonText: "Cancelar",
+                confirmButtonColor: "#16a34a",
+                cancelButtonColor: "#6b7280",
+                customClass: { container: "!z-[999999]" },
+                preConfirm: () => {
+                    const text = (document.getElementById("adjustment_finish_notes") as HTMLTextAreaElement)?.value?.trim();
+                    if (!text) {
+                        Swal.showValidationMessage("Debe ingresar la observación para incidencias.");
+                        return false;
+                    }
+                    return text;
+                }
+            });
+
+            if (!isConfirmed) return;
+            adjustmentObservation = obs;
+        } else {
+            const isEnvasadoRow = targetRow ? isRowEnvasado(targetRow) : false;
+            const result = await Swal.fire({
+                title: isEnvasadoRow ? "¿Liberar Toma de Muestras?" : "¿Finalizar orden?",
+                html: isEnvasadoRow
+                    ? `¿Confirmas la <b>liberación de la toma de muestras</b> de la orden <b>${folio || ""}</b> (Paso 4) para finalizar el proceso y habilitar el destare en báscula?`
+                    : `¿Estás seguro que quieres finalizar esta orden de embarque ${folio ? `(${folio})` : ""}?`,
+                icon: "question",
+                showCancelButton: true,
+                confirmButtonText: isEnvasadoRow ? "✓ Sí, liberar toma de muestras" : "Sí, finalizar",
+                cancelButtonText: "Cancelar",
+                confirmButtonColor: "#16a34a",
+                cancelButtonColor: "#6b7280",
+                customClass: { container: "!z-[999999]" },
+            });
+
+            if (!result.isConfirmed) return;
+        }
 
         try {
-            await axios.patch(route("documentation.shipment-orders.finish-loading", id));
+            await axios.patch(route("documentation.shipment-orders.finish-loading", id), {
+                weight_adjustment_observation: adjustmentObservation || undefined,
+            });
             setIsSamplingModalOpen(false);
             await refreshHistory();
+            await refreshIncidents();
             Swal.fire({
                 icon: "success",
-                title: isEnvasadoRow ? "¡Toma de Muestras Liberada!" : "Orden Finalizada",
-                text: isEnvasadoRow
-                    ? `La toma de muestras de la orden ${folio} ha sido liberada y el proceso ha finalizado correctamente.`
-                    : `La orden ${folio} ha sido finalizada correctamente.`,
-                timer: 2200,
+                title: isWeightAdjustmentPending
+                    ? "¡Ajuste Finalizado y Enviado a Báscula!"
+                    : (targetRow && isRowEnvasado(targetRow) ? "¡Toma de Muestras Liberada!" : "Orden Finalizada"),
+                text: isWeightAdjustmentPending
+                    ? `La orden ${folio} regresa a báscula para verificar peso. Se ha registrado la observación en Incidencias.`
+                    : (targetRow && isRowEnvasado(targetRow)
+                        ? `La toma de muestras de la orden ${folio} ha sido liberada y el proceso ha finalizado correctamente.`
+                        : `La orden ${folio} ha sido finalizada correctamente.`),
+                timer: 2600,
                 showConfirmButton: false,
             });
         } catch (error: any) {
@@ -1589,36 +1867,99 @@ export default function ShipmentProcess({
                         </div>
                     </div>
 
-                    {/* Active Warehouse Indicator Badge */}
-                    <button
-                        type="button"
-                        onClick={() => setIsWarehouseModalOpen(true)}
-                        className="flex items-center gap-3 px-5 py-3 bg-white border-2 border-indigo-100 hover:border-indigo-300 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 group relative cursor-pointer active:scale-95"
-                        title="Cambiar almacén activo"
-                    >
-                        <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200 group-hover:scale-105 transition-transform">
-                            <Warehouse className="w-5 h-5" />
-                        </div>
-                        <div className="text-left">
-                            <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1 group-hover:text-indigo-600 transition-colors">
-                                Almacén Activo
+                    {/* Active Warehouse Indicator Badge (Solo en proceso regular o dentro de la tarjeta Nota de Estiba) */}
+                    {(!isEstibadorUser || estibadoresTab === "nota_estiba") && (
+                        <button
+                            type="button"
+                            onClick={() => setIsWarehouseModalOpen(true)}
+                            className="flex items-center gap-3 px-5 py-3 bg-white border-2 border-indigo-100 hover:border-indigo-300 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 group relative cursor-pointer active:scale-95"
+                            title="Cambiar almacén activo"
+                        >
+                            <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200 group-hover:scale-105 transition-transform">
+                                <Warehouse className="w-5 h-5" />
                             </div>
-                            <div className="text-sm font-black text-gray-800 leading-none flex items-center gap-2">
-                                <span className="text-indigo-600 text-lg font-black">
-                                    ALMACÉN 0{selectedWarehouseId}
-                                </span>
-                                {selectedWarehouseId === 5 && (
-                                    <span className="text-[11px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
-                                        {selectedCubicle ? `Cub. 0${selectedCubicle}` : "Todos los cubículos"}
+                            <div className="text-left">
+                                <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1 group-hover:text-indigo-600 transition-colors">
+                                    Almacén Activo
+                                </div>
+                                <div className="text-sm font-black text-gray-800 leading-none flex items-center gap-2">
+                                    <span className="text-indigo-600 text-lg font-black">
+                                        ALMACÉN 0{selectedWarehouseId}
                                     </span>
-                                )}
+                                    {selectedWarehouseId === 5 && (
+                                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                                            {selectedCubicle ? `Cub. 0${selectedCubicle}` : "Todos los cubículos"}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                        <div className="ml-2 p-1.5 bg-gray-50 rounded-lg text-gray-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors border border-gray-100">
-                            <Settings className="w-4 h-4" />
-                        </div>
-                    </button>
+                            <div className="ml-2 p-1.5 bg-gray-50 rounded-lg text-gray-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors border border-gray-100">
+                                <Settings className="w-4 h-4" />
+                            </div>
+                        </button>
+                    )}
                 </div>
+
+                {/* Submódulos para Estibadores (Menú de Tarjetas) */}
+                {isEstibadorUser && estibadoresTab === "menu" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 my-8 max-w-4xl mx-auto animate-fade-in">
+                        {/* Tarjeta 1: Nota de Estiba */}
+                        <div
+                            onClick={() => setEstibadoresTab("nota_estiba")}
+                            className="group bg-white rounded-2xl shadow-sm hover:shadow-xl border-2 border-transparent hover:border-emerald-500 p-8 sm:p-10 flex flex-col items-center justify-center text-center transition-all duration-300 cursor-pointer active:scale-95"
+                        >
+                            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-emerald-50 text-emerald-600 group-hover:scale-110 transition-transform shadow-xs">
+                                <FileText className="w-10 h-10" />
+                            </div>
+                            <h3 className="text-xl font-black text-gray-900 group-hover:text-emerald-700 transition-colors">
+                                Nota de Estiba
+                            </h3>
+                            <p className="text-gray-500 mt-2 text-xs sm:text-sm max-w-xs leading-relaxed">
+                                Elaboración, escaneo por código QR
+                            </p>
+                        </div>
+
+                        {/* Tarjeta 2: Asignación de Auxiliar a Tolva */}
+                        <div
+                            onClick={() => setEstibadoresTab("asignacion")}
+                            className="group bg-white rounded-2xl shadow-sm hover:shadow-xl border-2 border-transparent hover:border-indigo-500 p-8 sm:p-10 flex flex-col items-center justify-center text-center transition-all duration-300 cursor-pointer active:scale-95"
+                        >
+                            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-indigo-50 text-indigo-600 group-hover:scale-110 transition-transform shadow-xs">
+                                <UserCheck className="w-10 h-10" />
+                            </div>
+                            <h3 className="text-xl font-black text-gray-900 group-hover:text-indigo-700 transition-colors">
+                                Asignación de Auxiliar a Tolva
+                            </h3>
+                            <p className="text-gray-500 mt-2 text-xs sm:text-sm max-w-xs leading-relaxed">
+                                Asignación y control de auxiliares de carga responsables en cada tolva y línea de envasado.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Barra de navegación interna cuando se está dentro de un submódulo de Estibadores */}
+                {isEstibadorUser && estibadoresTab !== "menu" && (
+                    <div className="mb-6 flex items-center bg-white p-3 rounded-2xl border border-gray-200/80 shadow-2xs animate-fade-in">
+                        <button
+                            type="button"
+                            onClick={() => setEstibadoresTab("menu")}
+                            className="inline-flex items-center text-xs font-bold text-gray-700 hover:text-indigo-700 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-xl border border-gray-200 shadow-2xs transition-colors cursor-pointer"
+                        >
+                            <ArrowLeft className="w-3.5 h-3.5 mr-1 text-gray-500" />
+                            Volver al menú de estibadores
+                        </button>
+                    </div>
+                )}
+
+                {/* Submódulo: Asignación de Auxiliar a Tolva */}
+                {isEstibadorUser && estibadoresTab === "asignacion" && (
+                    <TolvaAssistantManager
+                        warehouseBaggingMachines={warehouse_bagging_machines || []}
+                        assistants={assistants || []}
+                        packagingEquipments={packaging_equipments || []}
+                        onBackToMenu={() => setEstibadoresTab("menu")}
+                    />
+                )}
 
                 {/* Tabs Navigation (Gestión de Órdenes de Embarque vs Incidencias) */}
                 {!isEstibadorUser && (
@@ -1866,8 +2207,8 @@ export default function ShipmentProcess({
                     </div>
                 )}
 
-                {/* Form Card */}
-                {(!isIncidentsOpen || isEstibadorUser) && (
+                {/* Form Card & Historial de Notas de Estiba */}
+                {((!isIncidentsOpen && !isEstibadorUser) || (isEstibadorUser && estibadoresTab === "nota_estiba")) && (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 p-6 md:p-8 mb-8">
                     {/* STEP 1: SCAN QR / ENTER FOLIO */}
                     {currentStep === 1 && (
@@ -1998,54 +2339,58 @@ export default function ShipmentProcess({
                             {/* Main Form Fields */}
                             <form onSubmit={handleSave}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                                    {/* Lote que cargará */}
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                                            Lote que cargará
-                                        </label>
-                                        <div className="relative">
-                                            <select
-                                                value={selectedLotId}
-                                                onChange={(e) => {
-                                                    const lotId = e.target.value;
-                                                    setSelectedLotId(lotId);
-                                                    const lot = lots.find((l) => l.id.toString() === lotId);
-                                                    if (lot?.warehouse) {
-                                                        setWarehouse(lot.warehouse);
-                                                    }
-                                                }}
-                                                className="w-full appearance-none rounded-xl border border-gray-300 bg-white px-4 py-3 pr-10 text-gray-800 font-medium shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                            >
-                                                <option value="">Seleccione un lote...</option>
-                                                {lots
-                                                    .filter(lot => normalizeWarehouseNumber(lot.warehouse) === selectedWarehouseId)
-                                                    .map((lot) => (
-                                                    <option key={lot.id} value={lot.id}>
-                                                        {lot.folio} {lot.cubicle ? `(Cubículo ${lot.cubicle})` : ""}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-400">
-                                                <ChevronsUpDown className="w-5 h-5" />
+                                    {!isEstibadorUser && (
+                                        <>
+                                            {/* Lote que cargará */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                                    Lote que cargará
+                                                </label>
+                                                <div className="relative">
+                                                    <select
+                                                        value={selectedLotId}
+                                                        onChange={(e) => {
+                                                            const lotId = e.target.value;
+                                                            setSelectedLotId(lotId);
+                                                            const lot = lots.find((l) => l.id.toString() === lotId);
+                                                            if (lot?.warehouse) {
+                                                                setWarehouse(lot.warehouse);
+                                                            }
+                                                        }}
+                                                        className="w-full appearance-none rounded-xl border border-gray-300 bg-white px-4 py-3 pr-10 text-gray-800 font-medium shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                    >
+                                                        <option value="">Seleccione un lote...</option>
+                                                        {lots
+                                                            .filter(lot => normalizeWarehouseNumber(lot.warehouse) === selectedWarehouseId)
+                                                            .map((lot) => (
+                                                            <option key={lot.id} value={lot.id}>
+                                                                {lot.folio} {lot.cubicle ? `(Cubículo ${lot.cubicle})` : ""}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-400">
+                                                        <ChevronsUpDown className="w-5 h-5" />
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
 
-                                    {/* Número de almacén */}
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                                            Número de almacén
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                readOnly
-                                                value={warehouse}
-                                                placeholder={`Almacen ${selectedWarehouseId}`}
-                                                className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-700 font-medium shadow-sm cursor-not-allowed"
-                                            />
-                                        </div>
-                                    </div>
+                                            {/* Número de almacén */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                                    Número de almacén
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        readOnly
+                                                        value={warehouse}
+                                                        placeholder={`Almacen ${selectedWarehouseId}`}
+                                                        className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-700 font-medium shadow-sm cursor-not-allowed"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
 
                                     {/* Encargado de Cuadrilla */}
                                     <div>
@@ -2237,8 +2582,8 @@ export default function ShipmentProcess({
                 </div>
                 )}
 
-                {/* Table Section: HISTORIAL */}
-                {!isIncidentsOpen && (
+                {/* Table Section: HISTORIAL (Solo en proceso regular o dentro de la tarjeta Nota de Estiba) */}
+                {(!isIncidentsOpen && (!isEstibadorUser || estibadoresTab === "nota_estiba")) && (
                     <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden w-full">
                         <div className="p-5 md:p-6 bg-white border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div>
@@ -2428,9 +2773,31 @@ export default function ShipmentProcess({
                                                     </a>
                                                 )}
                                                 <div className="text-[9px] text-gray-500 font-medium truncate">
-                                                    {row.warehouse || `Almacen ${selectedWarehouseId}`}
-                                                    {row.cubicle ? ` • Cub. 0${row.cubicle}` : ""}
+                                                    {isVoBoApproved(row) && row.warehouse ? (
+                                                        <>
+                                                            {row.warehouse}
+                                                            {row.cubicle ? ` • Cub. 0${row.cubicle}` : ""}
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-gray-400 italic">Sin Almacén</span>
+                                                    )}
                                                 </div>
+                                                {row.stowage_plan?.weight_adjustment_status === "pending" && (
+                                                    <div className="mt-1">
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={row.stowage_plan?.weight_adjustment_notes || 'Unidad regresada de báscula para ajuste de peso'}>
+                                                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                                                            Ajuste de Peso Requerido
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {row.stowage_plan?.weight_adjustment_status === "adjusted" && (
+                                                    <div className="mt-1">
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300" title={row.stowage_plan?.weight_adjustment_resolution_notes || 'Ajuste completado, enviada a verificar peso a báscula'}>
+                                                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                                            Verificando Peso en Báscula
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </td>
 
                                             {/* Lote */}
@@ -2504,77 +2871,99 @@ export default function ShipmentProcess({
                                             <td className="w-[31%] px-1 py-2 text-center">
                                                 {isEstibadorUser ? (
                                                     <div className="flex items-center justify-center gap-1 flex-nowrap">
-                                                        {isVoBoApproved(row) ? (
+                                                        {isSamplingReleased(row) ? (
                                                             <>
-                                                                <span
-                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0"
-                                                                    title={`VoBo autorizado por ${row.vobo_by || row.stowage_plan?.vobo_by || "Supervisión PROAGRO"}`}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenSampling(row)}
+                                                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                    title="Muestreo completado y liberado por Supervisión PROAGRO"
                                                                 >
                                                                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                    VoBo ✓
+                                                                    <span>{samplingStatus.samplesCount}/{samplingStatus.targetSamples} • Liberada ✓</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenPrintModal(row.id)}
+                                                                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0 cursor-pointer"
+                                                                    title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
+                                                                >
+                                                                    <Printer className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </>
+                                                        ) : samplingStatus.isCompleted ? (
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenSampling(row)}
+                                                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                    title={`Muestras completadas (${samplingStatus.samplesCount}/${samplingStatus.targetSamples}). Haga clic para ver.`}
+                                                                >
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                    <span>{samplingStatus.samplesCount}/{samplingStatus.targetSamples}</span>
+                                                                </button>
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0"
+                                                                    title="En espera de que Supervisión PROAGRO libere la toma de muestras"
+                                                                >
+                                                                    <Clock className="w-3 h-3 text-amber-600" />
+                                                                    Pend. Liberación
                                                                 </span>
-
-                                                                {isSamplingReleased(row) ? (
-                                                                    <>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
-                                                                            title="Muestreo completado y liberado por Supervisión PROAGRO"
-                                                                        >
-                                                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                            <span>{samplingStatus.samplesCount}/{samplingStatus.targetSamples} • Liberada ✓</span>
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenPrintModal(row.id)}
-                                                                            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold p-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center justify-center shrink-0"
-                                                                            title="Imprimir Documentos (GLS-AP-FO-002 / 003)"
-                                                                        >
-                                                                            <Printer className="w-3.5 h-3.5" />
-                                                                        </button>
-                                                                    </>
-                                                                ) : samplingStatus.isCompleted ? (
-                                                                    <>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0"
-                                                                            title={`Muestras completadas (${samplingStatus.samplesCount}/${samplingStatus.targetSamples}). Haga clic para ver.`}
-                                                                        >
-                                                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                            <span>{samplingStatus.samplesCount}/{samplingStatus.targetSamples}</span>
-                                                                        </button>
-                                                                        <span
-                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0"
-                                                                            title="En espera de que Supervisión PROAGRO libere la toma de muestras (Paso 4)"
-                                                                        >
-                                                                            <Clock className="w-3 h-3 text-amber-600" />
-                                                                            Pend. Liberación
-                                                                        </span>
-                                                                    </>
-                                                                ) : row.is_sampling_blocked ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleOpenSampling(row)}
-                                                                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                        title="Muestreo bloqueado por peso fuera de límite. Haga clic para que el Supervisor PROAGRO autorice el desbloqueo."
-                                                                    >
-                                                                        <Lock className="w-3 h-3" />
-                                                                        <span>Bloqueado ({samplingStatus.samplesCount}/{samplingStatus.targetSamples})</span>
-                                                                    </button>
-                                                                ) : (
+                                                            </>
+                                                        ) : row.is_sampling_blocked ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleOpenSampling(row)}
+                                                                className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                title="Muestreo bloqueado por peso fuera de límite. Haga clic para que el Supervisor PROAGRO autorice el desbloqueo."
+                                                            >
+                                                                <Lock className="w-3 h-3" />
+                                                                <span>Bloqueado ({samplingStatus.samplesCount}/{samplingStatus.targetSamples})</span>
+                                                            </button>
+                                                        ) : isVoBoApproved(row) ? (
+                                                            row.is_sampling_blocked ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenSampling(row)}
+                                                                    className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                    title="Muestreo bloqueado por peso fuera de límite. Haga clic para que el Supervisor PROAGRO autorice el desbloqueo."
+                                                                >
+                                                                    <Lock className="w-3 h-3" />
+                                                                    <span>Bloqueado ({samplingStatus.samplesCount}/{samplingStatus.targetSamples})</span>
+                                                                </button>
+                                                            ) : (
+                                                                <>
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => handleOpenSampling(row)}
                                                                         className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
-                                                                        title={`Paso 3: Capturar muestras de pesos de sacos (${samplingStatus.samplesCount}/${samplingStatus.targetSamples})`}
+                                                                        title={`Capturar muestras de pesos de sacos (${samplingStatus.samplesCount}/${samplingStatus.targetSamples})`}
                                                                     >
                                                                         <Scale className="w-3 h-3" />
                                                                         <span>Tomar Muestras ({samplingStatus.samplesCount}/{samplingStatus.targetSamples})</span>
                                                                     </button>
-                                                                )}
-                                                            </>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleOpenStowagePlan(row)}
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition shrink-0 cursor-pointer"
+                                                                        title="Editar Nota de Estiba (GLS-AP-FO-002)"
+                                                                    >
+                                                                        <Pencil className="w-3 h-3" />
+                                                                        Editar
+                                                                    </button>
+                                                                    {samplingStatus.samplesCount === 0 && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleDelete(row.id, row.folio)}
+                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition shrink-0 cursor-pointer"
+                                                                            title="Eliminar Nota de Estiba"
+                                                                        >
+                                                                            <Trash2 className="w-3 h-3" />
+                                                                            Eliminar
+                                                                        </button>
+                                                                    )}
+                                                                </>
+                                                            )
                                                         ) : (
                                                             <>
                                                                 <span
@@ -2587,7 +2976,7 @@ export default function ShipmentProcess({
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleOpenStowagePlan(row)}
-                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition shrink-0"
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition shrink-0 cursor-pointer"
                                                                     title="Editar Nota de Estiba (GLS-AP-FO-002)"
                                                                 >
                                                                     <Pencil className="w-3 h-3" />
@@ -2596,7 +2985,7 @@ export default function ShipmentProcess({
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleDelete(row.id, row.folio)}
-                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition shrink-0"
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition shrink-0 cursor-pointer"
                                                                     title="Eliminar Nota de Estiba"
                                                                 >
                                                                     <Trash2 className="w-3 h-3" />
@@ -2637,11 +3026,11 @@ export default function ShipmentProcess({
                                                                     row.is_sampling_blocked ? (
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                            title="Peso fuera del límite: Haga clic para autorizar el desbloqueo de la unidad"
+                                                                            onClick={() => handleRemoteUnlock(row)}
+                                                                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                            title="Muestreo bloqueado por peso fuera de tolerancia: Haga clic para autorizar el desbloqueo"
                                                                         >
-                                                                            <Lock className="w-3 h-3" />
+                                                                            <Unlock className="w-3 h-3" />
                                                                             <span>Desbloquear</span>
                                                                         </button>
                                                                     ) : !isSamplingReleased(row) && samplingStatus.isCompleted ? (
@@ -2649,7 +3038,7 @@ export default function ShipmentProcess({
                                                                             type="button"
                                                                             onClick={() => handleOpenSampling(row)}
                                                                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                            title="Paso 4: Ver toma de muestras y liberar al finalizar"
+                                                                            title="Paso 3: Ver toma de muestras y liberar al finalizar"
                                                                         >
                                                                             <Unlock className="w-3 h-3" />
                                                                             <span>Liberar Muestras</span>
@@ -2681,9 +3070,21 @@ export default function ShipmentProcess({
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => handleFinish(row.id, row.folio)}
-                                                                        className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0"
+                                                                        className={`font-bold px-1.5 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                                                                            row.stowage_plan?.weight_adjustment_status === "pending"
+                                                                                ? "bg-amber-600 hover:bg-amber-700 text-white"
+                                                                                : "bg-indigo-700 hover:bg-indigo-800 text-white"
+                                                                        }`}
+                                                                        title={row.stowage_plan?.weight_adjustment_status === "pending" ? "Finalizar ajuste y regresar a báscula para verificar peso" : "Finalizar orden"}
                                                                     >
-                                                                        Finalizar
+                                                                        {row.stowage_plan?.weight_adjustment_status === "pending" ? (
+                                                                            <>
+                                                                                <Scale className="w-3 h-3" />
+                                                                                Enviar a Báscula
+                                                                            </>
+                                                                        ) : (
+                                                                            "Finalizar"
+                                                                        )}
                                                                     </button>
                                                                 )}
 
@@ -2823,6 +3224,7 @@ export default function ShipmentProcess({
                     await refreshIncidents();
                 }}
                 order={activeSamplingOrder}
+                warehouseBaggingMachines={warehouse_bagging_machines}
                 stowageCount={activeSamplingOrder?.stowage_count || stowageCount}
                 totalSamplesCount={activeSamplingOrder ? getTargetSamplesForRow(activeSamplingOrder) : 80}
                 onSave={async () => {
@@ -2830,6 +3232,7 @@ export default function ShipmentProcess({
                     await refreshHistory();
                 }}
                 hideSaveButton={!isEstibadorUser}
+                isEstibadorUser={isEstibadorUser}
                 canRelease={
                     !isEstibadorUser &&
                     Boolean(activeSamplingOrder) &&
@@ -2845,6 +3248,10 @@ export default function ShipmentProcess({
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
                     await refreshIncidents();
+                    if (!isEstibadorUser) {
+                        setIsSamplingModalOpen(false);
+                        setActiveSamplingOrder(null);
+                    }
                     if (newIncident) {
                         setIncidents((prev) => [newIncident, ...prev.filter((i) => i.id !== newIncident.id)]);
                     }
@@ -2892,7 +3299,226 @@ export default function ShipmentProcess({
                     }
                     await refreshHistory();
                 }}
+                onApproveVoBo={(orderToApprove) => {
+                    setIsStowageModalOpen(false);
+                    handleApproveVoBo(orderToApprove);
+                }}
             />
+
+            {/* Modal de Asignación de Lote y Almacén para VoBo de Supervisión */}
+            <Transition.Root show={isVoboModalOpen} as={Fragment}>
+                <Dialog as="div" className="relative z-50" onClose={() => !isSubmittingVobo && setIsVoboModalOpen(false)}>
+                    <Transition.Child
+                        as={Fragment}
+                        enter="ease-out duration-300"
+                        enterFrom="opacity-0"
+                        enterTo="opacity-100"
+                        leave="ease-in duration-200"
+                        leaveFrom="opacity-100"
+                        leaveTo="opacity-0"
+                    >
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity" />
+                    </Transition.Child>
+
+                    <div className="fixed inset-0 z-10 overflow-y-auto">
+                        <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+                            <Transition.Child
+                                as={Fragment}
+                                enter="ease-out duration-300"
+                                enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                                enterTo="opacity-100 translate-y-0 sm:scale-100"
+                                leave="ease-in duration-200"
+                                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                                leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                            >
+                                <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg border border-slate-200">
+                                    {/* Header */}
+                                    <div className="bg-gradient-to-r from-emerald-600 to-teal-700 px-6 py-4 text-white flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shadow-inner">
+                                                <CheckCircle2 className="w-6 h-6 text-white" />
+                                            </div>
+                                            <div>
+                                                <Dialog.Title as="h3" className="text-base font-black tracking-tight leading-tight">
+                                                    Visto Bueno (VoBo) a Nota de Estiba
+                                                </Dialog.Title>
+                                                <p className="text-xs text-emerald-100 font-medium">
+                                                    Asignación de Lote y Almacén • Supervisión PROAGRO
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsVoboModalOpen(false)}
+                                            disabled={isSubmittingVobo}
+                                            className="text-white/80 hover:text-white rounded-lg p-1.5 hover:bg-white/10 transition"
+                                        >
+                                            <X className="w-5 h-5" />
+                                        </button>
+                                    </div>
+
+                                    {/* Body */}
+                                    <div className="p-6 space-y-4">
+                                        {/* Order Info Badge */}
+                                        {voboTargetOrder && (
+                                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-col gap-1.5 text-xs text-slate-700">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-extrabold text-slate-900 text-sm">
+                                                        Orden: {voboTargetOrder.folio || "N/A"}
+                                                    </span>
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                        {voboTargetOrder.product || "N/A"}
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                                                    <span><b>Operador:</b> {voboTargetOrder.operator || voboTargetOrder.operator_name || "N/A"}</span>
+                                                    <span>•</span>
+                                                    <span><b>Placas:</b> {voboTargetOrder.plates || voboTargetOrder.tractor_plate || "N/A"}</span>
+                                                    {voboTargetOrder.stowage_count ? (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span className="text-emerald-700 font-bold"><b>Estibas:</b> {voboTargetOrder.stowage_count}</span>
+                                                        </>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                                            Para autorizar el <b>VoBo</b> y habilitar la toma de muestras de ensacadora, seleccione el <b>lote que cargará</b> y el <b>número de almacén</b>:
+                                        </p>
+
+                                        {/* Número de almacén */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                                                Número de almacén <span className="text-rose-500">*</span>
+                                            </label>
+                                            <div className="relative">
+                                                <select
+                                                    value={voboSelectedWarehouse}
+                                                    onChange={(e) => {
+                                                        const newWh = e.target.value;
+                                                        setVoboSelectedWarehouse(newWh);
+                                                        const currentLot = lots.find((l) => String(l.id) === voboSelectedLotId);
+                                                        if (currentLot && normalizeWarehouseNumber(currentLot.warehouse) !== normalizeWarehouseNumber(newWh)) {
+                                                            setVoboSelectedLotId("");
+                                                        }
+                                                        if (normalizeWarehouseNumber(newWh) !== 5) {
+                                                            setVoboSelectedCubicle("");
+                                                        }
+                                                    }}
+                                                    className="w-full appearance-none rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 pr-10 text-xs text-slate-800 font-bold shadow-xs focus:border-emerald-500 focus:ring-emerald-500"
+                                                >
+                                                    <option value="Almacen 1">Almacén 1</option>
+                                                    <option value="Almacen 2">Almacén 2</option>
+                                                    <option value="Almacen 3">Almacén 3</option>
+                                                    <option value="Almacen 4">Almacén 4</option>
+                                                    <option value="Almacen 5">Almacén 5</option>
+                                                </select>
+                                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                                                    <ChevronsUpDown className="w-4 h-4" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Cubículo si es Almacén 5 */}
+                                        {normalizeWarehouseNumber(voboSelectedWarehouse) === 5 && (
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                                                    Cubículo (Almacén 5)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={voboSelectedCubicle}
+                                                    onChange={(e) => setVoboSelectedCubicle(e.target.value)}
+                                                    placeholder="Ej. 5A, 5B, 5C..."
+                                                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-800 font-bold shadow-xs focus:border-emerald-500 focus:ring-emerald-500"
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Lote que cargará (Filtrado por Almacén) */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                                                    Lote que cargará <span className="text-rose-500">*</span>
+                                                </label>
+                                                <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                                    Filtrado por {voboSelectedWarehouse || "Almacén"}
+                                                </span>
+                                            </div>
+                                            <div className="relative">
+                                                <select
+                                                    value={voboSelectedLotId}
+                                                    onChange={(e) => {
+                                                        const lotId = e.target.value;
+                                                        setVoboSelectedLotId(lotId);
+                                                        const lot = lots.find((l) => l.id.toString() === lotId);
+                                                        if (lot?.cubicle && normalizeWarehouseNumber(voboSelectedWarehouse) === 5) {
+                                                            setVoboSelectedCubicle(lot.cubicle);
+                                                        }
+                                                    }}
+                                                    className="w-full appearance-none rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 pr-10 text-xs text-slate-800 font-bold shadow-xs focus:border-emerald-500 focus:ring-emerald-500"
+                                                >
+                                                    <option value="">-- Seleccione el Lote que cargará --</option>
+                                                    {filteredLotsForVoBo.map((lot) => (
+                                                        <option key={lot.id} value={lot.id}>
+                                                            {lot.folio} {lot.cubicle ? `(Cubículo ${lot.cubicle})` : ""} {lot.plant_origin ? `[${lot.plant_origin}]` : ""}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                                                    <ChevronsUpDown className="w-4 h-4" />
+                                                </div>
+                                            </div>
+                                            {filteredLotsForVoBo.length === 0 && (
+                                                <p className="text-[11px] text-amber-600 mt-1 font-medium">
+                                                    No se encontraron lotes registrados para {voboSelectedWarehouse || "este almacén"}.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Footer */}
+                                    <div className="bg-slate-50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const orderToReview = voboTargetOrder;
+                                                setIsVoboModalOpen(false);
+                                                handleOpenStowagePlan(orderToReview);
+                                            }}
+                                            className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-xs flex items-center justify-center gap-1.5"
+                                        >
+                                            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+                                            Revisar Nota Primero
+                                        </button>
+                                        <div className="w-full sm:w-auto flex items-center gap-2 justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsVoboModalOpen(false)}
+                                                disabled={isSubmittingVobo}
+                                                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200/50 transition"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleConfirmVoBo}
+                                                disabled={isSubmittingVobo}
+                                                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
+                                            >
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                <span>{isSubmittingVobo ? "Autorizando..." : "Autorizar VoBo"}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </Dialog.Panel>
+                            </Transition.Child>
+                        </div>
+                    </div>
+                </Dialog>
+            </Transition.Root>
 
             {/* Modal de Impresión de Documentos (GLS-AP-FO-003 y GLS-AP-FO-002) */}
             <ShipmentDocumentsPrintModal

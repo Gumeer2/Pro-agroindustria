@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Vessel; // Assuming we need this for origin/destination if related
 use App\Models\VesselOperator; // Legacy fallback?
 use App\Models\ShipmentOrder;
+use App\Models\ShipmentProcessHistory;
+use App\Models\ShipmentSamplingIncident;
 use App\Helpers\OperationalTimeHelper;
 
 
@@ -805,6 +807,16 @@ class WeightTicketController extends Controller
 
                 $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
                 if (!$hasLoadedFinished) {
+                    $rawStowageCheck = $order->shipment_order->stowage_plan;
+                    $stowageArrCheck = is_string($rawStowageCheck) ? json_decode($rawStowageCheck, true) : (is_array($rawStowageCheck) ? $rawStowageCheck : []);
+                    if (($stowageArrCheck['weight_adjustment_status'] ?? null) === 'pending') {
+                        return redirect()->route('scale.index', [
+                            'scale_id' => $request->input('scale_id', 1),
+                            'view' => 'table',
+                            'tab' => 'sale',
+                        ])->with('error', 'ALERTA: Operación Bloqueada. La orden de embarque (' . ($order->shipment_order->folio ?? $order->folio) . ') se encuentra en proceso de AJUSTE DE PESO en Almacén (APT).');
+                    }
+
                     return redirect()->route('scale.index', [
                         'scale_id' => $request->input('scale_id', 1),
                         'view' => 'table',
@@ -853,6 +865,30 @@ class WeightTicketController extends Controller
                 ?? $order->shipment_order?->lot?->warehouse
                 ?? $order->lot?->warehouse
                 ?? 'N/A';
+
+            $warehouseStock = null;
+            $orderProductType = \App\Services\UreaStockService::getOrderProductType($order);
+            if ($assignedWarehouse && $assignedWarehouse !== 'N/A') {
+                $whKey = \App\Services\UreaStockService::normalizeWarehouse($assignedWarehouse);
+                if ($orderProductType && $whKey) {
+                    $warehouseStock = \App\Services\UreaStockService::getWarehouseStock($orderProductType, $whKey);
+                    if ($order->shipment_order_id && $warehouseStock <= 0) {
+                        $productLabel = match ($orderProductType) {
+                            'agricola' => 'Urea Agrícola',
+                            'industrial' => 'Urea Industrial',
+                            'automotriz' => 'Urea de Alta Pureza',
+                            'importada' => 'Urea Importada',
+                            'dap' => 'DAP (Fosfato Diamónico)',
+                            default => 'Fertilizante',
+                        };
+                        return redirect()->route('scale.index', [
+                            'scale_id' => $request->input('scale_id', 1),
+                            'view' => 'table',
+                            'tab' => 'sale',
+                        ])->with('error', "ALERTA: Operación Bloqueada. No hay inventario disponible en {$whKey} para {$productLabel} (Stock disponible: " . number_format($warehouseStock, 2) . " TM).");
+                    }
+                }
+            }
 
             // Presentation resolution
             $presentation = $order->shipment_order?->presentation
@@ -954,6 +990,9 @@ class WeightTicketController extends Controller
                 $packagingType = $detectedType;
             }
 
+            $rawStowage = $order->shipment_order?->stowage_plan;
+            $stowageData = is_string($rawStowage) ? (json_decode($rawStowage, true) ?: []) : (is_array($rawStowage) ? $rawStowage : []);
+
             $orderData = [
                 'id' => $order->id,
                 'folio' => $order->folio,
@@ -988,6 +1027,14 @@ class WeightTicketController extends Controller
                     ?? $order->vessel?->operation_type 
                     ?? $order->vessel?->service_type 
                     ?? 'Descarga',
+                'stowage_plan' => $stowageData,
+                'weight_adjustment_status' => $stowageData['weight_adjustment_status'] ?? null,
+                'weight_adjustment_notes' => $stowageData['weight_adjustment_notes'] ?? null,
+                'weight_adjustment_resolution_notes' => $stowageData['weight_adjustment_resolution_notes'] ?? null,
+                'weight_adjustment_diff' => $stowageData['weight_adjustment_diff'] ?? null,
+                'weight_adjustment_requested_at' => $stowageData['weight_adjustment_requested_at'] ?? null,
+                'adjustment' => $stowageData['adjustment'] ?? null,
+                'warehouse_stock' => $warehouseStock,
             ];
         }
 
@@ -1019,6 +1066,82 @@ class WeightTicketController extends Controller
             'active_lots' => $activeLots,
             'documenters' => $documenters,
             'packaging_types' => $packagingTypes,
+        ]);
+    }
+
+    public function returnForWeightAdjustment(Request $request, $id)
+    {
+        $order = LoadingOrder::with(['shipment_order'])->find($id);
+        if (!$order) {
+            $order = ShipmentOrder::find($id);
+        }
+        if (!$order) {
+            return response()->json(['message' => 'Orden no encontrada.'], 404);
+        }
+
+        $shipmentOrder = $order instanceof ShipmentOrder ? $order : $order->shipment_order;
+        if (!$shipmentOrder) {
+            return response()->json(['message' => 'No se encontró la orden de embarque asociada.'], 404);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|max:1000',
+            'weight' => 'nullable|numeric',
+            'diff_text' => 'nullable|string|max:255',
+        ]);
+
+        $history = ShipmentProcessHistory::where('shipment_order_id', $shipmentOrder->id)->latest()->first();
+
+        $rawStowage = $history?->stowage_plan ?: $shipmentOrder->stowage_plan ?: [];
+        $stowagePlan = is_string($rawStowage) ? (json_decode($rawStowage, true) ?: []) : (is_array($rawStowage) ? $rawStowage : []);
+
+        $weightVal = !empty($validated['weight']) ? (float)$validated['weight'] : null;
+        $weightText = $weightVal ? number_format($weightVal, 2) . ' kg' : 'N/A';
+        $diffText = $validated['diff_text'] ?? '';
+
+        $stowagePlan['weight_adjustment_status'] = 'pending';
+        $stowagePlan['weight_adjustment_notes'] = $validated['reason'];
+        $stowagePlan['weight_adjustment_weight'] = $weightVal;
+        $stowagePlan['weight_adjustment_diff'] = $diffText;
+        $stowagePlan['weight_adjustment_requested_at'] = now()->toIso8601String();
+        $stowagePlan['weight_adjustment_requested_by'] = auth()->user()?->name ?? 'Operador de Báscula';
+
+        // Regresar la orden al estado pendiente/en proceso de carga para que no pueda destarar hasta ser liberada
+        $shipmentOrder->update([
+            'status' => 'loading',
+            'loading_finished_at' => null,
+            'stowage_plan' => $stowagePlan,
+        ]);
+
+        if ($history) {
+            $history->update([
+                'status' => 'loading',
+                'finished_at' => null,
+                'stowage_plan' => $stowagePlan,
+            ]);
+        }
+
+        // Registrar incidencia en ShipmentSamplingIncident
+        $fullReason = "Regreso de Báscula por Ajuste de Peso: " . $validated['reason'];
+        if ($diffText) {
+            $fullReason .= " (" . $diffText . ", Peso Báscula: " . $weightText . ")";
+        }
+
+        ShipmentSamplingIncident::create([
+            'shipment_order_id' => $shipmentOrder->id,
+            'order_folio' => $shipmentOrder->folio ?? $order->folio,
+            'warehouse' => $shipmentOrder->warehouse ?? $history?->warehouse ?? 'Almacén',
+            'unlocked_by_user_id' => auth()->id(),
+            'unlocked_by_name' => auth()->user()?->name ?? 'Operador de Báscula',
+            'assistant_name' => 'Báscula Salida',
+            'unlock_count' => 1,
+            'reason' => $fullReason,
+            'unlocked_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Unidad regresada a Gestión de Proceso de Embarque (APT) para ajuste de peso exitosamente.',
         ]);
     }
 
@@ -1631,7 +1754,7 @@ class WeightTicketController extends Controller
                 $assignedLotId = $validated['lot_id'] ?? $order->shipment_order?->lot_id ?? $ticket->lot_id ?? null;
 
                 // Determine Warehouse to update in LoadingOrder
-                $finalWarehouse = $order->warehouse;
+                $finalWarehouse = $order->warehouse ?? $order->shipment_order?->warehouse;
                 if (!empty($validated['lot_id'])) {
                     $lot = \App\Models\Lot::find($validated['lot_id']);
                     if ($lot && $lot->warehouse) {
@@ -1640,6 +1763,9 @@ class WeightTicketController extends Controller
                 } elseif (!empty($validated['warehouse'])) {
                     $finalWarehouse = $validated['warehouse'];
                 }
+
+                // Inventory Validation: Prevent destare if warehouse has insufficient or 0 stock
+                \App\Services\UreaStockService::validateAvailableStock($order, $finalWarehouse, $netTons);
 
                 $ticketUpdate = [
                     'gross_weight' => $secondWeight,

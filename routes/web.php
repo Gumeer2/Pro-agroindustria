@@ -141,6 +141,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/scale/search-folio', [\App\Http\Controllers\WeightTicketController::class , 'searchFolio'])->name('scale.search-folio');
         Route::post('/scale/entry', [\App\Http\Controllers\WeightTicketController::class , 'storeEntry'])->name('scale.entry.store');
         Route::post('/scale/exit', [\App\Http\Controllers\WeightTicketController::class , 'storeExit'])->name('scale.exit.store');
+        Route::post('/scale/exit/{id}/return-adjustment', [\App\Http\Controllers\WeightTicketController::class , 'returnForWeightAdjustment'])->name('scale.exit.return-adjustment');
         Route::get('/scale/ticket/{id}', [\App\Http\Controllers\WeightTicketController::class , 'printTicket'])->name('scale.ticket.print');
         Route::get('/scale/burreo-averages', [\App\Http\Controllers\WeightTicketController::class , 'getBurreoAverages'])->name('scale.burreo.averages');
         Route::post('/scale/burreo-averages/apply', [\App\Http\Controllers\WeightTicketController::class , 'applyBurreoAverages'])->name('scale.burreo.apply');
@@ -206,6 +207,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/apt/qr', [\App\Http\Controllers\AptController::class , 'qrPrint'])->name('apt.qr');
         Route::get('/apt/status', [\App\Http\Controllers\AptController::class , 'status'])->name('apt.status'); // Dashboard Status
         Route::get('/apt/status-unidades', [\App\Http\Controllers\AptController::class , 'unitStatus'])->name('apt.unit-status');
+        Route::get('/apt/equipos-envasado', [\App\Http\Controllers\AptController::class , 'packagingEquipments'])->name('apt.packaging-equipments');
+        Route::post('/apt/packaging-equipments', [\App\Http\Controllers\PackagingEquipmentController::class, 'store'])->name('apt.packaging-equipments.store');
+        Route::put('/apt/packaging-equipments/{packagingEquipment}', [\App\Http\Controllers\PackagingEquipmentController::class, 'update'])->name('apt.packaging-equipments.update');
+        Route::delete('/apt/packaging-equipments/{packagingEquipment}', [\App\Http\Controllers\PackagingEquipmentController::class, 'destroy'])->name('apt.packaging-equipments.destroy');
+        Route::get('/apt/warehouse-bagging-machines', [\App\Http\Controllers\WarehouseBaggingMachineController::class, 'index'])->name('apt.warehouse-bagging-machines.index');
+        Route::post('/apt/warehouse-bagging-machines', [\App\Http\Controllers\WarehouseBaggingMachineController::class, 'store'])->name('apt.warehouse-bagging-machines.store');
+        Route::post('/apt/warehouse-bagging-machines/assign-assistant', [\App\Http\Controllers\WarehouseBaggingMachineController::class, 'assignAssistant'])->name('apt.warehouse-bagging-machines.assign-assistant');
+        Route::put('/apt/warehouse-bagging-machines/{warehouseBaggingMachine}', [\App\Http\Controllers\WarehouseBaggingMachineController::class, 'update'])->name('apt.warehouse-bagging-machines.update');
+        Route::delete('/apt/warehouse-bagging-machines/{warehouseBaggingMachine}', [\App\Http\Controllers\WarehouseBaggingMachineController::class, 'destroy'])->name('apt.warehouse-bagging-machines.destroy');
         Route::get('/apt/scanner', [\App\Http\Controllers\AptController::class , 'scanner'])->name('apt.scanner');
         Route::post('/apt/scanner', [\App\Http\Controllers\AptController::class , 'storeScan'])->name('apt.scanner.store');
         Route::put('/apt/scanner/{id}', [\App\Http\Controllers\AptController::class , 'updateScan'])->name('apt.scanner.update');
@@ -248,6 +258,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/apt/inventory/urea/daily/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'updateDaily'])->name('apt.inventory.urea.daily.update');
         Route::delete('/apt/inventory/urea/daily/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea.daily.destroy');
         Route::post('/apt/inventory/urea/initial', [\App\Http\Controllers\UreaInventoryController::class, 'storeInitial'])->name('apt.inventory.urea.initial.store');
+        Route::post('/apt/inventory/urea/adjustment', [\App\Http\Controllers\UreaInventoryController::class, 'storeAdjustment'])->name('apt.inventory.urea.adjustment.store');
         Route::put('/apt/inventory/urea/initial/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'updateInitial'])->name('apt.inventory.urea.initial.update');
         Route::delete('/apt/inventory/urea/initial/{id}', [\App\Http\Controllers\UreaInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea.initial.destroy');
 
@@ -258,6 +269,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/apt/inventory/urea-industrial/daily/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-industrial.daily.update');
         Route::delete('/apt/inventory/urea-industrial/daily/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-industrial.daily.destroy');
         Route::post('/apt/inventory/urea-industrial/initial', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'storeInitial'])->name('apt.inventory.urea-industrial.initial.store');
+        Route::post('/apt/inventory/urea-industrial/adjustment', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'storeAdjustment'])->name('apt.inventory.urea-industrial.adjustment.store');
         Route::put('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-industrial.initial.update');
         Route::delete('/apt/inventory/urea-industrial/initial/{id}', [\App\Http\Controllers\UreaIndustrialInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-industrial.initial.destroy');
 
@@ -268,6 +280,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/apt/inventory/urea-automotriz/daily/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-automotriz.daily.update');
         Route::delete('/apt/inventory/urea-automotriz/daily/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-automotriz.daily.destroy');
         Route::post('/apt/inventory/urea-automotriz/initial', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'storeInitial'])->name('apt.inventory.urea-automotriz.initial.store');
+        Route::post('/apt/inventory/urea-automotriz/adjustment', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'storeAdjustment'])->name('apt.inventory.urea-automotriz.adjustment.store');
         Route::put('/apt/inventory/urea-automotriz/initial/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-automotriz.initial.update');
         Route::delete('/apt/inventory/urea-automotriz/initial/{id}', [\App\Http\Controllers\UreaAutomotrizInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-automotriz.initial.destroy');
 
@@ -278,6 +291,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/apt/inventory/urea-importada/daily/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'updateDaily'])->name('apt.inventory.urea-importada.daily.update');
         Route::delete('/apt/inventory/urea-importada/daily/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'destroyDaily'])->name('apt.inventory.urea-importada.daily.destroy');
         Route::post('/apt/inventory/urea-importada/initial', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'storeInitial'])->name('apt.inventory.urea-importada.initial.store');
+        Route::post('/apt/inventory/urea-importada/adjustment', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'storeAdjustment'])->name('apt.inventory.urea-importada.adjustment.store');
         Route::put('/apt/inventory/urea-importada/initial/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'updateInitial'])->name('apt.inventory.urea-importada.initial.update');
         Route::delete('/apt/inventory/urea-importada/initial/{id}', [\App\Http\Controllers\UreaImportadaInventoryController::class, 'destroyInitial'])->name('apt.inventory.urea-importada.initial.destroy');
 
@@ -288,6 +302,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/apt/inventory/dap/daily/{id}', [\App\Http\Controllers\DapInventoryController::class, 'updateDaily'])->name('apt.inventory.dap.daily.update');
         Route::delete('/apt/inventory/dap/daily/{id}', [\App\Http\Controllers\DapInventoryController::class, 'destroyDaily'])->name('apt.inventory.dap.daily.destroy');
         Route::post('/apt/inventory/dap/initial', [\App\Http\Controllers\DapInventoryController::class, 'storeInitial'])->name('apt.inventory.dap.initial.store');
+        Route::post('/apt/inventory/dap/adjustment', [\App\Http\Controllers\DapInventoryController::class, 'storeAdjustment'])->name('apt.inventory.dap.adjustment.store');
         Route::put('/apt/inventory/dap/initial/{id}', [\App\Http\Controllers\DapInventoryController::class, 'updateInitial'])->name('apt.inventory.dap.initial.update');
         Route::delete('/apt/inventory/dap/initial/{id}', [\App\Http\Controllers\DapInventoryController::class, 'destroyInitial'])->name('apt.inventory.dap.initial.destroy');
 
@@ -363,6 +378,7 @@ Route::middleware('auth')->group(function () {
                 Route::post('/documentation/shipment-orders/{id}/save-sampling', 'saveSampling')->name('documentation.shipment-orders.save-sampling');
                 Route::get('/documentation/shipment-orders/{id}/sampling', 'getSampling')->name('documentation.shipment-orders.get-sampling');
                 Route::post('/documentation/shipment-orders/{id}/unlock-sampling', 'unlockSampling')->name('documentation.shipment-orders.unlock-sampling');
+                Route::get('/documentation/shipment-orders/active-sampling-blocks', 'activeSamplingBlocks')->name('documentation.shipment-orders.active-sampling-blocks');
                 Route::get('/documentation/shipment-sampling-incidents', 'getSamplingIncidents')->name('documentation.shipment-orders.sampling-incidents');
                 Route::post('/documentation/shipment-orders/{id}/save-stowage-plan', 'saveStowagePlan')->name('documentation.shipment-orders.save-stowage-plan');
                 Route::post('/documentation/shipment-orders/{id}/vobo-stowage-plan', 'approveStowagePlanVoBo')->name('documentation.shipment-orders.vobo-stowage-plan');
@@ -388,6 +404,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/documentation/sales-order-adjustments', [\App\Http\Controllers\SalesOrderAdjustmentController::class , 'index'])->name('documentation.sales-order-adjustments.index');
         Route::post('/documentation/sales-order-adjustments', [\App\Http\Controllers\SalesOrderAdjustmentController::class , 'store'])->name('documentation.sales-order-adjustments.store');
         Route::patch('/documentation/sales-order-adjustments/{id}/revert', [\App\Http\Controllers\SalesOrderAdjustmentController::class , 'revert'])->name('documentation.sales-order-adjustments.revert');
+
+        // Alta de Clientes Sacos (Documentación)
+        Route::get('/documentation/client-bags', [\App\Http\Controllers\ClientBagController::class, 'index'])->name('documentation.client-bags.index');
+        Route::put('/documentation/client-bags/{client}', [\App\Http\Controllers\ClientBagController::class, 'update'])->name('documentation.client-bags.update');
+        Route::post('/documentation/client-bags/types', [\App\Http\Controllers\ClientBagController::class, 'storeType'])->name('documentation.client-bags.store-type');
 
         // Shipment Origins (Manageable Origins)
         Route::get('/shipment-origins', [\App\Http\Controllers\ShipmentOriginController::class , 'index'])->name('shipment-origins.index');

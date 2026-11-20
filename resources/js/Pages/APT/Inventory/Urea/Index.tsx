@@ -20,7 +20,9 @@ import {
     Filter,
     ExternalLink,
     AlertTriangle,
+    SlidersHorizontal,
 } from "lucide-react";
+import WarehouseAdjustmentFactorModal from "@/Components/WarehouseAdjustmentFactorModal";
 import Swal from "sweetalert2";
 
 interface DailyProduction {
@@ -173,6 +175,7 @@ export default function UreaInventoryIndex({
     const [activeTab, setActiveTab] = useState<"production" | "initial" | "summary">(
         requestedTab || initialTab || (filters?.tab as any) || "production"
     );
+    const [isAdjustmentModalOpen, setIsAdjustmentModalOpen] = useState(false);
 
     // Search and filter state
     const [search, setSearch] = useState(filters?.search || "");
@@ -500,8 +503,8 @@ export default function UreaInventoryIndex({
         activeTab === "production"
             ? "Urea Agrícola: Producción Diaria"
             : activeTab === "initial"
-            ? "Urea Agrícola: Inventario Inicial"
-            : "Urea Agrícola: Balance y Desglose";
+                ? "Urea Agrícola: Inventario Inicial"
+                : "Urea Agrícola: Balance y Desglose";
 
     return (
         <DashboardLayout user={auth.user} header={pageTitle}>
@@ -530,26 +533,24 @@ export default function UreaInventoryIndex({
 
                 {/* Hero Header */}
                 <div
-                    className={`rounded-2xl shadow-xl p-6 sm:p-8 text-white mb-8 relative overflow-hidden ${
-                        activeTab === "initial"
-                            ? "bg-gradient-to-r from-violet-800 via-purple-800 to-indigo-900"
-                            : activeTab === "production"
+                    className={`rounded-2xl shadow-xl p-6 sm:p-8 text-white mb-8 relative overflow-hidden ${activeTab === "initial"
+                        ? "bg-gradient-to-r from-violet-800 via-purple-800 to-indigo-900"
+                        : activeTab === "production"
                             ? "bg-gradient-to-r from-emerald-800 via-teal-800 to-indigo-900"
                             : "bg-gradient-to-r from-indigo-800 via-violet-800 to-sky-900"
-                    }`}
+                        }`}
                 >
                     <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-white/5 rounded-full blur-2xl pointer-events-none" />
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div>
                             <div className="flex items-center gap-3 mb-2">
                                 <div
-                                    className={`p-2.5 rounded-xl backdrop-blur-sm border ${
-                                        activeTab === "initial"
-                                            ? "bg-purple-600/40 border-purple-400/30"
-                                            : activeTab === "production"
+                                    className={`p-2.5 rounded-xl backdrop-blur-sm border ${activeTab === "initial"
+                                        ? "bg-purple-600/40 border-purple-400/30"
+                                        : activeTab === "production"
                                             ? "bg-emerald-600/40 border-emerald-400/30"
                                             : "bg-indigo-600/40 border-indigo-400/30"
-                                    }`}
+                                        }`}
                                 >
                                     {activeTab === "production" ? (
                                         <TrendingUp className="w-7 h-7 text-emerald-200" />
@@ -564,15 +565,14 @@ export default function UreaInventoryIndex({
                                 </h1>
                             </div>
                             <p
-                                className={`text-sm sm:text-base max-w-2xl ${
-                                    activeTab === "initial" ? "text-purple-100" : "text-emerald-100"
-                                }`}
+                                className={`text-sm sm:text-base max-w-2xl ${activeTab === "initial" ? "text-purple-100" : "text-emerald-100"
+                                    }`}
                             >
                                 {activeTab === "production"
                                     ? "Captura y seguimiento de la producción diaria por turno, planta y almacén."
                                     : activeTab === "initial"
-                                    ? "Captura y balance inicial de existencias base de Urea Agrícola."
-                                    : "Consolidado de stock total, inventario inicial y producción acumulada."}
+                                        ? "Captura y balance inicial de existencias base de Urea Agrícola."
+                                        : "Consolidado de stock total, inventario inicial y producción acumulada."}
                             </p>
                         </div>
 
@@ -682,11 +682,10 @@ export default function UreaInventoryIndex({
                 <div className="flex border-b border-gray-200 mb-6 bg-white rounded-xl shadow-xs px-2 pt-2">
                     <button
                         onClick={() => handleTabChange("production")}
-                        className={`flex items-center py-3 px-5 border-b-2 font-bold text-sm transition-all rounded-t-lg ${
-                            activeTab === "production"
-                                ? "border-emerald-600 text-emerald-700 bg-emerald-50/50"
-                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                        }`}
+                        className={`flex items-center py-3 px-5 border-b-2 font-bold text-sm transition-all rounded-t-lg ${activeTab === "production"
+                            ? "border-emerald-600 text-emerald-700 bg-emerald-50/50"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                            }`}
                     >
                         <TrendingUp className="w-4 h-4 mr-2 text-emerald-600" />
                         Producción Diaria
@@ -697,11 +696,10 @@ export default function UreaInventoryIndex({
 
                     <button
                         onClick={() => handleTabChange("initial")}
-                        className={`flex items-center py-3 px-5 border-b-2 font-bold text-sm transition-all rounded-t-lg ${
-                            activeTab === "initial"
-                                ? "border-purple-600 text-purple-700 bg-purple-50/50"
-                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                        }`}
+                        className={`flex items-center py-3 px-5 border-b-2 font-bold text-sm transition-all rounded-t-lg ${activeTab === "initial"
+                            ? "border-purple-600 text-purple-700 bg-purple-50/50"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                            }`}
                     >
                         <Boxes className="w-4 h-4 mr-2 text-purple-600" />
                         Inventario Inicial
@@ -712,11 +710,10 @@ export default function UreaInventoryIndex({
 
                     <button
                         onClick={() => handleTabChange("summary")}
-                        className={`flex items-center py-3 px-5 border-b-2 font-bold text-sm transition-all rounded-t-lg ${
-                            activeTab === "summary"
-                                ? "border-indigo-600 text-indigo-700 bg-indigo-50/50"
-                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                        }`}
+                        className={`flex items-center py-3 px-5 border-b-2 font-bold text-sm transition-all rounded-t-lg ${activeTab === "summary"
+                            ? "border-indigo-600 text-indigo-700 bg-indigo-50/50"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                            }`}
                     >
                         <BarChart3 className="w-4 h-4 mr-2 text-indigo-600" />
                         Balance y Desglose
@@ -847,11 +844,10 @@ export default function UreaInventoryIndex({
                                                 </td>
                                                 <td className="px-5 py-4 whitespace-nowrap text-xs font-bold">
                                                     <span
-                                                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-extrabold ${
-                                                            item.plant_origin === "UREA 1"
-                                                                ? "bg-emerald-100 text-emerald-800"
-                                                                : "bg-teal-100 text-teal-800"
-                                                        }`}
+                                                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-extrabold ${item.plant_origin === "UREA 1"
+                                                            ? "bg-emerald-100 text-emerald-800"
+                                                            : "bg-teal-100 text-teal-800"
+                                                            }`}
                                                     >
                                                         {item.plant_origin}
                                                     </span>
@@ -936,13 +932,12 @@ export default function UreaInventoryIndex({
                                         <Link
                                             key={idx}
                                             href={link.url || "#"}
-                                            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
-                                                link.active
-                                                    ? "bg-emerald-600 text-white font-bold"
-                                                    : link.url
+                                            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${link.active
+                                                ? "bg-emerald-600 text-white font-bold"
+                                                : link.url
                                                     ? "text-gray-700 hover:bg-gray-100 border border-gray-200"
                                                     : "text-gray-300 cursor-not-allowed"
-                                            }`}
+                                                }`}
                                             dangerouslySetInnerHTML={{ __html: link.label }}
                                         />
                                     ))}
@@ -965,13 +960,23 @@ export default function UreaInventoryIndex({
                                     Balance y stock inicial base por almacén y planta
                                 </p>
                             </div>
-                            <button
-                                onClick={() => openInitialModal()}
-                                className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 transition-colors"
-                            >
-                                <Plus className="w-4 h-4 mr-1.5" />
-                                Capturar Inventario Inicial
-                            </button>
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAdjustmentModalOpen(true)}
+                                    className="inline-flex items-center px-4 py-2 border border-gray-200 rounded-xl shadow-xs text-sm font-bold text-gray-700 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+                                >
+                                    <SlidersHorizontal className="w-4 h-4 mr-1.5 text-gray-500" />
+                                    Factor de Ajuste
+                                </button>
+                                <button
+                                    onClick={() => openInitialModal()}
+                                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 transition-colors cursor-pointer"
+                                >
+                                    <Plus className="w-4 h-4 mr-1.5" />
+                                    Capturar Inventario Inicial
+                                </button>
+                            </div>
                         </div>
 
                         <div className="overflow-x-auto">
@@ -996,11 +1001,10 @@ export default function UreaInventoryIndex({
                                                 </td>
                                                 <td className="px-5 py-4 whitespace-nowrap text-xs font-bold">
                                                     <span
-                                                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-extrabold ${
-                                                            item.plant_origin === "UREA 1"
-                                                                ? "bg-emerald-100 text-emerald-800"
-                                                                : "bg-teal-100 text-teal-800"
-                                                        }`}
+                                                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-extrabold ${item.plant_origin === "UREA 1"
+                                                            ? "bg-emerald-100 text-emerald-800"
+                                                            : "bg-teal-100 text-teal-800"
+                                                            }`}
                                                     >
                                                         {item.plant_origin}
                                                     </span>
@@ -1074,13 +1078,12 @@ export default function UreaInventoryIndex({
                                         <Link
                                             key={idx}
                                             href={link.url || "#"}
-                                            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
-                                                link.active
-                                                    ? "bg-purple-600 text-white font-bold"
-                                                    : link.url
+                                            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${link.active
+                                                ? "bg-purple-600 text-white font-bold"
+                                                : link.url
                                                     ? "text-gray-700 hover:bg-gray-100 border border-gray-200"
                                                     : "text-gray-300 cursor-not-allowed"
-                                            }`}
+                                                }`}
                                             dangerouslySetInnerHTML={{ __html: link.label }}
                                         />
                                     ))}
@@ -1109,11 +1112,10 @@ export default function UreaInventoryIndex({
                                         <div className="flex items-center justify-between mb-4">
                                             <div className="flex items-center space-x-3">
                                                 <div
-                                                    className={`p-3 rounded-xl ${
-                                                        plant === "UREA 1"
-                                                            ? "bg-emerald-100 text-emerald-700"
-                                                            : "bg-teal-100 text-teal-700"
-                                                    }`}
+                                                    className={`p-3 rounded-xl ${plant === "UREA 1"
+                                                        ? "bg-emerald-100 text-emerald-700"
+                                                        : "bg-teal-100 text-teal-700"
+                                                        }`}
                                                 >
                                                     <Factory className="w-6 h-6" />
                                                 </div>
@@ -1161,7 +1163,7 @@ export default function UreaInventoryIndex({
 
                         {/* Warehouse Breakdown Table */}
                         <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
-                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                            <div className="p-6 bg-gray-50 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-900 flex items-center">
                                         <Database className="w-5 h-5 mr-2 text-indigo-600" />
@@ -1171,6 +1173,14 @@ export default function UreaInventoryIndex({
                                         Fórmula: (Inventario Inicial + Producción Diaria) − Embarques Despachados = Stock Neto Disponible
                                     </p>
                                 </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAdjustmentModalOpen(true)}
+                                    className="inline-flex items-center px-3.5 py-1.5 border border-gray-200 rounded-xl shadow-xs text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 transition-colors cursor-pointer shrink-0"
+                                >
+                                    <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5 text-gray-500" />
+                                    Factor de Ajuste
+                                </button>
                             </div>
 
                             <div className="overflow-x-auto">
@@ -1630,6 +1640,17 @@ export default function UreaInventoryIndex({
                     </div>
                 </div>
             )}
+            {/* Modal de Factor de Ajuste en Almacén */}
+            <WarehouseAdjustmentFactorModal
+                isOpen={isAdjustmentModalOpen}
+                onClose={() => setIsAdjustmentModalOpen(false)}
+                productName="Urea Agrícola"
+                productType="agricola"
+                postRoute={route("apt.inventory.urea.adjustment.store")}
+                plantOptions={["UREA 1", "UREA 2"]}
+                currentStockByWarehouse={metrics?.byWarehouse || {}}
+                totalGlobalStock={metrics?.totalStockTons ?? 0}
+            />
         </DashboardLayout>
     );
 }

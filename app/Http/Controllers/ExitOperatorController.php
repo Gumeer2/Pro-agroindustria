@@ -119,7 +119,7 @@ class ExitOperatorController extends Controller
                 ->first();
         }
 
-        $clients = $clientMatch ? collect([$clientMatch]) : Client::orderBy('business_name')->get(['id', 'business_name', 'rfc']);
+        $clients = $clientMatch ? collect([$clientMatch]) : Client::orderBy('business_name')->get(['id', 'business_name', 'rfc', 'bag_types']);
         $operators = ExitOperator::with('clients')->orderBy('name')->get()->map(function ($op) {
             $op->client_ids = $op->clients->pluck('id')->values()->toArray();
             return $op;

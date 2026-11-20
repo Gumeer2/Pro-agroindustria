@@ -14,5 +14,10 @@ class Client extends Model
         'rfc',
         'address',
         'contact_info',
+        'bag_types',
+    ];
+
+    protected $casts = [
+        'bag_types' => 'array',
     ];
 }

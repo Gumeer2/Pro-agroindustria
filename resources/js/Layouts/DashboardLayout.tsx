@@ -5,6 +5,7 @@ import { Menu, X, LogOut } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import { ClickAnimation } from '@/Components/ClickAnimation';
 import { SplashWelcome } from '@/Components/SplashWelcome';
+import { GlobalSamplingAlertListener } from '@/Components/GlobalSamplingAlertListener';
 
 export default function DashboardLayout({ user, header, children }: PropsWithChildren<{ user?: User, header?: React.ReactNode }>) {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -58,6 +59,9 @@ export default function DashboardLayout({ user, header, children }: PropsWithChi
                             <h1 className="text-lg font-semibold text-gray-900">{header}</h1>
                         </div>
                         <div className="flex items-center gap-4">
+                            {/* Alerta Global de Muestreo Bloqueado para Supervisión */}
+                            <GlobalSamplingAlertListener />
+
                             {/* User Profile & Logout */}
                             <div className="flex items-center gap-3">
                                 <span className="text-sm font-medium text-gray-700 hidden md:block">{user?.name}</span>

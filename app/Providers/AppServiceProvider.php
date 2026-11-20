@@ -38,5 +38,15 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Vite::prefetch(concurrency: 3);
+
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('clients') && !\Illuminate\Support\Facades\Schema::hasColumn('clients', 'bag_types')) {
+                \Illuminate\Support\Facades\Schema::table('clients', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->json('bag_types')->nullable()->after('contact_info');
+                });
+            }
+        } catch (\Throwable $e) {
+            // Silently continue
+        }
     }
 }

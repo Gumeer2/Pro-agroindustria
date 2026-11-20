@@ -50,7 +50,19 @@ class ClientController extends Controller
             'rfc' => 'required|string|max:255',
             'address' => 'required|string|max:255',
             'contact_info' => 'required|string|max:255',
+            'bag_types' => 'nullable|array',
+            'bag_types.*' => 'string|max:100',
         ]);
+
+        if (isset($validated['bag_types'])) {
+            $cleaned = array_values(array_unique(array_filter(array_map(fn($t) => mb_strtoupper(trim($t), 'UTF-8'), (array) $validated['bag_types']))));
+            $validated['bag_types'] = $cleaned;
+            foreach ($cleaned as $bt) {
+                if (!empty($bt)) {
+                    \App\Models\ExitOperatorType::firstOrCreate(['name' => $bt]);
+                }
+            }
+        }
 
         Client::create($validated);
 
@@ -72,7 +84,19 @@ class ClientController extends Controller
             'rfc' => 'required|string|max:255',
             'address' => 'required|string|max:255',
             'contact_info' => 'required|string|max:255',
+            'bag_types' => 'nullable|array',
+            'bag_types.*' => 'string|max:100',
         ]);
+
+        if (array_key_exists('bag_types', $validated)) {
+            $cleaned = array_values(array_unique(array_filter(array_map(fn($t) => mb_strtoupper(trim($t), 'UTF-8'), (array) ($validated['bag_types'] ?? [])))));
+            $validated['bag_types'] = $cleaned;
+            foreach ($cleaned as $bt) {
+                if (!empty($bt)) {
+                    \App\Models\ExitOperatorType::firstOrCreate(['name' => $bt]);
+                }
+            }
+        }
 
         $client->update($validated);
 

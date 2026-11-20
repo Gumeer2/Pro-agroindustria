@@ -129,10 +129,11 @@
                     ['Gestión de proceso de embarques', 'Seguimiento de órdenes y procesos de embarque.', '/apt/shipment-process?from=production', 'fa-truck', 'bg-blue-50 text-blue-600', 'hover:border-blue-500'],
                     ['Gestión de inventarios', 'Control de existencias, producción diaria e inventario inicial de Urea Agrícola.', '/apt/inventory?from=production', 'fa-boxes-stacked', 'bg-purple-50 text-purple-600', 'hover:border-purple-500'],
                     ['Gestión de maquinarias', 'Registro y mantenimiento de maquinaria operativa.', '/apt/machinery?from=production', 'fa-wrench', 'bg-orange-50 text-orange-600', 'hover:border-orange-500'],
-                    ['Gestión de equipos envasado', 'Control de equipos y unidades de envasado.', '/apt/status-unidades?from=production', 'fa-box', 'bg-yellow-50 text-yellow-600', 'hover:border-yellow-500'],
+                    ['Gestión de equipos envasado', 'Control de equipos y unidades de envasado.', '/apt/equipos-envasado', 'fa-box', 'bg-yellow-50 text-yellow-600', 'hover:border-yellow-500'],
                     ['Gestión de equipos de seguridad', 'Administración y control de equipos de seguridad.', '/apt/scanner?from=production', 'fa-shield-halved', 'bg-slate-100 text-slate-600', 'hover:border-slate-500'],
                     ['Gestión prestadores de servicios', 'Control de asistencias de personal y contratistas (GLS-AP-FO-005).', '/apt/attendance', 'fa-users', 'bg-indigo-50 text-indigo-600', 'hover:border-indigo-500'],
                     ['Gestión de requerimientos', 'Registro y seguimiento de solicitudes operativas.', '/apt/status?from=production', 'fa-circle-exclamation', 'bg-cyan-50 text-cyan-600', 'hover:border-cyan-500'],
+                    ['Gestión de lotes', 'Administración de folios y estados de lotes.', '/apt/lots?from=production', 'fa-database', 'bg-emerald-50 text-emerald-600', 'hover:border-emerald-500'],
                 ];
 
                 const submodules = allSubmodules;

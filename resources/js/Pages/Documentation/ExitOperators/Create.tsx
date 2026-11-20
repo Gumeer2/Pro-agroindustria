@@ -11,6 +11,7 @@ import {
     Hash,
     CreditCard,
     Box,
+    Check,
     CheckCircle,
     CheckCircle2,
     Shield,
@@ -290,6 +291,59 @@ export default function Create({
         : null;
     const isTmExceeded = ovBalance !== null && Boolean(clientForm.data.tm) && parseFloat(clientForm.data.tm) > ovBalance;
 
+    // Cliente activo: estrictamente el cliente de la Orden de Venta (OV) seleccionada
+    const activeClient = selectedOv?.client || null;
+
+    const clientBagTypes: string[] = useMemo(() => {
+        if (!activeClient) return [];
+        return Array.isArray(activeClient.bag_types) && activeClient.bag_types.length > 0
+            ? activeClient.bag_types.map((t: string) => String(t).toUpperCase().trim())
+            : [];
+    }, [activeClient]);
+
+    // Tipos de saco asignados a OTROS clientes (para excluirlos y que jamás se ofrezcan a clientes ajenos)
+    const otherClientsExclusiveBagTypes = useMemo(() => {
+        const set = new Set<string>();
+        const currentClientId = activeClient?.id;
+        for (const c of (clients || [])) {
+            if (c.id !== currentClientId && Array.isArray(c.bag_types)) {
+                for (const bt of c.bag_types) {
+                    const norm = String(bt).toUpperCase().trim();
+                    if (norm) set.add(norm);
+                }
+            }
+        }
+        return set;
+    }, [clients, activeClient?.id]);
+
+    const allowedTypesForDropdown: ExitOperatorTypeItem[] = useMemo(() => {
+        // 1. Si no hay OV seleccionada: lista vacía
+        if (!selectedOv || !activeClient) {
+            return [];
+        }
+
+        // 2. Si este cliente tiene sacos autorizados específicos en su configuración:
+        // Se muestran ÚNICAMENTE esos sacos. Jamás sacos de otro cliente.
+        if (clientBagTypes.length > 0) {
+            const list: ExitOperatorTypeItem[] = [];
+            for (const btName of clientBagTypes) {
+                const found = exit_operator_types.find((et) => et.name.toUpperCase() === btName);
+                if (found) {
+                    list.push(found);
+                } else {
+                    list.push({ id: -Math.floor(Math.random() * 100000), name: btName });
+                }
+            }
+            return list;
+        }
+
+        // 3. Si el cliente no tiene sacos específicos configurados:
+        // Mostramos el catálogo general, EXCLUYENDO cualquier saco exclusivo asignado a otros clientes (ej. ADM)
+        return exit_operator_types.filter(
+            (et) => !otherClientsExclusiveBagTypes.has(et.name.toUpperCase().trim())
+        );
+    }, [selectedOv, activeClient, clientBagTypes, exit_operator_types, otherClientsExclusiveBagTypes]);
+
     // Foco automático en el lector al abrir el modal si no hay operador
     useEffect(() => {
         if (isFromClients && isModalOpen && !clientForm.data.operator_id) {
@@ -467,24 +521,51 @@ export default function Create({
     const handleSalesOrderChange = (soId: string) => {
         clientForm.clearErrors("sales_order_id");
         clientForm.clearErrors("tm");
-        clientForm.setData((prev) => ({
-            ...prev,
-            sales_order_id: soId,
-            tm: "",
-        }));
+        const foundOv = operatorOVs.find((so) => so.id === soId);
+        const ovClient = foundOv?.client || null;
+        const ovClientBagTypes: string[] = Array.isArray(ovClient?.bag_types) && ovClient.bag_types.length > 0
+            ? ovClient.bag_types.map((t: string) => String(t).toUpperCase().trim())
+            : [];
+
+        clientForm.setData((prev) => {
+            let nextType = prev.type;
+            if (ovClientBagTypes.length > 0) {
+                if (!ovClientBagTypes.includes((prev.type || "").toUpperCase())) {
+                    nextType = ovClientBagTypes.length === 1 ? ovClientBagTypes[0] : "";
+                }
+            } else {
+                if (!soId || otherClientsExclusiveBagTypes.has((prev.type || "").toUpperCase())) {
+                    nextType = "";
+                }
+            }
+            return {
+                ...prev,
+                sales_order_id: soId,
+                tm: "",
+                type: nextType,
+            };
+        });
     };
 
     const handlePresentationChange = (newPres: string) => {
         clientForm.clearErrors("presentation");
         clientForm.clearErrors("sack");
         clientForm.clearErrors("type");
-        clientForm.setData((prev) => ({
-            ...prev,
-            presentation: newPres,
-            // Si es GRANEL no lleva saco ni tipo; si es ENVASADO se inicializa en 25 KG
-            sack: newPres === "GRANEL" ? "" : (prev.sack || "25 KG"),
-            type: newPres === "GRANEL" ? "" : prev.type,
-        }));
+        clientForm.setData((prev) => {
+            let nextType = prev.type;
+            if (newPres === "GRANEL") {
+                nextType = "";
+            } else if (clientBagTypes.length === 1 && !nextType) {
+                nextType = clientBagTypes[0];
+            }
+            return {
+                ...prev,
+                presentation: newPres,
+                // Si es GRANEL no lleva saco ni tipo; si es ENVASADO se inicializa en 25 KG
+                sack: newPres === "GRANEL" ? "" : (prev.sack || "25 KG"),
+                type: nextType,
+            };
+        });
     };
 
     const handleTmChange = (value: string) => {
@@ -1669,10 +1750,19 @@ export default function Create({
                                                 <TypeDropdown
                                                     value={clientForm.data.type || ""}
                                                     initialTypes={exit_operator_types}
+                                                    allowedTypes={allowedTypesForDropdown}
+                                                    disabled={!selectedOv}
+                                                    placeholder={!selectedOv ? "-- Seleccione primero una Orden de Venta --" : "Seleccione tipo de saco..."}
                                                     onChange={(val) => clientForm.setData("type", val)}
                                                     label="Tipo:"
                                                     error={clientForm.errors.type}
                                                 />
+                                                {clientBagTypes.length > 0 && (
+                                                    <p className="text-[11px] font-bold text-emerald-700 mt-1.5 flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
+                                                        <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                                                        <span className="truncate">Sacos autorizados para {activeClient?.business_name || "este cliente"} ({clientBagTypes.join(", ")})</span>
+                                                    </p>
+                                                )}
                                             </div>
                                         )}
                                     </div>
