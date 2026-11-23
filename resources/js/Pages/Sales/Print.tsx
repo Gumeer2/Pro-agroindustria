@@ -56,8 +56,10 @@ export default function Print({ order }: { order: any }) {
             </div>
 
             {/* Document Template */}
-            <div className="max-w-5xl mx-auto print:max-w-none print:m-0 print:p-0 print:w-full">
-                <SalesOrderTemplate order={order} />
+            <div className="max-w-5xl mx-auto overflow-x-auto print:overflow-visible print:max-w-none print:m-0 print:p-0 print:w-full">
+                <div className="min-w-[680px] print:min-w-0">
+                    <SalesOrderTemplate order={order} />
+                </div>
             </div>
 
             <style>{`

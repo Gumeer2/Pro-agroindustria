@@ -232,13 +232,21 @@
 
         .form-grid-4 {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
             gap: 1.25rem;
         }
         .form-grid-2 {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
             gap: 1.25rem;
+        }
+        @media (max-width: 640px) {
+            .page { padding: 1rem 0.75rem 2.5rem; }
+            .form-hero, .form-section { padding: 1.25rem 1rem; }
+            .form-hero h2 { font-size: 1.35rem; }
+            .app-header { padding: 0 12px; }
+            .app-header h1 { font-size: 15px; }
+            .app-header-user span { display: none; }
         }
 
         .form-label {
@@ -269,6 +277,7 @@
 
         .personnel-table {
             width: 100%;
+            min-width: 680px;
             border-collapse: collapse;
             font-size: 13px;
             border-radius: 12px;

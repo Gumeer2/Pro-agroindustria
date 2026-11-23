@@ -651,14 +651,23 @@
             margin: 0;
         }
 
-        .history table {
+        .history { overflow: visible; }
+        .history .table-responsive {
             grid-column: 1 / -1;
             width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            overflow: hidden;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
             border: 1px solid var(--slate-200);
             border-radius: 12px;
+        }
+        .history table {
+            width: 100%;
+            min-width: 920px;
+            border-collapse: separate;
+            border-spacing: 0;
+            table-layout: auto;
+            border: none;
+            border-radius: 0;
             background: #fff;
             font-size: 13px;
         }
@@ -722,7 +731,25 @@
         .photo-close { position: absolute; right: -12px; top: -12px; width: 34px; height: 34px; border: 1px solid #fff; border-radius: 50%; background: var(--sky-600); color: #fff; font-size: 19px; font-weight: 900; cursor: pointer; }
 
         @media (max-width: 1100px) {
-            .history table { table-layout: auto; min-width: 960px; }
+            .history table { table-layout: auto; min-width: 920px; }
+        }
+        @media (max-width: 850px) {
+            .card { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
+            .page { padding: 1rem .75rem 1.5rem; }
+            .shell { border-radius: 1.25rem; }
+            .hero { padding: 1rem 1.25rem; }
+            .hero h1 { font-size: 1.45rem; }
+            .panel { padding: .75rem 1rem 1.25rem; }
+            .app-header { padding: 0 12px; }
+            .app-header h1 { font-size: 16px; }
+            .app-header-user span { display: none; }
+        }
+        @media (max-width: 520px) {
+            .card { grid-template-columns: 1fr; }
+            .lot-select-trigger { min-width: 100%; max-width: 100%; }
+            .lot-dropdown-panel { width: min(290px, calc(100vw - 48px)); }
+            .history-filters label { width: 100%; justify-content: space-between; }
+            .history-filters select, .history-filters input { flex: 1; }
         }
     </style>
 </head>
@@ -939,6 +966,7 @@
                                 </button>
                             </div>
                         </div>
+                        <div class="table-responsive">
                         <table>
                             <thead>
                                 <tr>
@@ -1013,6 +1041,7 @@
                                 @endforelse
                             </tbody>
                         </table>
+                        </div>
                     </section>
                 </div>
             </div>

@@ -314,10 +314,10 @@ export default function ShipmentDocumentsPrintModal({
                                     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
                                         <div className="space-y-6 max-w-5xl mx-auto w-full">
                                             {/* PAGE 1: GLS-AP-FO-003 (HOJA 1 DE 2: MUESTRAS 1 A 40 - VERTICAL) */}
-                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden p-3 sm:p-4">
-                                                <div className="mb-2 pb-2 border-b border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500">
+                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-x-auto p-3 sm:p-4">
+                                                <div className="mb-2 pb-2 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-gray-500">
                                                     <span className="flex items-center gap-1.5 text-indigo-700">
-                                                        <Scale className="w-4 h-4" />
+                                                        <Scale className="w-4 h-4 shrink-0" />
                                                         GLS-AP-FO-003 · VERIFICACIÓN DE PESO (HOJA 1 DE 2: MUESTRAS 1 A 40)
                                                     </span>
                                                     <div className="flex items-center gap-2">
@@ -331,14 +331,16 @@ export default function ShipmentDocumentsPrintModal({
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <WeightVerificationTemplate order={safeOrder} samples={effectiveSamples} targetPage={1} />
+                                                <div className="min-w-[680px]">
+                                                    <WeightVerificationTemplate order={safeOrder} samples={effectiveSamples} targetPage={1} />
+                                                </div>
                                             </div>
 
                                             {/* PAGE 2: GLS-AP-FO-003 (HOJA 2 DE 2: MUESTRAS 41 A 80 - VERTICAL) */}
-                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden p-3 sm:p-4">
-                                                <div className="mb-2 pb-2 border-b border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500">
+                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-x-auto p-3 sm:p-4">
+                                                <div className="mb-2 pb-2 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-gray-500">
                                                     <span className="flex items-center gap-1.5 text-indigo-700">
-                                                        <Scale className="w-4 h-4" />
+                                                        <Scale className="w-4 h-4 shrink-0" />
                                                         GLS-AP-FO-003 · VERIFICACIÓN DE PESO (HOJA 2 DE 2: MUESTRAS 41 A 80)
                                                     </span>
                                                     <div className="flex items-center gap-2">
@@ -352,14 +354,16 @@ export default function ShipmentDocumentsPrintModal({
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <WeightVerificationTemplate order={safeOrder} samples={effectiveSamples} targetPage={2} />
+                                                <div className="min-w-[680px]">
+                                                    <WeightVerificationTemplate order={safeOrder} samples={effectiveSamples} targetPage={2} />
+                                                </div>
                                             </div>
 
                                             {/* PAGE 3: GLS-AP-FO-002 (NOTA DE ESTIBA A CAMIÓN - HORIZONTAL) */}
-                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden p-3 sm:p-4">
-                                                <div className="mb-2 pb-2 border-b border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500">
+                                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-x-auto p-3 sm:p-4">
+                                                <div className="mb-2 pb-2 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-gray-500">
                                                     <span className="flex items-center gap-1.5 text-emerald-700">
-                                                        <Layers className="w-4 h-4" />
+                                                        <Layers className="w-4 h-4 shrink-0" />
                                                         GLS-AP-FO-002 · NOTA DE ESTIBA A CAMIÓN (HORIZONTAL)
                                                     </span>
                                                     <div className="flex items-center gap-2">
@@ -373,7 +377,7 @@ export default function ShipmentDocumentsPrintModal({
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <div className="w-full">
+                                                <div className="w-full min-w-[700px]">
                                                     <StowageNoteTemplate order={safeOrder} samples={effectiveSamples} />
                                                 </div>
                                             </div>

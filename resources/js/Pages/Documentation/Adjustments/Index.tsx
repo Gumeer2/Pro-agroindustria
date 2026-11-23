@@ -778,9 +778,9 @@ export default function Index({
                                 )}
 
                                 {/* Central Allocation Table (PDF Page 6 Mockup) */}
-                                <div className="p-6 space-y-4">
-                                    <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                                        <table className="w-full text-left text-sm">
+                                <div className="p-4 sm:p-6 space-y-4">
+                                    <div className="border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
+                                        <table className="w-full min-w-[650px] text-left text-sm">
                                             <thead className="bg-slate-100 text-gray-700 text-xs uppercase font-extrabold border-b border-gray-200">
                                                 <tr>
                                                     <th className="py-3 px-4 w-1/4">Orden de venta</th>

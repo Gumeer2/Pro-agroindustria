@@ -286,8 +286,8 @@ export default function PrintExit({ movement, movements }: Props) {
                         Detalle de Materiales Suministrados ({itemsList.length})
                     </h3>
                     
-                    <div className="border border-gray-300 rounded-xl overflow-hidden shadow-sm">
-                        <table className="w-full text-left border-collapse text-xs">
+                    <div className="border border-gray-300 rounded-xl overflow-x-auto print:overflow-visible shadow-sm">
+                        <table className="w-full min-w-[650px] print:min-w-0 text-left border-collapse text-xs">
                             <thead>
                                 <tr className="bg-[#1e1b4b] text-white font-extrabold uppercase text-[10px] tracking-wider">
                                     <th className="py-3 px-3 text-center border-r border-slate-700">CLAVE / SKU</th>

@@ -2628,40 +2628,40 @@ export default function ShipmentProcess({
                         </div>
 
                         <div className="w-full overflow-x-auto">
-                            <table className="w-full min-w-[1050px] table-fixed divide-y divide-gray-200 text-xs">
+                            <table className="w-full min-w-[1150px] table-auto divide-y divide-gray-200 text-xs">
                             <thead className="bg-[#1e1b4b] text-white">
                                 <tr>
-                                    <th className="w-[2.5%] px-0.5 py-3.5 text-center font-bold uppercase tracking-wider">
+                                    <th className="w-10 px-2 py-3.5 text-center font-bold uppercase tracking-wider">
                                         <Settings className="w-3.5 h-3.5 mx-auto text-indigo-300 opacity-60" />
                                     </th>
-                                    <th className="w-[7.5%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         FOLIO
                                     </th>
-                                    <th className="w-[8.5%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         LOTE
                                     </th>
-                                    <th className="w-[9%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         OPERADOR
                                     </th>
-                                    <th className="w-[8.5%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         LÍDER CUADRILLA
                                     </th>
-                                    <th className="w-[9%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         PRODUCTO
                                     </th>
-                                    <th className="w-[6%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         PLACAS
                                     </th>
-                                    <th className="w-[6%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         HORA INI.
                                     </th>
-                                    <th className="w-[6%] px-1 py-3.5 text-left font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-left font-bold uppercase tracking-wider whitespace-nowrap">
                                         HORA FIN.
                                     </th>
-                                    <th className="w-[6.5%] px-0.5 py-3.5 text-center font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-center font-bold uppercase tracking-wider whitespace-nowrap">
                                         CRONÓMETRO
                                     </th>
-                                    <th className="w-[31%] px-1 py-3.5 text-center font-bold uppercase tracking-wider truncate">
+                                    <th className="px-2.5 py-3.5 text-center font-bold uppercase tracking-wider whitespace-nowrap">
                                         {isEstibadorUser ? "ACCIONES" : "ACCIÓN"}
                                     </th>
                                 </tr>
@@ -2676,7 +2676,7 @@ export default function ShipmentProcess({
                                             className="hover:bg-indigo-50/50 transition-colors duration-150"
                                         >
                                             {/* Gear Menu */}
-                                            <td className="w-[2.5%] px-1 py-2 text-center">
+                                            <td className="px-2 py-2.5 text-center whitespace-nowrap">
                                                 <Menu as="div" className="relative inline-block text-left">
                                                     <Menu.Button className="p-1 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50">
                                                         <MoreHorizontal className="w-4 h-4" />
@@ -2756,7 +2756,7 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Folio & Warehouse */}
-                                            <td className="w-[7.5%] px-1 py-2 font-bold text-indigo-700 uppercase truncate text-left">
+                                            <td className="px-2.5 py-2.5 font-bold text-indigo-700 uppercase whitespace-nowrap text-left">
                                                 {isEstibadorUser ? (
                                                     <span className="block font-extrabold text-[11px] text-gray-900">
                                                         {row.folio}
@@ -2772,7 +2772,7 @@ export default function ShipmentProcess({
                                                         {row.folio}
                                                     </a>
                                                 )}
-                                                <div className="text-[9px] text-gray-500 font-medium truncate">
+                                                <div className="text-[9px] text-gray-500 font-medium whitespace-nowrap">
                                                     {isVoBoApproved(row) && row.warehouse ? (
                                                         <>
                                                             {row.warehouse}
@@ -2801,9 +2801,9 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Lote */}
-                                            <td className="w-[8.5%] px-1 py-2 text-left truncate" title={row.lot_folio || "Sin Lote"}>
+                                            <td className="px-2.5 py-2.5 text-left whitespace-nowrap" title={row.lot_folio || "Sin Lote"}>
                                                 {row.lot_folio ? (
-                                                    <span className="inline-block max-w-full truncate px-1.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200">
+                                                    <span className="inline-block px-1.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200">
                                                         {row.lot_folio}
                                                     </span>
                                                 ) : (
@@ -2814,18 +2814,18 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Operador */}
-                                            <td className="w-[9%] px-1 py-2 font-semibold text-gray-800 uppercase truncate text-left text-[11px]" title={row.operator}>
+                                            <td className="px-2.5 py-2.5 font-semibold text-gray-800 uppercase text-left text-[11px] min-w-[130px]" title={row.operator}>
                                                 {row.operator}
                                             </td>
 
                                             {/* Líder de Cuadrilla */}
-                                            <td className="w-[8.5%] px-1 py-2 text-gray-700 uppercase truncate text-left text-[11px]" title={row.squad_leader}>
+                                            <td className="px-2.5 py-2.5 text-gray-700 uppercase text-left text-[11px] min-w-[120px]" title={row.squad_leader}>
                                                 {row.squad_leader}
                                             </td>
 
                                             {/* Producto */}
-                                            <td className="w-[9%] px-1 py-2 text-left text-[11px]" title={row.product}>
-                                                <div className="font-semibold text-gray-700 uppercase truncate">
+                                            <td className="px-2.5 py-2.5 text-left text-[11px] min-w-[120px]" title={row.product}>
+                                                <div className="font-semibold text-gray-700 uppercase">
                                                     {row.product}
                                                 </div>
                                                 {row.stowage_count ? (
@@ -2836,17 +2836,17 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Placas */}
-                                            <td className="w-[6%] px-1 py-2 font-mono text-gray-600 uppercase text-[10px] truncate text-left" title={row.plates}>
+                                            <td className="px-2.5 py-2.5 font-mono text-gray-600 uppercase text-[10px] whitespace-nowrap text-left" title={row.plates}>
                                                 {row.plates}
                                             </td>
 
                                             {/* Hora Inicial */}
-                                            <td className="w-[6%] px-1 py-2 text-gray-700 text-[10px] leading-tight text-left" title={formatDateTime(row.started_at)}>
+                                            <td className="px-2.5 py-2.5 text-gray-700 text-[10px] leading-tight whitespace-nowrap text-left" title={formatDateTime(row.started_at)}>
                                                 {formatDateTime(row.started_at)}
                                             </td>
 
                                             {/* Hora Final */}
-                                            <td className="w-[6%] px-1 py-2 text-[10px] leading-tight text-left" title={row.finished_at ? formatDateTime(row.finished_at) : "Pendiente"}>
+                                            <td className="px-2.5 py-2.5 text-[10px] leading-tight whitespace-nowrap text-left" title={row.finished_at ? formatDateTime(row.finished_at) : "Pendiente"}>
                                                 {row.finished_at ? (
                                                     <span className="text-gray-700 font-medium">
                                                         {formatDateTime(row.finished_at)}
@@ -2859,7 +2859,7 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Cronómetro */}
-                                            <td className="w-[6.5%] px-0.5 py-2 text-center text-[11px]">
+                                            <td className="px-2.5 py-2.5 text-center text-[11px] whitespace-nowrap">
                                                 <LiveStopwatch
                                                     startedAt={row.started_at}
                                                     finishedAt={row.finished_at}
@@ -2868,7 +2868,7 @@ export default function ShipmentProcess({
                                             </td>
 
                                             {/* Acciones */}
-                                            <td className="w-[31%] px-1 py-2 text-center">
+                                            <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                                                 {isEstibadorUser ? (
                                                     <div className="flex items-center justify-center gap-1 flex-nowrap">
                                                         {isSamplingReleased(row) ? (

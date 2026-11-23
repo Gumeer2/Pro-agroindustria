@@ -1943,6 +1943,7 @@ export default function DapInventoryIndex({
                                                 Total: {selectedDraftVessel.breakdown.reduce((acc, curr) => acc + curr.trips_count, 0)} viajes
                                             </span>
                                         </div>
+                                        <div className="overflow-x-auto">
                                         <table className="min-w-full divide-y divide-gray-200 text-xs">
                                             <thead className="bg-gray-100 font-bold text-gray-700">
                                                 <tr>
@@ -1985,6 +1986,7 @@ export default function DapInventoryIndex({
                                                 </tr>
                                             </tfoot>
                                         </table>
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="bg-amber-50 rounded-xl border border-amber-200 p-3 text-center">

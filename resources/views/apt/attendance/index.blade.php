@@ -255,9 +255,19 @@
         }
         .data-table {
             width: 100%;
+            min-width: 720px;
             border-collapse: collapse;
             text-align: left;
             font-size: 13px;
+        }
+        @media (max-width: 640px) {
+            .page { padding: 1rem 0.75rem 2.5rem; }
+            .hero-banner { padding: 1.25rem 1rem; }
+            .hero-banner h2 { font-size: 1.35rem; }
+            .filters-card { padding: 1rem; }
+            .app-header { padding: 0 12px; }
+            .app-header h1 { font-size: 15px; }
+            .app-header-user span { display: none; }
         }
         .data-table th {
             background: var(--slate-50);

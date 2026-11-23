@@ -563,14 +563,14 @@ export default function Index({
                     </div>
 
                     {/* Table Body - Scrollable */}
-                    <div className="flex-1 overflow-y-auto p-0 min-h-[300px] flex flex-col">
+                    <div className="flex-1 overflow-y-auto overflow-x-auto p-0 min-h-[300px] flex flex-col">
                         {breakdownLoading ? (
                             <div className="flex-1 flex flex-col items-center justify-center p-12">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
                                 <p className="text-gray-500 font-medium">Cargando detalles del viaje...</p>
                             </div>
                         ) : (
-                            <table className="min-w-full divide-y divide-gray-200">
+                            <table className="min-w-full min-w-[680px] divide-y divide-gray-200">
                                 <thead className="bg-white sticky top-0 z-20 shadow-sm">
                                     <tr>
                                         <th className="px-6 py-3 text-left text-[10px] font-black text-indigo-900/50 uppercase tracking-widest bg-gray-50/50">O. Embarque</th>

@@ -162,6 +162,29 @@
   -webkit-overflow-scrolling: touch;
 }
 
+.overflow-x-auto {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Evitar que hijos de CSS Grid expandan la columna más allá del viewport y recorten tablas */
+.grid > * {
+  min-width: 0;
+}
+
+/* Si una tarjeta con overflow-hidden envuelve directamente una tabla, permitir scroll horizontal en lugar de recortarla */
+.overflow-hidden:has(> table) {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Garantizar que las tablas con múltiples columnas dentro de contenedores scrollables no se aplasten ni recorten en pantallas medianas/pequeñas */
+@media screen and (max-width: 1280px) {
+  .overflow-x-auto > table {
+    min-width: max-content;
+  }
+}
+
 /* Soporte de Safe Areas para iPhone con notch y barras de navegación móviles */
 :root {
   --sat: env(safe-area-inset-top, 0px);

@@ -261,7 +261,7 @@ th, td {
                 </button>
             </div>
 
-            <div className="max-w-[215mm] mx-auto bg-white p-2 print:p-0 print:m-0 print:max-w-none print:w-full print-content-wrapper">
+            <div className="max-w-[215mm] mx-auto bg-white p-2 overflow-x-auto print:overflow-visible print:p-0 print:m-0 print:max-w-none print:w-full print-content-wrapper">
                 {ordersToPrint.map((currentOrder, orderIdx) => {
                     const currentQrUrl = orderIdx === 0 ? qrDataUrl : secondQrDataUrl;
                     const currentIsOvAmo = currentOrder.sales_order?.folio?.toUpperCase().startsWith('OV-AMO');
@@ -273,7 +273,7 @@ th, td {
                             {[1, 2, 3].map((copyIndex) => (
                                 <React.Fragment key={`order-${orderIdx}-copy-${copyIndex}`}>
                                     {/* PAGE 1: SHIPMENT ORDER (Copy {copyIndex}) */}
-                                    <div className="page-shipment-order relative w-full box-border overflow-hidden" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
+                                    <div className="page-shipment-order relative w-full min-w-[680px] print:min-w-0 box-border overflow-hidden" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
                                         <div className="page-1 w-full box-border">
                                             {/* Header Details */}
                                             <div className="border border-gray-400 mb-1 p-0.5 text-center w-full box-border">

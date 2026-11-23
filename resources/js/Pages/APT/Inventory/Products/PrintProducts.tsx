@@ -256,8 +256,8 @@ export default function PrintProducts({ items = [], mode }: Props) {
 
                 {/* Material Details Table */}
                 <div className="mb-6">
-                    <div className="border border-gray-300 rounded-xl overflow-hidden shadow-sm">
-                        <table className="w-full text-left border-collapse text-xs">
+                    <div className="border border-gray-300 rounded-xl overflow-x-auto print:overflow-visible shadow-sm">
+                        <table className="w-full min-w-[700px] print:min-w-0 text-left border-collapse text-xs">
                             <thead>
                                 <tr className="bg-[#1e1b4b] text-white font-extrabold uppercase text-[10px] tracking-wider">
                                     <th className="py-3 px-3 text-center border-r border-slate-700 w-12">#</th>

@@ -923,15 +923,23 @@
             background: var(--sky-50);
             transform: translateY(-1px);
         }
-        .history table {
+        .history { overflow: visible; }
+        .history .table-responsive {
             grid-column: 1 / -1;
             width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            table-layout: fixed;
-            overflow: hidden;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
             border: 1px solid var(--slate-200);
             border-radius: 12px;
+        }
+        .history table {
+            width: 100%;
+            min-width: 820px;
+            border-collapse: separate;
+            border-spacing: 0;
+            table-layout: auto;
+            border: none;
+            border-radius: 0;
             background: #fff;
             font-size: 13px;
         }
@@ -1251,6 +1259,7 @@
                     <i class="fa-solid fa-print"></i> Imprimir Reporte
                 </button>
             </div>
+            <div class="table-responsive">
             <table>
                 <thead>
                     <tr>
@@ -1299,6 +1308,7 @@
                     @endforelse
                 </tbody>
             </table>
+            </div>
         </section>
     </main>
     @else

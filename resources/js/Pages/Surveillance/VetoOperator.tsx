@@ -1246,7 +1246,8 @@ export default function VetoOperator({
                             {/* Table of Active Vetoed */}
                             {filteredActiveVetoed.length > 0 ? (
                                 <div className="rounded-2xl border border-slate-200/80 overflow-hidden bg-white shadow-sm">
-                                    <table className="w-full text-left divide-y divide-slate-200/80">
+                                    <div className="overflow-x-auto">
+                                    <table className="w-full min-w-[750px] text-left divide-y divide-slate-200/80">
                                         <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">
                                             <tr>
                                                 <th className="px-5 py-3.5 w-[26%]">Operador & Identificación</th>
@@ -1354,6 +1355,7 @@ export default function VetoOperator({
                                             ))}
                                         </tbody>
                                     </table>
+                                    </div>
                                 </div>
                             ) : (
                                 <div className="text-center py-16 bg-emerald-50/50 rounded-3xl border-2 border-dashed border-emerald-200 space-y-3">
@@ -1471,7 +1473,8 @@ export default function VetoOperator({
                             {history_logs.data && history_logs.data.length > 0 ? (
                                 <div className="space-y-4">
                                     <div className="rounded-2xl border border-slate-200/80 overflow-hidden bg-white shadow-sm">
-                                        <table className="w-full text-left divide-y divide-slate-200/80">
+                                        <div className="overflow-x-auto">
+                                        <table className="w-full min-w-[750px] text-left divide-y divide-slate-200/80">
                                             <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">
                                                 <tr>
                                                     <th className="px-5 py-3.5 w-[20%]">Movimiento & Fecha</th>
@@ -1575,6 +1578,7 @@ export default function VetoOperator({
                                                 ))}
                                             </tbody>
                                         </table>
+                                        </div>
                                     </div>
 
                                     {/* Pagination */}

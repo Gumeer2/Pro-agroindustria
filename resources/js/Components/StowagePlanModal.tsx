@@ -587,7 +587,7 @@ export default function StowagePlanModal({
                                 </div>
 
                                 {/* --- DOCUMENT SHEET BODY (PIXEL-PERFECT GLS-AP-FO-002) --- */}
-                                <div className="p-4 sm:p-5 overflow-y-auto bg-slate-100 flex flex-col items-center">
+                                <div className="p-3 sm:p-5 overflow-y-auto overflow-x-auto bg-slate-100 flex flex-col items-start sm:items-center">
                                     {isWeightAdjustmentPending && (
                                         <div className="w-full bg-amber-50 border-2 border-amber-400 rounded-xl p-3.5 mb-3 text-amber-950 shadow-sm flex items-start gap-3">
                                             <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
@@ -613,7 +613,7 @@ export default function StowagePlanModal({
                                             </div>
                                         </div>
                                     )}
-                                    <div className="w-full bg-white font-sans text-[10px] text-black leading-tight p-3 sm:p-4 box-border shadow-md rounded-lg border border-gray-300">
+                                    <div className="w-full min-w-[720px] bg-white font-sans text-[10px] text-black leading-tight p-3 sm:p-4 box-border shadow-md rounded-lg border border-gray-300">
                                         {/* --- HEADER --- */}
                                         <div className="flex w-full mb-1 h-12">
                                             {/* Logo Section */}
