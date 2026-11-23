@@ -151,3 +151,74 @@
 .swal2-container {
   z-index: 999999 !important;
 }
+
+/* ========================================================
+   ADAPTABILIDAD MULTIDISPOSITIVO (Móviles, Tablets, Laptops, PCs)
+   ======================================================== */
+
+/* Smooth momentum scrolling para touch devices en todos los contenedores con scroll */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Soporte de Safe Areas para iPhone con notch y barras de navegación móviles */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+body {
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+
+/* Prevenir zoom no deseado en Safari iOS al enfocar inputs (requiere font-size >= 16px) */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* En dispositivos táctiles (smartphones y tablets) restaurar puntero nativo limpio */
+@media (hover: none) and (pointer: coarse) {
+  html,
+  body,
+  *,
+  *::before,
+  *::after {
+    cursor: auto !important;
+  }
+
+  a,
+  a *,
+  button,
+  button *,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [role="button"] *,
+  [role="tab"],
+  [role="tab"] *,
+  label,
+  .cursor-pointer,
+  .cursor-pointer *,
+  .sidebar-container,
+  .sidebar-container * {
+    cursor: pointer !important;
+  }
+}

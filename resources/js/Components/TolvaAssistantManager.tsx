@@ -703,14 +703,14 @@ export default function TolvaAssistantManager({
     return (
         <div className="space-y-6 animate-fade-in">
             {/* Header / Submodule Banner con botón Asignar Nuevo */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div className="flex items-start sm:items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs shrink-0">
-                        <UserCheck className="w-7 h-7" />
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs shrink-0">
+                        <UserCheck className="w-6 h-6 sm:w-7 sm:h-7" />
                     </div>
                     <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-xl font-black text-gray-900 tracking-tight">
+                            <h3 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">
                                 ASIGNACIÓN DE AUXILIARES A TOLVAS
                             </h3>
                             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
@@ -805,13 +805,13 @@ export default function TolvaAssistantManager({
                         )}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <Filter className="w-4 h-4 text-gray-400 hidden sm:block" />
-                        <div className="flex rounded-xl bg-gray-200/70 p-0.5 text-xs font-bold text-gray-600">
+                    <div className="flex items-center gap-2 overflow-x-auto max-w-full">
+                        <Filter className="w-4 h-4 text-gray-400 hidden sm:block shrink-0" />
+                        <div className="flex rounded-xl bg-gray-200/70 p-0.5 text-xs font-bold text-gray-600 overflow-x-auto scrollbar-none shrink-0">
                             <button
                                 type="button"
                                 onClick={() => setStatusFilter("ALL")}
-                                className={`px-3 py-1.5 rounded-lg transition-all ${
+                                className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
                                     statusFilter === "ALL"
                                         ? "bg-white text-indigo-950 shadow-xs"
                                         : "hover:text-gray-900"
@@ -822,7 +822,7 @@ export default function TolvaAssistantManager({
                             <button
                                 type="button"
                                 onClick={() => setStatusFilter("ASSIGNED")}
-                                className={`px-3 py-1.5 rounded-lg transition-all ${
+                                className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
                                     statusFilter === "ASSIGNED"
                                         ? "bg-white text-emerald-800 shadow-xs"
                                         : "hover:text-gray-900"
@@ -833,7 +833,7 @@ export default function TolvaAssistantManager({
                             <button
                                 type="button"
                                 onClick={() => setStatusFilter("UNASSIGNED")}
-                                className={`px-3 py-1.5 rounded-lg transition-all ${
+                                className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
                                     statusFilter === "UNASSIGNED"
                                         ? "bg-white text-amber-800 shadow-xs"
                                         : "hover:text-gray-900"
@@ -847,7 +847,7 @@ export default function TolvaAssistantManager({
 
                 {/* Table: exactamente los 5 almacenes */}
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
+                    <table className="w-full min-w-[760px] text-left text-xs border-collapse">
                         <thead>
                             <tr className="bg-[#2E2A72] text-white font-bold uppercase tracking-wider text-[11px]">
                                 <th className="py-3 px-4">Almacén</th>
@@ -1211,16 +1211,16 @@ export default function TolvaAssistantManager({
 
             {/* Modal: Vista de los 8 Cubículos (Se abre al picar el botón "Cubículos (8)") */}
             {selectedCubiclesWarehouse && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-gray-100 animate-fade-in flex flex-col max-h-[90vh]">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/55 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-gray-100 animate-fade-in flex flex-col max-h-[92vh] sm:max-h-[90vh]">
                         {/* Header del Modal de Cubículos */}
-                        <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white p-5 flex items-center justify-between shrink-0">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 rounded-xl bg-white/10">
-                                    <Layers className="w-6 h-6 text-indigo-300" />
+                        <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2.5 sm:gap-3">
+                                <div className="p-2 rounded-xl bg-white/10 shrink-0">
+                                    <Layers className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-300" />
                                 </div>
                                 <div>
-                                    <h3 className="font-black text-lg leading-tight flex items-center gap-2">
+                                    <h3 className="font-black text-base sm:text-lg leading-tight flex items-center gap-2 flex-wrap">
                                         <span>Cubículos de {selectedCubiclesWarehouse.warehouse_name}</span>
                                         <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/20 text-indigo-100">
                                             8 Cubículos
@@ -1241,18 +1241,18 @@ export default function TolvaAssistantManager({
                         </div>
 
                         {/* Contenido: Tabla de los 8 Cubículos */}
-                        <div className="p-6 overflow-y-auto space-y-4">
-                            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center justify-between text-xs text-indigo-950 font-medium">
+                        <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
+                            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-indigo-950 font-medium">
                                 <span>
                                     Asigna un auxiliar de carga a cada uno de los 8 cubículos del {selectedCubiclesWarehouse.warehouse_name}.
                                 </span>
-                                <span className="font-bold text-indigo-800 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs">
+                                <span className="font-bold text-indigo-800 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs whitespace-nowrap">
                                     {getCubiclesForWarehouse(selectedCubiclesWarehouse.warehouse_number).filter((c) => c.assistant_name).length} de 8 Asignados
                                 </span>
                             </div>
 
-                            <div className="rounded-xl border border-gray-200 overflow-hidden shadow-xs">
-                                <table className="w-full text-left text-xs border-collapse">
+                            <div className="rounded-xl border border-gray-200 overflow-x-auto shadow-xs">
+                                <table className="w-full min-w-[650px] text-left text-xs border-collapse">
                                     <thead>
                                         <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-200">
                                             <th className="py-3 px-4">Cubículo</th>
@@ -1356,10 +1356,10 @@ export default function TolvaAssistantManager({
 
             {/* Modal: Asignar Nuevo (Botón Asignar Nuevo en encabezado) */}
             {isNewAssignModalOpen && (
-                <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-100 animate-fade-in">
+                <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-100 animate-fade-in max-h-[92vh] flex flex-col">
                         {/* Header */}
-                        <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white p-5 flex items-center justify-between">
+                        <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2.5">
                                 <UserCheck className="w-6 h-6 text-indigo-300" />
                                 <div>
@@ -1381,7 +1381,7 @@ export default function TolvaAssistantManager({
                         </div>
 
                         {/* Form */}
-                        <form onSubmit={handleSaveNewAssignment} className="p-6 space-y-4">
+                        <form onSubmit={handleSaveNewAssignment} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
                             {/* Almacén y Cubículo (dinámico: solo si es Almacén 04 o 05) */}
                             {newAssignData.warehouse === "Almacén 04" || newAssignData.warehouse === "Almacén 05" ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
@@ -1598,10 +1598,10 @@ export default function TolvaAssistantManager({
 
             {/* Modal: Asignar Auxiliar a Tolva / Cubículo Individual */}
             {isAssignModalOpen && editingConfig && (
-                <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-100 animate-fade-in">
+                <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-100 animate-fade-in max-h-[92vh] flex flex-col">
                         {/* Header */}
-                        <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white p-5 flex items-center justify-between">
+                        <div className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2.5">
                                 <UserCheck className="w-6 h-6 text-indigo-300" />
                                 <div>
@@ -1623,7 +1623,7 @@ export default function TolvaAssistantManager({
                         </div>
 
                         {/* Form */}
-                        <form onSubmit={handleSaveAssignment} className="p-6 space-y-4">
+                        <form onSubmit={handleSaveAssignment} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
                             {/* Almacén y Cubículo */}
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">

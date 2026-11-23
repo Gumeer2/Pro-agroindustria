@@ -488,13 +488,13 @@ export default function Status({
 
             {/* MODAL: Detalle de Ubicación Multi-Unidad */}
             {viewingLocation && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-slate-200">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl sm:rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col border border-slate-200">
                         {/* Modal Header */}
-                        <div className="p-8 bg-gradient-to-r from-indigo-900 via-blue-900 to-indigo-900 flex justify-between items-center relative overflow-hidden">
+                        <div className="p-4 sm:p-8 bg-gradient-to-r from-indigo-900 via-blue-900 to-indigo-900 flex justify-between items-center relative overflow-hidden shrink-0">
                             <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl"></div>
                             <div className="relative z-10">
-                                <h3 className="text-white text-3xl font-black tracking-tight">
+                                <h3 className="text-white text-xl sm:text-3xl font-black tracking-tight">
                                     {viewingLocation.name}
                                 </h3>
                                 <p className="text-indigo-200 font-bold uppercase tracking-widest text-xs mt-1">
@@ -503,14 +503,14 @@ export default function Status({
                             </div>
                             <button
                                 onClick={() => setViewingLocation(null)}
-                                className="relative z-10 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all transform hover:rotate-90"
+                                className="relative z-10 p-2 sm:p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all transform hover:rotate-90 shrink-0"
                             >
-                                <X className="w-6 h-6" />
+                                <X className="w-5 h-5 sm:w-6 sm:h-6" />
                             </button>
                         </div>
 
                         {/* Modal Metrics Bar */}
-                        <div className="bg-slate-50 border-b border-slate-100 px-8 py-4 flex flex-wrap gap-8 items-center justify-center">
+                        <div className="bg-slate-50 border-b border-slate-100 px-4 sm:px-8 py-3 sm:py-4 flex flex-wrap gap-4 sm:gap-8 items-center justify-center shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
                                     <Truck className="w-5 h-5" />
@@ -562,8 +562,8 @@ export default function Status({
                         </div>
 
                         {/* Modal Table Body */}
-                        <div className="flex-1 overflow-y-auto p-8">
-                            <table className="w-full text-left border-separate border-spacing-y-3">
+                        <div className="flex-1 overflow-y-auto overflow-x-auto p-4 sm:p-8">
+                            <table className="w-full min-w-[550px] text-left border-separate border-spacing-y-3">
                                 <thead>
                                     <tr>
                                         <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">

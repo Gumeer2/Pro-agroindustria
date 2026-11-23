@@ -191,7 +191,7 @@ export default function Index({ auth, lots, filters }: PageProps) {
                 {/* Table */}
                 <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
+                        <table className="min-w-full min-w-[750px] divide-y divide-gray-200">
                             <thead className="bg-gradient-to-r from-indigo-800 to-indigo-900">
                                 <tr className="text-white">
                                     <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider">Folio</th>

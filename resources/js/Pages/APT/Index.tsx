@@ -48,31 +48,31 @@ export default function Index({ auth, productionMode = false }: { auth: any; pro
         return (
             <DashboardLayout user={auth.user} header="Gestión de almacenes">
                 <Head title="Gestión de almacenes" />
-                <div data-production-page="true" className="py-12">
-                    <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                        <div className="mb-8">
+                <div data-production-page="true" className="py-6 sm:py-12">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="mb-6 sm:mb-8">
                             <Link
                                 href={route("apt.index")}
-                                className="inline-flex items-center text-gray-500 hover:text-emerald-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium mb-5"
+                                className="inline-flex items-center text-gray-500 hover:text-emerald-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium mb-4 sm:mb-5"
                             >
                                 <ArrowLeft className="w-4 h-4 mr-1" />
                                 Volver al menú
                             </Link>
-                            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
                                 Gestión de almacenes
                             </h2>
-                            <p className="text-gray-600">
+                            <p className="text-gray-600 text-sm sm:text-base">
                                 Selecciona un submódulo para continuar.
                             </p>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                             {productionSubmodules.map((item) => (
-                                <Link key={item.name} href={item.href} className={`group bg-white rounded-xl shadow-md border-2 border-transparent p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${item.hover}`}>
-                                    <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-transform group-hover:scale-110 ${item.color}`}>
-                                        <item.icon className="w-10 h-10" />
+                                <Link key={item.name} href={item.href} className={`group bg-white rounded-xl shadow-md border-2 border-transparent p-5 sm:p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${item.hover}`}>
+                                    <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 transition-transform group-hover:scale-110 ${item.color}`}>
+                                        <item.icon className="w-8 h-8 sm:w-10 sm:h-10" />
                                     </div>
-                                    <h3 className="text-xl font-bold text-gray-800 break-words w-full">{item.name}</h3>
-                                    <p className="text-gray-500 mt-2 text-sm">{item.description}</p>
+                                    <h3 className="text-lg sm:text-xl font-bold text-gray-800 break-words w-full">{item.name}</h3>
+                                    <p className="text-gray-500 mt-2 text-xs sm:text-sm">{item.description}</p>
                                 </Link>
                             ))}
                         </div>
@@ -125,24 +125,24 @@ export default function Index({ auth, productionMode = false }: { auth: any; pro
         <DashboardLayout user={auth.user} header="Administración Portuaria">
             <Head title="APT" />
 
-            <div className="py-12">
-                <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="py-6 sm:py-12">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                         {menuItems.map((item, index) => (
                             <Link
                                 key={index}
                                 href={item.href}
-                                className={`group bg-white rounded-xl shadow-md border-2 border-transparent p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${item.hover}`}
+                                className={`group bg-white rounded-xl shadow-md border-2 border-transparent p-5 sm:p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${item.hover}`}
                             >
                                 <div
-                                    className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-transform transform group-hover:scale-110 ${item.color}`}
+                                    className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 transition-transform transform group-hover:scale-110 ${item.color}`}
                                 >
-                                    <item.icon className="w-10 h-10" />
+                                    <item.icon className="w-8 h-8 sm:w-10 sm:h-10" />
                                 </div>
-                                <h3 className="text-xl font-bold text-gray-800 break-words w-full">
+                                <h3 className="text-lg sm:text-xl font-bold text-gray-800 break-words w-full">
                                     {item.name}
                                 </h3>
-                                <p className="text-gray-500 mt-2 text-sm">
+                                <p className="text-gray-500 mt-2 text-xs sm:text-sm">
                                     {item.description}
                                 </p>
                             </Link>

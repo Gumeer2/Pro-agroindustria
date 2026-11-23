@@ -1967,25 +1967,25 @@ export default function ShipmentProcess({
                         <button
                             type="button"
                             onClick={() => setIsIncidentsOpen(false)}
-                            className={`flex items-center px-8 py-5 font-bold text-sm uppercase tracking-wider transition-all border-b-4 cursor-pointer ${
+                            className={`flex items-center px-4 sm:px-8 py-3.5 sm:py-5 font-bold text-xs sm:text-sm uppercase tracking-wider transition-all border-b-4 cursor-pointer whitespace-nowrap ${
                                 !isIncidentsOpen
                                     ? "border-indigo-600 text-indigo-700 bg-indigo-50/50"
                                     : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                             }`}
                         >
-                            <Truck className={`w-5 h-5 mr-2 ${!isIncidentsOpen ? "text-indigo-600" : "text-gray-400"}`} />
+                            <Truck className={`w-5 h-5 mr-2 shrink-0 ${!isIncidentsOpen ? "text-indigo-600" : "text-gray-400"}`} />
                             Gestión de Órdenes de Embarque
                         </button>
                         <button
                             type="button"
                             onClick={() => setIsIncidentsOpen(true)}
-                            className={`flex items-center px-8 py-5 font-bold text-sm uppercase tracking-wider transition-all border-b-4 cursor-pointer ${
+                            className={`flex items-center px-4 sm:px-8 py-3.5 sm:py-5 font-bold text-xs sm:text-sm uppercase tracking-wider transition-all border-b-4 cursor-pointer whitespace-nowrap ${
                                 isIncidentsOpen
                                     ? "border-indigo-600 text-indigo-700 bg-indigo-50/50"
                                     : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                             }`}
                         >
-                            <AlertTriangle className={`w-5 h-5 mr-2 ${isIncidentsOpen ? "text-amber-500" : "text-gray-400"}`} />
+                            <AlertTriangle className={`w-5 h-5 mr-2 shrink-0 ${isIncidentsOpen ? "text-amber-500" : "text-gray-400"}`} />
                             Incidencias
                             {incidents.length > 0 && (
                                 <span
@@ -2045,7 +2045,7 @@ export default function ShipmentProcess({
 
                         {/* Tabla de Incidencias */}
                         <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white shadow-sm">
-                            <table className="w-full text-left text-xs border-collapse">
+                            <table className="w-full min-w-[700px] text-left text-xs border-collapse">
                                 <thead>
                                     <tr className="bg-amber-100/80 border-b border-amber-200 text-amber-950 font-bold uppercase tracking-wider text-[11px]">
                                         <th className="py-2.5 px-3">Folio Orden</th>
@@ -2627,8 +2627,8 @@ export default function ShipmentProcess({
                             </div>
                         </div>
 
-                        <div className="w-full overflow-hidden">
-                            <table className="w-full table-fixed divide-y divide-gray-200 text-xs">
+                        <div className="w-full overflow-x-auto">
+                            <table className="w-full min-w-[1050px] table-fixed divide-y divide-gray-200 text-xs">
                             <thead className="bg-[#1e1b4b] text-white">
                                 <tr>
                                     <th className="w-[2.5%] px-0.5 py-3.5 text-center font-bold uppercase tracking-wider">

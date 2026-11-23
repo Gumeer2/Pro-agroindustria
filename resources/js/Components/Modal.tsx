@@ -56,7 +56,7 @@ export default function Modal({
                     <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-xs transition-opacity" />
                 </TransitionChild>
 
-                <div className="flex min-h-full items-center justify-center p-4 sm:p-6 text-center">
+                <div className="flex min-h-full items-center justify-center p-2.5 sm:p-6 text-center">
                     <TransitionChild
                         enter="ease-out duration-300"
                         enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
@@ -66,7 +66,7 @@ export default function Modal({
                         leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
                     >
                         <DialogPanel
-                            className={`w-full transform overflow-hidden rounded-3xl bg-white text-left shadow-2xl transition-all my-auto ${maxWidthClass}`}
+                            className={`w-full transform overflow-hidden rounded-2xl sm:rounded-3xl bg-white text-left shadow-2xl transition-all my-auto max-h-[92vh] flex flex-col ${maxWidthClass}`}
                         >
                             {children}
                         </DialogPanel>

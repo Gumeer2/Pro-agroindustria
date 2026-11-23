@@ -4,9 +4,10 @@ import { cn } from '@/lib/utils';
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
     isMobile?: boolean; // Add isMobile prop
+    onClose?: () => void;
 }
 
-export function Sidebar({ className, isMobile = false }: SidebarProps) {
+export function Sidebar({ className, isMobile = false, onClose }: SidebarProps) {
     const { url, props } = usePage<any>();
     const baseUrl = props.base_url || '';
     const tenant = props.tenant;
@@ -87,7 +88,11 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
             {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent py-6 space-y-8">
                 <div className="px-4 flex flex-col items-center">
-                    <Link href={isClientRole ? route('clients.index') : (isEstibadorRole ? route('apt.estibadores') : (isQualityRole ? route('quality.index') : route('dashboard')))} className="mb-4 flex items-center justify-center transition-transform hover:scale-105">
+                    <Link
+                        href={isClientRole ? route('clients.index') : (isEstibadorRole ? route('apt.estibadores') : (isQualityRole ? route('quality.index') : route('dashboard')))}
+                        onClick={onClose}
+                        className="mb-4 flex items-center justify-center transition-transform hover:scale-105"
+                    >
                         <img
                             src={props.tenant?.logo || `/images/logovecode.png`}
                             alt={props.tenant?.name || "Logo"}
@@ -126,6 +131,7 @@ export function Sidebar({ className, isMobile = false }: SidebarProps) {
                                 <Link
                                     key={link.href}
                                     href={link.href}
+                                    onClick={onClose}
                                     className={cn(
                                         "group/link flex items-center rounded-xl px-3 py-3 text-sm font-bold transition-all duration-200 relative overflow-hidden whitespace-nowrap",
                                         isActive

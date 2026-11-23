@@ -273,7 +273,7 @@ export default function PackagingEquipmentManager({ company, equipments }: Props
             {/* Table in exact style of Image 2 (Sales Orders) */}
             <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
                 <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
+                    <table className="min-w-full min-w-[750px] divide-y divide-gray-200">
                         <thead className="bg-gradient-to-r from-indigo-800 to-indigo-900">
                             <tr>
                                 <th className="sticky left-0 px-4 py-4 text-center text-xs font-bold text-white uppercase tracking-wider bg-indigo-800 z-10 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)] w-14">

@@ -544,7 +544,7 @@ export default function WarehouseBaggingManager({ configs, equipments }: Props) 
             {/* Table Card matching Sales Orders style */}
             <div className="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full min-w-[850px] text-left border-collapse">
                         <thead>
                             <tr className="bg-gradient-to-r from-indigo-800 to-indigo-900 text-white text-xs font-bold uppercase tracking-wider">
                                 <th className="py-4 px-3 text-center w-12">

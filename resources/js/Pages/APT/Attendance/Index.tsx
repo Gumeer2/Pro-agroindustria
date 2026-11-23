@@ -236,7 +236,7 @@ export default function Index({ auth = {}, attendances = {}, filters = {} }: Pro
                     {/* Table of Records */}
                     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs">
+                            <table className="w-full min-w-[750px] text-left text-xs">
                                 <thead className="border-b border-slate-200 bg-slate-50 text-slate-600 font-black uppercase tracking-wider">
                                     <tr>
                                         <th className="py-3.5 px-4">Folio / Formato</th>

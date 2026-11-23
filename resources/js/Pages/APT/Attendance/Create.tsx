@@ -371,7 +371,7 @@ export default function Create({ auth = {}, defaults = {} as any, serviceProvide
 
                                 {/* Table */}
                                 <div className="overflow-x-auto rounded-xl border border-slate-200">
-                                    <table className="w-full text-left text-xs">
+                                    <table className="w-full min-w-[650px] text-left text-xs">
                                         <thead className="bg-[#bbf7d0] text-emerald-950 font-black uppercase tracking-wider border-b border-emerald-300">
                                             <tr>
                                                 <th className="py-3 px-3 text-center w-16">Num.</th>

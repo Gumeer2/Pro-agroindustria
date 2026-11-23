@@ -794,78 +794,80 @@ export default function StowagePlanModal({
                                         </div>
 
                                         {/* --- GRID E- (24 CUADROS CON NÚMERO DE SACOS) + TM PROGRAMADA + PESO ESTIMADO --- */}
-                                        <div className="w-full mb-1 flex items-end">
-                                            {/* Table Container */}
-                                            <div className="w-[82%] flex flex-col">
-                                                <div className="flex items-center justify-between mb-0.5 px-1">
-                                                    <span className="text-center font-black text-sm leading-none text-emerald-950">
-                                                        E- (ESTIBAS DEL 1 AL 24)
-                                                    </span>
-                                                    <span className="text-[9px] text-gray-500 font-bold">
-                                                        * Cantidad de sacos por cada estiba
-                                                    </span>
-                                                </div>
-                                                <table className="w-full border-collapse border border-green-800 text-center">
-                                                    <thead>
-                                                        <tr className="bg-gray-100">
-                                                            {gridCols.map((col) => (
-                                                                <th
-                                                                    key={col}
-                                                                    className="border border-green-800 h-4 font-extrabold text-[8.5px] text-gray-900"
-                                                                >
-                                                                    {col}
-                                                                </th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <tr className="h-12 bg-white">
-                                                            {gridCols.map((col) => {
-                                                                const cellVal = stowages[col - 1] ?? "";
-                                                                const hasValue = cellVal.trim() !== "";
-                                                                return (
-                                                                    <td
-                                                                        key={`cell-${col}`}
-                                                                        className={`border border-green-800 p-0 text-center transition ${
-                                                                            hasValue
-                                                                                ? "bg-emerald-50/70"
-                                                                                : "bg-white hover:bg-slate-50"
-                                                                        }`}
-                                                                        title={`Estiba E-${col}: Número de sacos`}
+                                        <div className="w-full overflow-x-auto mb-1">
+                                            <div className="min-w-[620px] flex items-end">
+                                                {/* Table Container */}
+                                                <div className="w-[82%] flex flex-col">
+                                                    <div className="flex items-center justify-between mb-0.5 px-1">
+                                                        <span className="text-center font-black text-sm leading-none text-emerald-950">
+                                                            E- (ESTIBAS DEL 1 AL 24)
+                                                        </span>
+                                                        <span className="text-[9px] text-gray-500 font-bold">
+                                                            * Cantidad de sacos por cada estiba
+                                                        </span>
+                                                    </div>
+                                                    <table className="w-full border-collapse border border-green-800 text-center">
+                                                        <thead>
+                                                            <tr className="bg-gray-100">
+                                                                {gridCols.map((col) => (
+                                                                    <th
+                                                                        key={col}
+                                                                        className="border border-green-800 h-4 font-extrabold text-[8.5px] text-gray-900"
                                                                     >
-                                                                        <input
-                                                                            type="text"
-                                                                            inputMode="numeric"
-                                                                            value={cellVal}
-                                                                            onChange={(e) => handleCellChange(col - 1, e.target.value)}
-                                                                            className="w-full h-12 p-0 text-center font-black text-[10px] border-0 focus:ring-1 focus:ring-emerald-600 bg-transparent text-gray-900"
-                                                                            placeholder="-"
-                                                                        />
-                                                                    </td>
-                                                                );
-                                                            })}
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-
-                                            {/* Box Container on Right with TM Programada & Peso Estimado */}
-                                            <div className="w-[9%] flex flex-col items-center pl-1">
-                                                <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
-                                                    TM Programada
-                                                </span>
-                                                <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[10.5px] text-gray-900 shadow-2xs">
-                                                    {safeOrder.programmed_tons ? Number(safeOrder.programmed_tons).toFixed(1) : "0.0"}
+                                                                        {col}
+                                                                    </th>
+                                                                ))}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr className="h-12 bg-white">
+                                                                {gridCols.map((col) => {
+                                                                    const cellVal = stowages[col - 1] ?? "";
+                                                                    const hasValue = cellVal.trim() !== "";
+                                                                    return (
+                                                                        <td
+                                                                            key={`cell-${col}`}
+                                                                            className={`border border-green-800 p-0 text-center transition ${
+                                                                                hasValue
+                                                                                    ? "bg-emerald-50/70"
+                                                                                    : "bg-white hover:bg-slate-50"
+                                                                            }`}
+                                                                            title={`Estiba E-${col}: Número de sacos`}
+                                                                        >
+                                                                            <input
+                                                                                type="text"
+                                                                                inputMode="numeric"
+                                                                                value={cellVal}
+                                                                                onChange={(e) => handleCellChange(col - 1, e.target.value)}
+                                                                                className="w-full h-12 p-0 text-center font-black text-[10px] border-0 focus:ring-1 focus:ring-emerald-600 bg-transparent text-gray-900"
+                                                                                placeholder="-"
+                                                                            />
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
                                                 </div>
-                                            </div>
-                                            <div className="w-[9%] flex flex-col items-center pl-1">
-                                                <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
-                                                    Peso Estimado
-                                                </span>
-                                                <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[9.5px] text-emerald-900 shadow-2xs px-0.5 text-center leading-tight">
-                                                    {computedNetWeightDisplay || (
-                                                        <span className="text-[8px] font-semibold text-gray-400">Pendiente</span>
-                                                    )}
+
+                                                {/* Box Container on Right with TM Programada & Peso Estimado */}
+                                                <div className="w-[9%] flex flex-col items-center pl-1">
+                                                    <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
+                                                        TM Programada
+                                                    </span>
+                                                    <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[10.5px] text-gray-900 shadow-2xs">
+                                                        {safeOrder.programmed_tons ? Number(safeOrder.programmed_tons).toFixed(1) : "0.0"}
+                                                    </div>
+                                                </div>
+                                                <div className="w-[9%] flex flex-col items-center pl-1">
+                                                    <span className="text-[7px] font-bold text-center leading-none mb-0.5 text-gray-900 whitespace-nowrap">
+                                                        Peso Estimado
+                                                    </span>
+                                                    <div className="w-full h-12 border-2 border-black bg-white rounded-xl flex items-center justify-center font-black text-[9.5px] text-emerald-900 shadow-2xs px-0.5 text-center leading-tight">
+                                                        {computedNetWeightDisplay || (
+                                                            <span className="text-[8px] font-semibold text-gray-400">Pendiente</span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
