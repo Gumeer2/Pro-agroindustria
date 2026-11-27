@@ -218,6 +218,8 @@ class WarehouseBaggingMachineController extends Controller
             'assistant_name' => 'nullable|string|max:255',
             'assistant_id' => 'nullable|integer',
             'hopper_tag' => 'nullable|string|max:100',
+            'left_tag' => 'nullable|string|max:100',
+            'right_tag' => 'nullable|string|max:100',
         ]);
 
         preg_match('/\d+/', $validated['warehouse'], $m);
@@ -225,26 +227,51 @@ class WarehouseBaggingMachineController extends Controller
         preg_match('/Cub[ií]culo\s*0?(\d+)/i', $validated['warehouse'], $mCub);
         $cubicle = $validated['cubicle'] ?? ($mCub ? ('Cubículo 0' . $mCub[1]) : null);
 
+        $isFertinal = str_contains($validated['hopper_tag'] ?? '', '-F');
+        $defaultLeft = $isFertinal ? sprintf('ENS-F%02d', ($num * 2) - 1) : sprintf('ENS-P%02d', ($num * 2) - 1);
+        $defaultRight = $isFertinal ? sprintf('ENS-F%02d', $num * 2) : sprintf('ENS-P%02d', $num * 2);
+
+        $leftTag = !empty($validated['left_tag']) ? $validated['left_tag'] : $defaultLeft;
+        $rightTag = !empty($validated['right_tag']) ? $validated['right_tag'] : $defaultRight;
+
+        if (!empty($validated['assistant_name'])) {
+            $cleanAssistant = trim($validated['assistant_name']);
+            WarehouseBaggingMachine::where('warehouse', '!=', $validated['warehouse'])
+                ->whereRaw('UPPER(TRIM(assistant_name)) = ?', [mb_strtoupper($cleanAssistant, 'UTF-8')])
+                ->update([
+                    'assistant_name' => null,
+                    'assistant_id' => null,
+                ]);
+        }
+
         $config = WarehouseBaggingMachine::where('warehouse', $validated['warehouse'])->first();
         if ($config) {
             $config->assistant_name = !empty($validated['assistant_name']) ? trim($validated['assistant_name']) : null;
             $config->assistant_id = !empty($validated['assistant_id']) ? $validated['assistant_id'] : null;
             if (!empty($validated['hopper_tag'])) {
                 $config->hopper_tag = $validated['hopper_tag'];
-                $config->company = str_contains($validated['hopper_tag'], '-F') ? 'FERTINAL' : 'PRO-AGRO';
+                $config->company = $isFertinal ? 'FERTINAL' : 'PRO-AGRO';
             }
             if ($cubicle && empty($config->cubicle)) {
                 $config->cubicle = $cubicle;
             }
+            if (empty($config->left_tag) || !empty($validated['left_tag'])) {
+                $config->left_tag = $leftTag;
+            }
+            if (empty($config->right_tag) || !empty($validated['right_tag'])) {
+                $config->right_tag = $rightTag;
+            }
             $config->save();
         } else {
-            $comp = str_contains($validated['hopper_tag'] ?? '', '-F') ? 'FERTINAL' : 'PRO-AGRO';
+            $comp = $isFertinal ? 'FERTINAL' : 'PRO-AGRO';
             WarehouseBaggingMachine::create([
                 'warehouse' => $validated['warehouse'],
                 'cubicle' => $cubicle,
                 'warehouse_number' => $num,
                 'company' => $comp,
-                'hopper_tag' => $validated['hopper_tag'] ?: "LE-P0{$num}",
+                'hopper_tag' => $validated['hopper_tag'] ?: ($isFertinal ? "LE-F0{$num}" : "LE-P0{$num}"),
+                'left_tag' => $leftTag,
+                'right_tag' => $rightTag,
                 'assistant_name' => !empty($validated['assistant_name']) ? trim($validated['assistant_name']) : null,
                 'assistant_id' => !empty($validated['assistant_id']) ? $validated['assistant_id'] : null,
                 'status' => 'active',

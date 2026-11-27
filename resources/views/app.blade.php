@@ -47,7 +47,7 @@
                 $bladeBasePath = ($requestHost !== 'localhost' && $requestHost !== '127.0.0.1' && $configuredHost === 'localhost') ? '' : $configuredPath;
             @endphp
             const basePath = @json($bladeBasePath);
-            const applicationPaths = /^(dashboard|sales|traffic|surveillance|documentation|scale|dock|apt|admin|clients|profile|login)(\/|$)/;
+            const applicationPaths = /^(dashboard|sales|traffic|surveillance|documentation|scale|dock|apt|admin|clients|profile|login|production|quality)(\/|$)/;
 
             const normalizeLinks = () => {
                 document.querySelectorAll('a[href]').forEach((link) => {
@@ -262,7 +262,27 @@
 
     <!-- Scripts -->
     @routes
-    <!-- Cache Buster: v=4.3-stowage-admin-flow -->
+    <!-- Cache Buster: v=4.7-ammonia-workflow -->
+    <script>
+        (function () {
+            try {
+                var BUNDLE_VER = 'v12.9-llenaderas-lock-percentage-when-not-loading';
+                if (window.localStorage && localStorage.getItem('proagro_bundle_ver') !== BUNDLE_VER) {
+                    var base = window.location.pathname.indexOf('/Proagroindustria2') !== -1 ? '/Proagroindustria2' : '';
+                    var assets = [
+                        base + '/build/assets/app-D5q4ghAA.js',
+                        base + '/build/assets/ShipmentProcess-O7ZvcmX0.js',
+                    ];
+                    Promise.all(assets.map(function (u) {
+                        return fetch(u, { cache: 'reload' }).catch(function () {});
+                    })).then(function () {
+                        localStorage.setItem('proagro_bundle_ver', BUNDLE_VER);
+                        window.location.reload();
+                    });
+                }
+            } catch (e) {}
+        })();
+    </script>
     @viteReactRefresh
     @vite('resources/js/app.tsx')
     @inertiaHead

@@ -447,7 +447,7 @@ export default function ExitsIndex({
                         className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium group"
                     >
                         <ArrowLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" />
-                        Volver a Entrada y Salida de Productos
+                        Volver a Entrada y Salida de Insumos
                     </Link>
                 </div>
 

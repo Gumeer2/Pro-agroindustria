@@ -18,6 +18,8 @@ import {
     ChevronUp,
     ExternalLink,
     Plus,
+    Info,
+    Settings,
 } from "lucide-react";
 
 interface WarehouseBaggingMachine {
@@ -92,6 +94,8 @@ export default function TolvaAssistantManager({
     const [selectedAssistantName, setSelectedAssistantName] = useState("");
     const [selectedAssistantId, setSelectedAssistantId] = useState<number | null>(null);
     const [selectedHopperTag, setSelectedHopperTag] = useState("");
+    const [selectedLeftTag, setSelectedLeftTag] = useState("");
+    const [selectedRightTag, setSelectedRightTag] = useState("");
     const [assignCompany, setAssignCompany] = useState<"PRO-AGRO" | "FERTINAL">("PRO-AGRO");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -104,6 +108,8 @@ export default function TolvaAssistantManager({
         hopper_tag: "LE-P01",
         assistant_name: "",
         assistant_id: null as number | null,
+        left_tag: "ENS-P01",
+        right_tag: "ENS-P02",
     });
 
     // Formatear nombre de almacén
@@ -229,12 +235,18 @@ export default function TolvaAssistantManager({
                     c.warehouse.toLowerCase().startsWith(whName.toLowerCase())
             );
 
+            const isFer = (found?.hopper_tag && found.hopper_tag.includes("-F")) || found?.company === "FERTINAL";
+            const defaultLeft = isFer ? `ENS-F0${whNum * 2 - 1}` : `ENS-P0${whNum * 2 - 1}`;
+            const defaultRight = isFer ? `ENS-F0${whNum * 2}` : `ENS-P0${whNum * 2}`;
+
             if (found) {
                 result.push({
                     ...found,
                     warehouse: whName,
                     warehouse_number: whNum,
                     hopper_tag: found.hopper_tag || `LE-P${numStr}`,
+                    left_tag: found.left_tag || defaultLeft,
+                    right_tag: found.right_tag || defaultRight,
                     has_cubicles: false,
                 });
             } else {
@@ -244,6 +256,8 @@ export default function TolvaAssistantManager({
                     warehouse_number: whNum,
                     company: "PRO-AGRO",
                     hopper_tag: `LE-P${numStr}`,
+                    left_tag: defaultLeft,
+                    right_tag: defaultRight,
                     status: "active",
                     has_cubicles: false,
                 });
@@ -383,45 +397,175 @@ export default function TolvaAssistantManager({
         return null;
     };
 
+    // Ensacadoras y tolvas automáticas según almacén y empresa
+    const getAutomaticBaggingMachines = (wh: string, comp: "PRO-AGRO" | "FERTINAL") => {
+        const isFer = comp === "FERTINAL";
+        const m = wh.match(/\d+/);
+        const whNum = m ? parseInt(m[0], 10) : 1;
+        const left = isFer
+            ? `ENS-F0${whNum * 2 - 1}`
+            : (whNum >= 5 ? `ENS-P${whNum * 2 - 1}` : `ENS-P0${whNum * 2 - 1}`);
+        const right = isFer
+            ? `ENS-F0${whNum * 2}`
+            : (whNum >= 5 ? `ENS-P${whNum * 2}` : `ENS-P0${whNum * 2}`);
+        const hopper = isFer ? `LE-F0${whNum}` : `LE-P0${whNum}`;
+        return { left, right, hopper, whNum };
+    };
+
+    // Buscar la configuración guardada de Tolva y Ensacadoras por Almacén / Cubículo (desde "Configuración de Ensacadoras por Almacén")
+    const findWarehouseConfig = (whName: string, cubName?: string | null) => {
+        const m = whName.match(/\d+/);
+        const whNum = m ? parseInt(m[0], 10) : 0;
+
+        // Si tiene cubículo (Almacén 4 o 5)
+        if (cubName && (whNum === 4 || whNum === 5)) {
+            const mCub = cubName.match(/\d+/);
+            const cubNum = mCub ? parseInt(mCub[0], 10) : 0;
+            const foundCub = configs.find((c) => {
+                const cWh = (c.warehouse || "").toLowerCase();
+                const cCub = (c.cubicle || "").toLowerCase();
+                const cNum = c.warehouse_number || (cWh.match(/\d+/) ? parseInt(cWh.match(/\d+/)[0], 10) : 0);
+                if (cNum !== whNum) return false;
+                if (cCub && cCub.match(/\d+/) && parseInt(cCub.match(/\d+/)[0], 10) === cubNum) return true;
+                if (
+                    cWh.includes(`cubículo 0${cubNum}`) ||
+                    cWh.includes(`cubículo ${cubNum}`) ||
+                    cWh.includes(`cubiculo 0${cubNum}`) ||
+                    cWh.includes(`cubiculo ${cubNum}`)
+                ) {
+                    return true;
+                }
+                return false;
+            });
+            if (foundCub) return foundCub;
+        }
+
+        // Buscar por almacén base (sin cubículo o cubículo vacío)
+        const foundExactBase = configs.find((c) => {
+            const cWh = (c.warehouse || "").toLowerCase();
+            const cNum = c.warehouse_number || (cWh.match(/\d+/) ? parseInt(cWh.match(/\d+/)[0], 10) : 0);
+            if (cNum === whNum && (!c.cubicle || c.cubicle.trim() === "")) {
+                return true;
+            }
+            return false;
+        });
+        if (foundExactBase) return foundExactBase;
+
+        // Fallback: cualquier registro de ese número de almacén
+        const foundAny = configs.find((c) => {
+            const cWh = (c.warehouse || "").toLowerCase();
+            const cNum = c.warehouse_number || (cWh.match(/\d+/) ? parseInt(cWh.match(/\d+/)[0], 10) : 0);
+            return cNum === whNum;
+        });
+
+        return foundAny || null;
+    };
+
+    // Validar auxiliar asignado actualmente a un almacén / cubículo
+    const getWarehouseAssignedAssistant = (wh: string, cub?: string | null) => {
+        const cfg = findWarehouseConfig(wh, cub);
+        return cfg?.assistant_name ? cfg : null;
+    };
+
     // Abrir modal de asignación individual
     const openAssignModal = (config: WarehouseBaggingMachine) => {
+        const cfg = findWarehouseConfig(config.warehouse, config.cubicle) || config;
+        const tag = cfg.hopper_tag || config.hopper_tag || `LE-P0${config.warehouse_number || 1}`;
+        const isFer = tag.includes("-F") || cfg.company === "FERTINAL" || config.company === "FERTINAL";
+        const comp = isFer ? "FERTINAL" : "PRO-AGRO";
+        const auto = getAutomaticBaggingMachines(config.warehouse, comp);
+
         setEditingConfig(config);
-        setSelectedAssistantName(config.assistant_name || "");
-        setSelectedAssistantId(config.assistant_id || null);
-        const tag = config.hopper_tag || `LE-P0${config.warehouse_number || 1}`;
+        setSelectedAssistantName(cfg.assistant_name || config.assistant_name || "");
+        setSelectedAssistantId(cfg.assistant_id || config.assistant_id || null);
         setSelectedHopperTag(tag);
-        const isFer = tag.includes("-F") || config.company === "FERTINAL";
-        setAssignCompany(isFer ? "FERTINAL" : "PRO-AGRO");
+        setAssignCompany(comp);
+        setSelectedLeftTag(cfg.left_tag || config.left_tag || auto.left);
+        setSelectedRightTag(cfg.right_tag || config.right_tag || auto.right);
         setIsAssignModalOpen(true);
     };
 
     // Abrir modal "Asignar Nuevo"
     const openNewAssignModal = () => {
-        setNewAssignCompany("PRO-AGRO");
+        const initialWh = "Almacén 01";
+        const cfg = findWarehouseConfig(initialWh, null);
+        const isFer = (cfg?.hopper_tag && cfg.hopper_tag.includes("-F")) || cfg?.company === "FERTINAL";
+        const comp = isFer ? "FERTINAL" : "PRO-AGRO";
+        const auto = getAutomaticBaggingMachines(initialWh, comp);
+        const assignedHopper = cfg?.hopper_tag || auto.hopper;
+        const assignedCompany = assignedHopper.includes("-F") ? "FERTINAL" : comp;
+
+        setNewAssignCompany(assignedCompany);
         setNewAssignData({
-            warehouse: "Almacén 01",
+            warehouse: initialWh,
             cubicle: "Cubículo 01",
-            hopper_tag: "LE-P01",
-            assistant_name: "",
-            assistant_id: null,
+            hopper_tag: assignedHopper,
+            assistant_name: cfg?.assistant_name || "",
+            assistant_id: cfg?.assistant_id || null,
+            left_tag: cfg?.left_tag || auto.left,
+            right_tag: cfg?.right_tag || auto.right,
         });
         setIsNewAssignModalOpen(true);
     };
 
-    // Handler al cambiar de almacén en "Asignar Nuevo"
+    // Handler al cambiar de almacén en "Asignar Nuevo": PONE EN AUTOMÁTICO LA TOLVA Y ENSACADORAS ASIGNADAS
     const handleNewAssignWarehouseChange = (wh: string) => {
-        const isFer = newAssignCompany === "FERTINAL";
-        let defaultHopper = isFer ? "LE-F01" : "LE-P01";
-        if (wh === "Almacén 02") defaultHopper = isFer ? "LE-F02" : "LE-P02";
-        else if (wh === "Almacén 03") defaultHopper = isFer ? "LE-F03" : "LE-P03";
-        else if (wh === "Almacén 04") defaultHopper = isFer ? "LE-F01" : "LE-P04";
-        else if (wh === "Almacén 05") defaultHopper = isFer ? "LE-F01" : "LE-P05";
+        const targetCub = (wh === "Almacén 04" || wh === "Almacén 05") ? (newAssignData.cubicle || "Cubículo 01") : null;
+        const cfg = findWarehouseConfig(wh, targetCub);
+        const isFer = (cfg?.hopper_tag && cfg.hopper_tag.includes("-F")) || cfg?.company === "FERTINAL";
+        const comp = isFer ? "FERTINAL" : "PRO-AGRO";
+        const auto = getAutomaticBaggingMachines(wh, comp);
+        const assignedHopper = cfg?.hopper_tag || auto.hopper;
+        const assignedCompany = assignedHopper.includes("-F") ? "FERTINAL" : comp;
 
+        setNewAssignCompany(assignedCompany);
         setNewAssignData((prev) => ({
             ...prev,
             warehouse: wh,
-            cubicle: (wh === "Almacén 04" || wh === "Almacén 05") ? (prev.cubicle || "Cubículo 01") : "",
-            hopper_tag: defaultHopper,
+            cubicle: targetCub || "",
+            hopper_tag: assignedHopper,
+            assistant_name: cfg?.assistant_name || "",
+            assistant_id: cfg?.assistant_id || null,
+            left_tag: cfg?.left_tag || auto.left,
+            right_tag: cfg?.right_tag || auto.right,
+        }));
+    };
+
+    // Handler al cambiar de cubículo en Almacén 4 o 5: PONE EN AUTOMÁTICO LA TOLVA Y ENSACADORAS
+    const handleNewAssignCubicleChange = (cub: string) => {
+        const cfg = findWarehouseConfig(newAssignData.warehouse, cub);
+        const isFer = (cfg?.hopper_tag && cfg.hopper_tag.includes("-F")) || cfg?.company === "FERTINAL";
+        const comp = isFer ? "FERTINAL" : newAssignCompany;
+        const auto = getAutomaticBaggingMachines(newAssignData.warehouse, comp);
+        const assignedHopper = cfg?.hopper_tag || auto.hopper;
+        const assignedCompany = assignedHopper.includes("-F") ? "FERTINAL" : comp;
+
+        setNewAssignCompany(assignedCompany);
+        setNewAssignData((prev) => ({
+            ...prev,
+            cubicle: cub,
+            hopper_tag: assignedHopper,
+            assistant_name: cfg?.assistant_name || "",
+            assistant_id: cfg?.assistant_id || null,
+            left_tag: cfg?.left_tag || auto.left,
+            right_tag: cfg?.right_tag || auto.right,
+        }));
+    };
+
+    // Handler al seleccionar el auxiliar de carga (pone en automático las ensacadoras)
+    const handleNewAssignAssistantChange = (name: string) => {
+        const matched = assistantList.find(
+            (a) => a.name.toUpperCase() === name.toUpperCase()
+        );
+        const targetCub = (newAssignData.warehouse === "Almacén 04" || newAssignData.warehouse === "Almacén 05") ? newAssignData.cubicle : null;
+        const cfg = findWarehouseConfig(newAssignData.warehouse, targetCub);
+        const auto = getAutomaticBaggingMachines(newAssignData.warehouse, newAssignCompany);
+        setNewAssignData((prev) => ({
+            ...prev,
+            assistant_name: name,
+            assistant_id: matched?.id || null,
+            left_tag: cfg?.left_tag || auto.left,
+            right_tag: cfg?.right_tag || auto.right,
         }));
     };
 
@@ -444,6 +588,7 @@ export default function TolvaAssistantManager({
 
         const executeSave = () => {
             setIsSubmitting(true);
+            const auto = getAutomaticBaggingMachines(newAssignData.warehouse, newAssignCompany);
             const payload = {
                 warehouse: targetWarehouse,
                 cubicle: hasCubicle ? newAssignData.cubicle : null,
@@ -452,6 +597,8 @@ export default function TolvaAssistantManager({
                     : null,
                 assistant_id: newAssignData.assistant_id || null,
                 hopper_tag: newAssignData.hopper_tag,
+                left_tag: newAssignData.left_tag || auto.left,
+                right_tag: newAssignData.right_tag || auto.right,
             };
 
             router.post(
@@ -474,6 +621,8 @@ export default function TolvaAssistantManager({
                                         assistant_name: payload.assistant_name,
                                         assistant_id: payload.assistant_id,
                                         hopper_tag: payload.hopper_tag,
+                                        left_tag: payload.left_tag,
+                                        right_tag: payload.right_tag,
                                     };
                                 }
                                 if (
@@ -496,6 +645,8 @@ export default function TolvaAssistantManager({
                                     warehouse: payload.warehouse,
                                     cubicle: payload.cubicle,
                                     hopper_tag: payload.hopper_tag,
+                                    left_tag: payload.left_tag,
+                                    right_tag: payload.right_tag,
                                     assistant_name: payload.assistant_name,
                                     assistant_id: payload.assistant_id,
                                     status: "active",
@@ -507,7 +658,7 @@ export default function TolvaAssistantManager({
                         Swal.fire({
                             title: "¡Asignación guardada!",
                             text: payload.assistant_name
-                                ? `Se asignó a ${payload.assistant_name} a ${formatWarehouseName(payload.warehouse)} (${getHopperLabel(payload.hopper_tag)}).`
+                                ? `Se asignó a ${payload.assistant_name} a ${formatWarehouseName(payload.warehouse)} (${getHopperLabel(payload.hopper_tag)} - Ensacadoras: ${payload.left_tag} / ${payload.right_tag}).`
                                 : `La posición ha quedado sin auxiliar asignado.`,
                             icon: "success",
                             timer: 2500,
@@ -556,12 +707,15 @@ export default function TolvaAssistantManager({
 
         const executeAssign = () => {
             setIsSubmitting(true);
+            const auto = getAutomaticBaggingMachines(editingConfig.warehouse, assignCompany);
             const payload = {
                 warehouse: editingConfig.warehouse,
                 cubicle: editingConfig.cubicle || null,
                 assistant_name: selectedAssistantName ? selectedAssistantName.trim().toUpperCase() : null,
                 assistant_id: selectedAssistantId || null,
                 hopper_tag: selectedHopperTag || editingConfig.hopper_tag,
+                left_tag: selectedLeftTag || editingConfig.left_tag || auto.left,
+                right_tag: selectedRightTag || editingConfig.right_tag || auto.right,
             };
 
             router.post(
@@ -584,6 +738,8 @@ export default function TolvaAssistantManager({
                                         assistant_name: payload.assistant_name,
                                         assistant_id: payload.assistant_id,
                                         hopper_tag: payload.hopper_tag,
+                                        left_tag: payload.left_tag,
+                                        right_tag: payload.right_tag,
                                     };
                                 }
                                 // Si estaba en otra posición, desasignar
@@ -607,6 +763,8 @@ export default function TolvaAssistantManager({
                                     warehouse: payload.warehouse,
                                     cubicle: payload.cubicle,
                                     hopper_tag: payload.hopper_tag,
+                                    left_tag: payload.left_tag,
+                                    right_tag: payload.right_tag,
                                     assistant_name: payload.assistant_name,
                                     assistant_id: payload.assistant_id,
                                     status: "active",
@@ -618,7 +776,7 @@ export default function TolvaAssistantManager({
                         Swal.fire({
                             title: "¡Asignación guardada!",
                             text: payload.assistant_name
-                                ? `Se asignó a ${payload.assistant_name} a ${formatWarehouseName(payload.warehouse)} (${getHopperLabel(payload.hopper_tag)}).`
+                                ? `Se asignó a ${payload.assistant_name} a ${formatWarehouseName(payload.warehouse)} (${getHopperLabel(payload.hopper_tag)} - Ensacadoras: ${payload.left_tag} / ${payload.right_tag}).`
                                 : `La posición ha quedado sin auxiliar asignado.`,
                             icon: "success",
                             timer: 2500,
@@ -1384,7 +1542,80 @@ export default function TolvaAssistantManager({
                         <form onSubmit={handleSaveNewAssignment} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
                             {/* Almacén y Cubículo (dinámico: solo si es Almacén 04 o 05) */}
                             {newAssignData.warehouse === "Almacén 04" || newAssignData.warehouse === "Almacén 05" ? (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+                                <div className="space-y-2 animate-fade-in">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                                                Almacén (1 al 5)
+                                            </label>
+                                            <select
+                                                value={newAssignData.warehouse}
+                                                onChange={(e) => handleNewAssignWarehouseChange(e.target.value)}
+                                                className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-2xs"
+                                            >
+                                                <option value="Almacén 01">Almacén 01</option>
+                                                <option value="Almacén 02">Almacén 02</option>
+                                                <option value="Almacén 03">Almacén 03</option>
+                                                <option value="Almacén 04">Almacén 04</option>
+                                                <option value="Almacén 05">Almacén 05</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                                <span>Cubículo</span>
+                                                <span className="text-[10px] text-indigo-600 font-bold">8 Cubículos</span>
+                                            </label>
+                                            <select
+                                                value={newAssignData.cubicle}
+                                                onChange={(e) => handleNewAssignCubicleChange(e.target.value)}
+                                                className="w-full px-3 py-2.5 rounded-xl border border-indigo-300 text-sm font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-indigo-50/50 shadow-2xs"
+                                            >
+                                                {[1, 2, 3, 4, 5, 6, 7, 8].map((c) => {
+                                                    const cVal = `Cubículo 0${c}`;
+                                                    return (
+                                                        <option key={cVal} value={cVal}>
+                                                            {cVal}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Validación automática de auxiliar en la posición seleccionada */}
+                                    {(() => {
+                                        const targetWh = `${newAssignData.warehouse} - ${newAssignData.cubicle}`;
+                                        const currentWhAssign = getWarehouseAssignedAssistant(newAssignData.warehouse, newAssignData.cubicle);
+                                        return currentWhAssign ? (
+                                            <div className="text-[11px] font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xl p-2.5 flex items-center justify-between shadow-2xs">
+                                                <span className="flex items-center gap-1.5">
+                                                    <UserCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                                                    <span>
+                                                        Auxiliar actual en {targetWh}: <strong className="text-indigo-950 underline">{currentWhAssign.assistant_name}</strong>
+                                                    </span>
+                                                </span>
+                                                {newAssignData.assistant_name !== currentWhAssign.assistant_name && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleNewAssignAssistantChange(currentWhAssign.assistant_name || "")}
+                                                        className="text-[10px] bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-0.5 rounded-md font-bold transition shadow-2xs cursor-pointer"
+                                                        title="Cargar auxiliar asignado actual"
+                                                    >
+                                                        Cargar
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="text-[11px] font-medium text-gray-500 bg-gray-50 border border-gray-200 rounded-xl p-2 flex items-center gap-1.5">
+                                                <Info className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                                <span>{targetWh} actualmente sin auxiliar asignado.</span>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
                                     <div>
                                         <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
                                             Almacén (1 al 5)
@@ -1402,43 +1633,35 @@ export default function TolvaAssistantManager({
                                         </select>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                            <span>Cubículo</span>
-                                            <span className="text-[10px] text-indigo-600 font-bold">8 Cubículos</span>
-                                        </label>
-                                        <select
-                                            value={newAssignData.cubicle}
-                                            onChange={(e) => setNewAssignData((prev) => ({ ...prev, cubicle: e.target.value }))}
-                                            className="w-full px-3 py-2.5 rounded-xl border border-indigo-300 text-sm font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-indigo-50/50 shadow-2xs"
-                                        >
-                                            {[1, 2, 3, 4, 5, 6, 7, 8].map((c) => {
-                                                const cVal = `Cubículo 0${c}`;
-                                                return (
-                                                    <option key={cVal} value={cVal}>
-                                                        {cVal}
-                                                    </option>
-                                                );
-                                            })}
-                                        </select>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                                        Almacén (1 al 5)
-                                    </label>
-                                    <select
-                                        value={newAssignData.warehouse}
-                                        onChange={(e) => handleNewAssignWarehouseChange(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-2xs"
-                                    >
-                                        <option value="Almacén 01">Almacén 01</option>
-                                        <option value="Almacén 02">Almacén 02</option>
-                                        <option value="Almacén 03">Almacén 03</option>
-                                        <option value="Almacén 04">Almacén 04</option>
-                                        <option value="Almacén 05">Almacén 05</option>
-                                    </select>
+                                    {/* Validación automática de auxiliar en el almacén */}
+                                    {(() => {
+                                        const currentWhAssign = getWarehouseAssignedAssistant(newAssignData.warehouse);
+                                        return currentWhAssign ? (
+                                            <div className="text-[11px] font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xl p-2.5 flex items-center justify-between shadow-2xs">
+                                                <span className="flex items-center gap-1.5">
+                                                    <UserCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                                                    <span>
+                                                        Auxiliar actual en {newAssignData.warehouse}: <strong className="text-indigo-950 underline">{currentWhAssign.assistant_name}</strong>
+                                                    </span>
+                                                </span>
+                                                {newAssignData.assistant_name !== currentWhAssign.assistant_name && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleNewAssignAssistantChange(currentWhAssign.assistant_name || "")}
+                                                        className="text-[10px] bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-0.5 rounded-md font-bold transition shadow-2xs cursor-pointer"
+                                                        title="Cargar auxiliar asignado actual"
+                                                    >
+                                                        Cargar
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="text-[11px] font-medium text-gray-500 bg-gray-50 border border-gray-200 rounded-xl p-2 flex items-center gap-1.5">
+                                                <Info className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                                <span>{newAssignData.warehouse} actualmente sin auxiliar asignado.</span>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             )}
 
@@ -1455,9 +1678,12 @@ export default function TolvaAssistantManager({
                                         type="button"
                                         onClick={() => {
                                             setNewAssignCompany("PRO-AGRO");
+                                            const auto = getAutomaticBaggingMachines(newAssignData.warehouse, "PRO-AGRO");
                                             setNewAssignData((prev) => ({
                                                 ...prev,
-                                                hopper_tag: "LE-P01",
+                                                hopper_tag: auto.hopper,
+                                                left_tag: auto.left,
+                                                right_tag: auto.right,
                                             }));
                                         }}
                                         className={`py-2 px-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 cursor-pointer ${
@@ -1473,9 +1699,12 @@ export default function TolvaAssistantManager({
                                         type="button"
                                         onClick={() => {
                                             setNewAssignCompany("FERTINAL");
+                                            const auto = getAutomaticBaggingMachines(newAssignData.warehouse, "FERTINAL");
                                             setNewAssignData((prev) => ({
                                                 ...prev,
-                                                hopper_tag: "LE-F01",
+                                                hopper_tag: auto.hopper,
+                                                left_tag: auto.left,
+                                                right_tag: auto.right,
                                             }));
                                         }}
                                         className={`py-2 px-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 cursor-pointer ${
@@ -1493,7 +1722,13 @@ export default function TolvaAssistantManager({
                             {/* Tolva de Línea */}
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                    <span>Tolva de Línea ({newAssignCompany})</span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span>Tolva de Línea ({newAssignCompany})</span>
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                            Asignada por almacén
+                                        </span>
+                                    </span>
                                     <span className="text-[10px] text-indigo-600 font-bold">
                                         {getHopperLabel(newAssignData.hopper_tag)}
                                     </span>
@@ -1519,35 +1754,24 @@ export default function TolvaAssistantManager({
 
                                 <select
                                     value={newAssignData.assistant_name}
-                                    onChange={(e) => {
-                                        const name = e.target.value;
-                                        const matched = assistantList.find(
-                                            (a) => a.name.toUpperCase() === name.toUpperCase()
-                                        );
-                                        setNewAssignData((prev) => ({
-                                            ...prev,
-                                            assistant_name: name,
-                                            assistant_id: matched?.id || null,
-                                        }));
-                                    }}
+                                    onChange={(e) => handleNewAssignAssistantChange(e.target.value)}
                                     className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs"
                                 >
                                     <option value="">-- Sin Auxiliar (Dejar vacía) --</option>
-                                    {assistantList.map((asst) => {
-                                        const targetWh = (newAssignData.warehouse === "Almacén 04" || newAssignData.warehouse === "Almacén 05") && newAssignData.cubicle
-                                            ? `${newAssignData.warehouse} - ${newAssignData.cubicle}`
-                                            : newAssignData.warehouse;
-                                        const conflict = getAssistantConflict(asst.name, targetWh);
-                                        let label = asst.name;
-                                        if (conflict) {
-                                            label += ` ⚠️ [En uso en ${conflict.warehouse}]`;
-                                        }
-                                        return (
+                                    {assistantList
+                                        .filter((asst) => {
+                                            const targetWh = (newAssignData.warehouse === "Almacén 04" || newAssignData.warehouse === "Almacén 05") && newAssignData.cubicle
+                                                ? `${newAssignData.warehouse} - ${newAssignData.cubicle}`
+                                                : newAssignData.warehouse;
+                                            const conflict = getAssistantConflict(asst.name, targetWh);
+                                            // Si ya está asignado a una tolva, no aparece en la lista
+                                            return !conflict;
+                                        })
+                                        .map((asst) => (
                                             <option key={asst.id || asst.name} value={asst.name}>
-                                                {label}
+                                                {asst.name}
                                             </option>
-                                        );
-                                    })}
+                                        ))}
                                 </select>
 
                                 {newAssignData.assistant_name && (
@@ -1571,6 +1795,40 @@ export default function TolvaAssistantManager({
                                         })()}
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Ensacadoras Operativas Puestas en Automático */}
+                            <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/70 to-blue-50/40 p-3 space-y-2 shadow-2xs">
+                                <div className="flex items-center justify-between flex-wrap gap-1">
+                                    <label className="text-[11px] font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1.5">
+                                        <Settings className="w-3.5 h-3.5 text-indigo-600" />
+                                        Ensacadoras Operativas de la Línea
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div className="bg-white rounded-lg p-2 border border-indigo-100 shadow-2xs">
+                                        <span className="text-[10px] text-gray-400 font-bold block uppercase tracking-wider">
+                                            Ensacadora Izquierda
+                                        </span>
+                                        <span className="text-xs font-black text-indigo-800 font-mono">
+                                            {newAssignData.left_tag}
+                                        </span>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-2 border border-emerald-100 shadow-2xs">
+                                        <span className="text-[10px] text-gray-400 font-bold block uppercase tracking-wider">
+                                            Ensacadora Derecha
+                                        </span>
+                                        <span className="text-xs font-black text-emerald-800 font-mono">
+                                            {newAssignData.right_tag}
+                                        </span>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-500 flex items-center gap-1">
+                                    <span>Línea vinculada:</span>
+                                    <strong className="text-indigo-900 font-bold">
+                                        {newAssignData.hopper_tag} ({getHopperLabel(newAssignData.hopper_tag)})
+                                    </strong>
+                                </p>
                             </div>
 
                             {/* Modal Actions */}
@@ -1686,7 +1944,13 @@ export default function TolvaAssistantManager({
                             {/* Tolva de Línea */}
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                    <span>Tolva de Línea ({assignCompany})</span>
+                                    <span className="flex items-center gap-1.5">
+                                        <span>Tolva de Línea ({assignCompany})</span>
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                            Asignada por almacén
+                                        </span>
+                                    </span>
                                     <span className="text-[10px] text-indigo-600 font-bold">
                                         {getHopperLabel(selectedHopperTag)}
                                     </span>
@@ -1719,25 +1983,27 @@ export default function TolvaAssistantManager({
                                             (a) => a.name.toUpperCase() === name.toUpperCase()
                                         );
                                         setSelectedAssistantId(matched?.id || null);
+                                        const cfg = editingConfig ? findWarehouseConfig(editingConfig.warehouse, editingConfig.cubicle) : null;
+                                        const auto = editingConfig ? getAutomaticBaggingMachines(editingConfig.warehouse, assignCompany) : { left: "", right: "" };
+                                        setSelectedLeftTag(cfg?.left_tag || editingConfig?.left_tag || auto.left);
+                                        setSelectedRightTag(cfg?.right_tag || editingConfig?.right_tag || auto.right);
                                     }}
                                     className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs"
                                 >
                                     <option value="">-- Sin Auxiliar (Dejar vacía) --</option>
-                                    {assistantList.map((asst) => {
-                                        const conflict = getAssistantConflict(
-                                            asst.name,
-                                            editingConfig.warehouse
-                                        );
-                                        let label = asst.name;
-                                        if (conflict) {
-                                            label += ` ⚠️ [En uso en ${conflict.warehouse}]`;
-                                        }
-                                        return (
+                                    {assistantList
+                                        .filter((asst) => {
+                                            const conflict = editingConfig
+                                                ? getAssistantConflict(asst.name, editingConfig.warehouse)
+                                                : null;
+                                            // Si ya está asignado a otra tolva, no aparece en la lista
+                                            return !conflict;
+                                        })
+                                        .map((asst) => (
                                             <option key={asst.id || asst.name} value={asst.name}>
-                                                {label}
+                                                {asst.name}
                                             </option>
-                                        );
-                                    })}
+                                        ))}
                                 </select>
 
                                 {selectedAssistantName && (
@@ -1755,6 +2021,40 @@ export default function TolvaAssistantManager({
                                         )}
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Ensacadoras Operativas Puestas en Automático */}
+                            <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/70 to-blue-50/40 p-3 space-y-2 shadow-2xs">
+                                <div className="flex items-center justify-between flex-wrap gap-1">
+                                    <label className="text-[11px] font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1.5">
+                                        <Settings className="w-3.5 h-3.5 text-indigo-600" />
+                                        Ensacadoras Operativas de la Línea
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div className="bg-white rounded-lg p-2 border border-indigo-100 shadow-2xs">
+                                        <span className="text-[10px] text-gray-400 font-bold block uppercase tracking-wider">
+                                            Ensacadora Izquierda
+                                        </span>
+                                        <span className="text-xs font-black text-indigo-800 font-mono">
+                                            {selectedLeftTag || editingConfig.left_tag || getAutomaticBaggingMachines(editingConfig.warehouse, assignCompany).left}
+                                        </span>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-2 border border-emerald-100 shadow-2xs">
+                                        <span className="text-[10px] text-gray-400 font-bold block uppercase tracking-wider">
+                                            Ensacadora Derecha
+                                        </span>
+                                        <span className="text-xs font-black text-emerald-800 font-mono">
+                                            {selectedRightTag || editingConfig.right_tag || getAutomaticBaggingMachines(editingConfig.warehouse, assignCompany).right}
+                                        </span>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-500 flex items-center gap-1">
+                                    <span>Línea vinculada:</span>
+                                    <strong className="text-indigo-900 font-bold">
+                                        {selectedHopperTag} ({getHopperLabel(selectedHopperTag)})
+                                    </strong>
+                                </p>
                             </div>
 
                             {/* Botón rápido para limpiar asignación */}

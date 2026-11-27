@@ -125,8 +125,10 @@ export default function StowagePlanModal({
             setStowages(Array(24).fill(""));
         }
 
-        setAdjustment(plan.adjustment !== undefined ? String(plan.adjustment) : "");
-        setJustification(plan.justification !== undefined ? String(plan.justification) : "");
+        const cleanAdj = plan.adjustment !== undefined && plan.adjustment !== null && String(plan.adjustment) !== "null" ? String(plan.adjustment) : "";
+        const cleanJust = plan.justification !== undefined && plan.justification !== null && String(plan.justification) !== "null" ? String(plan.justification) : "";
+        setAdjustment(cleanAdj);
+        setJustification(cleanJust);
         setVerifier(plan.verifier !== undefined ? String(plan.verifier) : "");
         setLine1(plan.line_1 !== undefined ? String(plan.line_1) : "");
         setLine2(plan.line_2 !== undefined ? String(plan.line_2) : "");
@@ -374,13 +376,13 @@ export default function StowagePlanModal({
                             Se guardará el ajuste de estiba y la unidad <b>${safeOrder.folio}</b> regresará a <b>Báscula</b> para verificar su peso.
                         </p>
                         <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 0.6rem; padding: 0.6rem; font-family: monospace; font-size: 0.82rem; line-height: 1.4; color: #78350f; margin-bottom: 0.75rem;">
-                            <div><b>Ajuste Aplicado:</b> ${adjustment || "0"} sacos</div>
-                            <div><b>Justificación:</b> ${justification || "Sin justificación"}</div>
+                            ${(adjustment && adjustment !== "null") ? `<div><b>Ajuste Aplicado:</b> ${adjustment} sacos</div>` : "<div><b>Estado:</b> Ajuste de peso realizado en almacén</div>"}
+                            ${(justification && justification !== "null") ? `<div><b>Justificación:</b> ${justification}</div>` : ""}
                         </div>
                         <label style="display: block; font-weight: bold; font-size: 0.82rem; margin-bottom: 0.3rem; color: #1f2937;">
                             Observación para el Registro de Incidencias (Obligatorio):
                         </label>
-                        <textarea id="adjustment_resolution_notes" class="swal2-textarea" style="margin: 0; width: 100%; box-sizing: border-box; font-size: 0.85rem; border-radius: 0.5rem; height: 80px;" placeholder="Ej. Se ajustaron ${adjustment || 0} sacos por sobrepeso. Unidad regresa a verificar peso en báscula...">${justification ? `Ajuste de ${adjustment || 0} sacos: ${justification}. Unidad regresa a verificar peso a báscula.` : `Ajuste de ${adjustment || 0} sacos realizado. Unidad regresa a verificar peso a báscula.`}</textarea>
+                        <textarea id="adjustment_resolution_notes" class="swal2-textarea" style="margin: 0; width: 100%; box-sizing: border-box; font-size: 0.85rem; border-radius: 0.5rem; height: 80px;" placeholder="Ej. Se ajustaron estibas por peso en báscula. Unidad regresa a verificar peso en báscula...">${(justification && justification !== "null") ? `Ajuste de ${(adjustment && adjustment !== "null") ? adjustment : 0} sacos: ${justification}. Unidad regresa a verificar peso a báscula.` : "Ajuste de estiba/peso completado. Unidad regresa a verificar peso a báscula."}</textarea>
                     </div>
                 `,
                 icon: "info",

@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
     <meta name="google" content="notranslate">
     <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -47,7 +47,7 @@
                 $bladeBasePath = ($requestHost !== 'localhost' && $requestHost !== '127.0.0.1' && $configuredHost === 'localhost') ? '' : $configuredPath;
             ?>
             const basePath = <?php echo json_encode($bladeBasePath, 15, 512) ?>;
-            const applicationPaths = /^(dashboard|sales|traffic|surveillance|documentation|scale|dock|apt|admin|clients|profile|login)(\/|$)/;
+            const applicationPaths = /^(dashboard|sales|traffic|surveillance|documentation|scale|dock|apt|admin|clients|profile|login|production|quality)(\/|$)/;
 
             const normalizeLinks = () => {
                 document.querySelectorAll('a[href]').forEach((link) => {
@@ -138,7 +138,7 @@
 
                 const submodules = allSubmodules;
 
-                content.innerHTML = `<div class="max-w-7xl mx-auto sm:px-6 lg:px-8" data-production-page="true"><div class="mb-8"><a href="${aptPath}" class="inline-flex items-center text-gray-500 hover:text-emerald-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium mb-5">&larr; Volver al menú APT</a><h2 class="text-3xl font-bold text-gray-900 mb-2">Gestión de almacenes</h2><p class="text-gray-600">Selecciona un submódulo para continuar.</p></div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">${submodules.map(([name, description, href, icon, color, hover]) => `<a href="${basePath}${href}" class="group bg-white rounded-xl shadow-md border-2 border-transparent p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${hover}"><div class="w-20 h-20 rounded-full flex items-center justify-center mb-6 text-3xl transition-transform group-hover:scale-110 ${color}"><i class="fa-solid ${icon}"></i></div><h3 class="text-xl font-bold text-gray-800 break-words w-full">${name}</h3><p class="text-gray-500 mt-2 text-sm">${description}</p></a>`).join('')}</div></div>`;
+                content.innerHTML = `<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" data-production-page="true"><div class="mb-6 sm:mb-8"><a href="${aptPath}" class="inline-flex items-center text-gray-500 hover:text-emerald-600 transition-colors bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm text-sm font-medium mb-4 sm:mb-5">&larr; Volver al menú APT</a><h2 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Gestión de almacenes</h2><p class="text-gray-600 text-sm sm:text-base">Selecciona un submódulo para continuar.</p></div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">${submodules.map(([name, description, href, icon, color, hover]) => `<a href="${basePath}${href}" class="group bg-white rounded-xl shadow-md border-2 border-transparent p-5 sm:p-8 flex flex-col items-center justify-center text-center transition-all duration-300 hover:shadow-xl ${hover}"><div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mb-4 sm:mb-6 text-2xl sm:text-3xl transition-transform group-hover:scale-110 ${color}"><i class="fa-solid ${icon}"></i></div><h3 class="text-lg sm:text-xl font-bold text-gray-800 break-words w-full">${name}</h3><p class="text-gray-500 mt-2 text-xs sm:text-sm">${description}</p></a>`).join('')}</div></div>`;
                 normalizeLinks();
             };
 
@@ -249,11 +249,40 @@
         .sidebar-container * {
             cursor: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAICSURBVGhD7ddLqM5BGMdx1yTHbSVZqkOWCiskha0sTrJxWRBR2BAi5JJbyUZyj+ycs1C27pedlJWFJJdS7krRR0+eU2/TKTv//8l86635PzPz9DzvzPObmSFDKpVKpVKpVCr/LxiDkaV90IDduIlLmI6uckyrwVk8ww38xHZMLMe1FhxAL47iFS7gI9aUY1sJduILHkfQeIPvuRI9mFDOaRWYimO4jrV4i3N44A+95ZwAw0tbI0Qg+JrBvsd5bMnvH9iHJZic42fldmuHcmEYdmRQ8VuPhZnAaVzJ9l10Z7JHSj+Ng/sZaBDF/BQHO2yn0JftjZiDoaWfRsBovEwZvYbLmI/FGfAnrMOv/N6D13iC5bGKpc9/Tm6PlbiKh5nEslSkUKjDGXxwAo+yHXWytRWrgZMdQfZzO8+GWJl+bmEu5mESxpW+GiH/8TtZuHFCx56PAh+Bex0JfMaocn7jYBr25jaKcyES2Y8Z2NQht8HMcn5jxN0HZzqCG4iLWJFyGswu/TQGpmAVNqT2Py+C7yeUanUm0136aZw81EJ9NuNQ3osGoqec2wqiMLNAg0W5tUIiQ3UimXd58YvzoD010Emq0AeMLexdYctHzze8wPjOMa0Au+KNUNo7wdJcpb6yr3Fy2/z1DYDjmcS2sm9QEFeHlN4FZV+lUqlUKpVK5T/hN9f6MFBO/5D0AAAAAElFTkSuQmCC') 4 4, pointer !important;
         }
+
+        @media (hover: none) and (pointer: coarse) {
+            html, body, *, *::before, *::after {
+                cursor: auto !important;
+            }
+            a, a *, button, button *, input, select, textarea, [role="button"], [role="button"] *, label, .cursor-pointer, .sidebar-container, .sidebar-container * {
+                cursor: pointer !important;
+            }
+        }
     </style>
 
     <!-- Scripts -->
     <?php echo app('Tighten\Ziggy\BladeRouteGenerator')->generate(); ?>
-    <!-- Cache Buster: v=4.3-stowage-admin-flow -->
+    <!-- Cache Buster: v=4.7-ammonia-workflow -->
+    <script>
+        (function () {
+            try {
+                var BUNDLE_VER = 'v12.9-llenaderas-lock-percentage-when-not-loading';
+                if (window.localStorage && localStorage.getItem('proagro_bundle_ver') !== BUNDLE_VER) {
+                    var base = window.location.pathname.indexOf('/Proagroindustria2') !== -1 ? '/Proagroindustria2' : '';
+                    var assets = [
+                        base + '/build/assets/app-D5q4ghAA.js',
+                        base + '/build/assets/ShipmentProcess-O7ZvcmX0.js',
+                    ];
+                    Promise.all(assets.map(function (u) {
+                        return fetch(u, { cache: 'reload' }).catch(function () {});
+                    })).then(function () {
+                        localStorage.setItem('proagro_bundle_ver', BUNDLE_VER);
+                        window.location.reload();
+                    });
+                }
+            } catch (e) {}
+        })();
+    </script>
     <?php echo app('Illuminate\Foundation\Vite')->reactRefresh(); ?>
     <?php echo app('Illuminate\Foundation\Vite')('resources/js/app.tsx'); ?>
     <?php if (!isset($__inertiaSsrDispatched)) { $__inertiaSsrDispatched = true; $__inertiaSsrResponse = app(\Inertia\Ssr\Gateway::class)->dispatch($page); }  if ($__inertiaSsrResponse) { echo $__inertiaSsrResponse->head; } ?>

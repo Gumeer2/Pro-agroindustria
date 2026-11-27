@@ -181,6 +181,14 @@ class UreaStockService
             ->orderBy('id', 'desc')
             ->get();
 
+        $ticketCountsBySo = [];
+        foreach ($tickets as $t) {
+            $tSoId = $t->shipment_order_id ?? $t->loadingOrder?->shipment_order_id;
+            if ($tSoId) {
+                $ticketCountsBySo[(string) $tSoId] = ($ticketCountsBySo[(string) $tSoId] ?? 0) + 1;
+            }
+        }
+
         foreach ($tickets as $ticket) {
             $lo = $ticket->loadingOrder;
             $so = $ticket->shipmentOrder ?? $lo?->shipment_order;
@@ -247,8 +255,13 @@ class UreaStockService
                 }
             }
 
-            // Regla: En granel tomar el peso neto; en envasado tomar el peso programado
-            if ($isEnvasado && $programmedTons !== null && $programmedTons > 0) {
+            // Regla: En granel tomar el peso neto; en envasado tomar el peso programado (salvo que la OE se haya dividido en 2 tickets por cambio de lote/almacén, en cuyo caso cada ticket descuenta su peso neto real de su respectivo almacén/lote)
+            $soTicketCount = ($so && isset($ticketCountsBySo[(string) $so->id])) ? $ticketCountsBySo[(string) $so->id] : 1;
+            $rawSoPlan = $so?->stowage_plan;
+            $soPlanArr = is_string($rawSoPlan) ? (json_decode($rawSoPlan, true) ?: []) : (is_array($rawSoPlan) ? $rawSoPlan : []);
+            $isSplitLotOrder = $soTicketCount > 1 || !empty($soPlanArr['second_lot_status']);
+
+            if ($isEnvasado && !$isSplitLotOrder && $programmedTons !== null && $programmedTons > 0) {
                 $finalTons = $programmedTons;
                 $weightType = 'programado';
             } else {

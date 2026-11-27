@@ -122,6 +122,62 @@ class SurveillanceController extends Controller
     }
 
     /**
+     * Determine if a ShipmentOrder belongs to the Ammonia (Amoníaco) workflow.
+     */
+    private function isAmmoniaOrder(?ShipmentOrder $order): bool
+    {
+        if (!$order) {
+            return false;
+        }
+
+        $folio = strtoupper(trim((string) ($order->folio ?? '')));
+        if ($folio !== '' && (preg_match('/^PA\d{4}-AMO-\d+/i', $folio) || str_contains($folio, '-AMO-'))) {
+            return true;
+        }
+
+        $prodText = mb_strtoupper(trim((string) (is_string($order->product) ? $order->product : ($order->product?->name ?? ''))), 'UTF-8');
+        if ($prodText !== '' && (
+            str_contains($prodText, 'AMONIACO') || 
+            str_contains($prodText, 'AMONÍACO') || 
+            str_contains($prodText, 'NH3') ||
+            str_contains($prodText, 'SERVICIO DE CARGA')
+        )) {
+            return true;
+        }
+
+        $soFolio = strtoupper(trim((string) ($order->sales_order?->folio ?? '')));
+        if ($soFolio !== '' && (str_starts_with($soFolio, 'OV-AMO') || str_contains($soFolio, '-AMO'))) {
+            return true;
+        }
+
+        $soProd = mb_strtoupper(trim((string) ($order->sales_order?->product?->name ?? '')), 'UTF-8');
+        if ($soProd !== '' && (
+            str_contains($soProd, 'AMONIACO') || 
+            str_contains($soProd, 'AMONÍACO') || 
+            str_contains($soProd, 'NH3') ||
+            str_contains($soProd, 'SERVICIO DE CARGA')
+        )) {
+            return true;
+        }
+
+        if ($order->relationLoaded('items') && $order->items) {
+            foreach ($order->items as $item) {
+                $itemProd = mb_strtoupper(trim((string) ($item->product?->name ?? '')), 'UTF-8');
+                if ($itemProd !== '' && (
+                    str_contains($itemProd, 'AMONIACO') || 
+                    str_contains($itemProd, 'AMONÍACO') || 
+                    str_contains($itemProd, 'NH3') ||
+                    str_contains($itemProd, 'SERVICIO DE CARGA')
+                )) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Submodule 2: Salidas de Operadores (En Planta, Vincular Órdenes y Dar Salida)
      */
     /**
@@ -246,6 +302,64 @@ class SurveillanceController extends Controller
      */
     public function exitsIndex()
     {
+        // Para órdenes de Amoniaco (PA2026-AMO-...) que no pasan a Vigilancia al entrar pero ya pasaron por Tara en Báscula,
+        // asegurar que cuenten con su registro in_plant en AccessLog para poder darles Salida al finalizar su Destare.
+        $ammoniaOrdersInPlant = ShipmentOrder::whereNotIn('status', ['cancelled', 'closed'])
+            ->where(function ($q) {
+                $q->where('folio', 'like', 'PA%-AMO-%')
+                  ->orWhere('product', 'like', '%AMON%')
+                  ->orWhere('product', 'like', '%SERVICIO DE CARGA%');
+            })
+            ->where(function ($q) {
+                $q->whereHas('weight_ticket', fn($w) => $w->where('weighing_status', '!=', 'cancelled'))
+                  ->orWhereHas('loadingOrders.weight_ticket', fn($w) => $w->where('weighing_status', '!=', 'cancelled'));
+            })
+            ->whereDoesntHave('accessLogs', function ($q) {
+                $q->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at');
+            })
+            ->with(['weight_ticket', 'loadingOrders.weight_ticket'])
+            ->get();
+
+        foreach ($ammoniaOrdersInPlant as $amoOrder) {
+            if (!empty($amoOrder->operator_name)) {
+                $opSubject = ExitOperator::firstOrCreate(
+                    ['name' => $amoOrder->operator_name],
+                    [
+                        'tractor_plate' => $amoOrder->tractor_plate ?? 'S/P',
+                        'trailer_plate' => $amoOrder->trailer_plate ?? 'S/P',
+                        'economic_number' => $amoOrder->economic_number ?? $amoOrder->unit_number ?? 'S/N',
+                        'transport_line' => $amoOrder->transport_company ?? 'N/A',
+                        'license' => $amoOrder->license_number ?? 'N/A',
+                        'status' => 'active',
+                    ]
+                );
+                $ticket = $this->resolveOrderTicket($amoOrder);
+                $entryAt = $ticket?->weigh_in_at ?? $amoOrder->created_at ?? Carbon::now();
+
+                $existingLog = AccessLog::where('status', 'in_plant')
+                    ->whereNull('exit_at')
+                    ->where('subject_id', $opSubject->id)
+                    ->where('subject_type', 'App\Models\ExitOperator')
+                    ->latest('id')
+                    ->first();
+
+                if ($existingLog) {
+                    $existingLog->shipmentOrders()->syncWithoutDetaching([$amoOrder->id]);
+                } else {
+                    $newLog = AccessLog::create([
+                        'subject_id' => $opSubject->id,
+                        'subject_type' => 'App\Models\ExitOperator',
+                        'status' => 'in_plant',
+                        'entry_at' => $entryAt,
+                        'checklist_passed' => true,
+                        'user_id' => auth()->id(),
+                        'notes' => "Ingreso por Báscula (Proceso Amoniaco) - OE {$amoOrder->folio}",
+                    ]);
+                    $newLog->shipmentOrders()->sync([$amoOrder->id]);
+                }
+            }
+        }
+
         $this->consolidateInPlantOperatorLogs();
 
         $logs = AccessLog::with([
@@ -352,12 +466,27 @@ class SurveillanceController extends Controller
 
         $unenteredOrders = ShipmentOrder::with(['client', 'items.product', 'origin'])
             ->whereNotIn('status', ['cancelled', 'closed', 'completed'])
+            ->where('folio', 'not like', '%-AMO-%')
+            ->where('folio', 'not like', 'AMO-%')
+            ->where(function ($q) {
+                $q->whereNull('product')
+                  ->orWhere(function ($p) {
+                      $p->where('product', 'not like', '%AMON%')
+                        ->where('product', 'not like', '%NH3%')
+                        ->where('product', 'not like', '%SERVICIO DE CARGA%');
+                  });
+            })
             ->whereDoesntHave('accessLogs', function ($q) {
                 $q->where('access_logs.status', 'in_plant')->whereNull('access_logs.exit_at');
             })
             ->orderBy('created_at', 'desc')
             ->get()
             ->filter(function ($order) use ($knownOpNames, $knownPlates) {
+                // Las órdenes de Amoníaco no entran a la cola de "Por Ingresar" de Vigilancia;
+                // solo deben aparecer una vez que sean escaneadas / ingresadas con AccessLog
+                if ($this->isAmmoniaOrder($order)) {
+                    return false;
+                }
                 $op = strtoupper(trim($order->operator_name ?? ''));
                 $plate = strtoupper(trim($order->tractor_plate ?? ''));
                 if (!empty($op) && in_array($op, $knownOpNames)) return false;
@@ -1605,9 +1734,32 @@ class SurveillanceController extends Controller
             ])
             ->first();
 
+        // Si no se encontró por coincidencia exacta y parece folio de Amoniaco (o búsqueda parcial AMO), buscar con LIKE
+        if (!$order && (str_contains(strtoupper($code), 'AMO') || preg_match('/^\d+$/', $code))) {
+            $order = ShipmentOrder::where('folio', 'like', "%{$code}%")
+                ->where(function ($q) {
+                    $q->where('folio', 'like', 'PA%-AMO-%')
+                      ->orWhere('product', 'like', '%AMON%')
+                      ->orWhere('product', 'like', '%SERVICIO DE CARGA%');
+                })
+                ->with([
+                    'client',
+                    'items.product',
+                    'origin',
+                    'loadingOrders.exit_operator',
+                    'loadingOrders.vessel_operator',
+                    'loadingOrders.weight_ticket',
+                    'weight_ticket',
+                ])
+                ->latest('id')
+                ->first();
+        }
+
         if (!$order) {
             return response()->json(['error' => "No se encontró ninguna orden de embarque con el folio '{$raw}'. Ingrese el folio completo de la orden (ej. PA2026-0031) o escanee el código QR."], 404);
         }
+
+        $isAmmonia = $this->isAmmoniaOrder($order);
 
         // Validate that order is NOT cancelled
         if ($order->status === 'cancelled') {
@@ -1672,6 +1824,25 @@ class SurveillanceController extends Controller
         if (!$subject && !empty($order->operator_name)) {
             $subject = ExitOperator::firstOrCreate(
                 ['name' => $order->operator_name],
+                [
+                    'tractor_plate'   => $order->tractor_plate ?? 'S/P',
+                    'trailer_plate'   => $order->trailer_plate ?? 'S/P',
+                    'economic_number' => $order->economic_number ?? $order->unit_number ?? 'S/N',
+                    'transport_line'  => $order->transport_company ?? $order->transporter_line ?? 'N/A',
+                    'license'         => $order->license_number ?? 'N/A',
+                    'status'          => 'active',
+                ]
+            );
+        }
+
+        // 5. Fallback exclusivo para Amoniaco si aún no hay operador asignado, para que nunca se bloquee el escaneo
+        if (!$subject && $isAmmonia) {
+            $fallbackName = !empty($order->operator_name)
+                ? $order->operator_name
+                : (!empty($order->tractor_plate) ? "OPERADOR AMONIACO ({$order->tractor_plate})" : "OPERADOR AMONIACO {$order->folio}");
+
+            $subject = ExitOperator::firstOrCreate(
+                ['name' => $fallbackName],
                 [
                     'tractor_plate'   => $order->tractor_plate ?? 'S/P',
                     'trailer_plate'   => $order->trailer_plate ?? 'S/P',
@@ -1846,6 +2017,7 @@ class SurveillanceController extends Controller
         ]);
 
         $order = ShipmentOrder::with(['weight_ticket', 'loadingOrders.weight_ticket'])->findOrFail($request->order_id);
+        $isAmmonia = $this->isAmmoniaOrder($order);
 
         if ($order->status === 'cancelled') {
             return response()->json(['error' => "La orden de embarque '{$order->folio}' se encuentra cancelada."], 422);
@@ -1855,7 +2027,7 @@ class SurveillanceController extends Controller
             return response()->json(['error' => "La orden de embarque '{$order->folio}' ya fue destarada / completada."], 422);
         }
 
-        // Validate that order is NOT already inside plant
+        // Validate that order is NOT already inside plant (para Amoniaco se permite registrar/confirmar entrada)
         $existingInPlantLog = AccessLog::where('status', 'in_plant')
             ->whereNull('exit_at')
             ->whereHas('shipmentOrders', function ($q) use ($order) {
@@ -1896,6 +2068,25 @@ class SurveillanceController extends Controller
         if (!$subject && !empty($order->operator_name)) {
             $subject = ExitOperator::firstOrCreate(
                 ['name' => $order->operator_name],
+                [
+                    'tractor_plate'   => $order->tractor_plate ?? 'S/P',
+                    'trailer_plate'   => $order->trailer_plate ?? 'S/P',
+                    'economic_number' => $order->economic_number ?? $order->unit_number ?? 'S/N',
+                    'transport_line'  => $order->transport_company ?? $order->transporter_line ?? 'N/A',
+                    'license'         => $order->license_number ?? 'N/A',
+                    'status'          => 'active',
+                ]
+            );
+        }
+
+        // Fallback exclusivo para Amoniaco si aún no hay operador asignado
+        if (!$subject && $isAmmonia) {
+            $fallbackName = !empty($order->operator_name)
+                ? $order->operator_name
+                : (!empty($order->tractor_plate) ? "OPERADOR AMONIACO ({$order->tractor_plate})" : "OPERADOR AMONIACO {$order->folio}");
+
+            $subject = ExitOperator::firstOrCreate(
+                ['name' => $fallbackName],
                 [
                     'tractor_plate'   => $order->tractor_plate ?? 'S/P',
                     'trailer_plate'   => $order->trailer_plate ?? 'S/P',

@@ -25,6 +25,20 @@ class VerifierController extends Controller
         return response()->json($verifier, 201);
     }
 
+    public function destroy($id)
+    {
+        $this->ensureTablesExist();
+        $verifier = Verifier::find($id);
+        if (!$verifier) {
+            $verifier = Verifier::where('name', $id)->first();
+        }
+        if ($verifier) {
+            $verifier->delete();
+            return response()->json(['success' => true, 'message' => 'Verificador eliminado correctamente.']);
+        }
+        return response()->json(['success' => false, 'message' => 'Verificador no encontrado.'], 404);
+    }
+
     private function ensureTablesExist(): void
     {
         if (!Schema::hasTable('verifiers')) {

@@ -146,8 +146,8 @@ export default function ProductsHub({
     );
 
     return (
-        <DashboardLayout user={auth?.user} header="Entrada y Salida de Productos">
-            <Head title="Entrada y Salida de Productos" />
+        <DashboardLayout user={auth?.user} header="Entrada y Salida de Insumos">
+            <Head title="Entrada y Salida de Insumos" />
 
             <div className="py-8 max-w-[96%] mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Top Navigation & Header */}
@@ -166,7 +166,7 @@ export default function ProductsHub({
                             </div>
                             <div>
                                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
-                                    Entrada y Salida de Productos
+                                    Entrada y Salida de Insumos
                                     <span className="text-xs bg-blue-100 text-blue-800 font-semibold px-2.5 py-0.5 rounded-full border border-blue-200">
                                         3 Submódulos
                                     </span>
@@ -199,7 +199,7 @@ export default function ProductsHub({
                         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                                    Total Productos
+                                    Total de Insumos
                                 </span>
                                 <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
                                     <Boxes className="w-5 h-5" />

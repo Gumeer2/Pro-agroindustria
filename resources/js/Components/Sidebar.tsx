@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship, Building2, Layers, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Truck, Scale, Users, Settings, Package, ClipboardList, LogOut, Box, FileText, Anchor, Search, Ship, Building2, Layers, ShieldCheck, Factory } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -37,6 +37,7 @@ export function Sidebar({ className, isMobile = false, onClose }: SidebarProps) 
         { name: 'Báscula', href: route('scale.index'), icon: Scale, permission: 'view scale', module: 'scale', color: 'text-teal-400' },
         { name: 'Muelle', href: route('dock.index'), icon: Ship, permission: 'view dock', module: 'dock', color: 'text-cyan-400' },
         { name: 'APT', href: route('apt.index'), icon: Box, permission: 'view apt', module: 'apt', color: 'text-purple-400' },
+        { name: 'Producción', href: route('production.index'), icon: Factory, show: !isClientRole && !isEstibadorRole, module: 'production', color: 'text-amber-400' },
         { name: 'Calidad', href: route('quality.index'), icon: ShieldCheck, show: !isClientRole && !isEstibadorRole, module: 'quality', color: 'text-teal-400' },
         { name: 'Clientes', href: route('clients.index'), icon: Building2, permission: ['view commercialization', 'view documentation'], role: ['Admin', 'Clientes'], module: 'clients', color: 'text-rose-400' },
         { name: 'Estibadores', href: route('apt.estibadores'), icon: Layers, permission: ['view apt', 'manage shipments', 'view estibadores'], role: ['Admin', 'admin', 'Estibadores', 'estibadores', 'Estibador', 'estibador', 'Almacen', 'almacen', 'Jefe de Almacen'], module: 'estibadores', color: 'text-emerald-400' },
@@ -120,13 +121,15 @@ export function Sidebar({ className, isMobile = false, onClose }: SidebarProps) 
                             // Accurate highlighting: prioritize context_module, then check URL sub-paths
                             const isActive = currentModule
                                 ? currentModule === link.module
-                                : (link.module === 'quality'
-                                    ? (url.includes('/quality'))
-                                    : (link.module === 'estibadores'
-                                        ? (url.includes('estibadores'))
-                                        : (link.module === 'apt'
-                                            ? (url.includes('/apt') && !url.includes('estibadores'))
-                                            : (url.startsWith(link.href) || (link.href === route('dashboard') && (url === route('dashboard') || url.endsWith('/dashboard')))))));
+                                : link.module === 'quality'
+                                    ? url.includes('/quality')
+                                    : link.module === 'production'
+                                        ? url.includes('/production')
+                                        : link.module === 'estibadores'
+                                            ? url.includes('estibadores')
+                                            : link.module === 'apt'
+                                                ? (url.includes('/apt') && !url.includes('estibadores'))
+                                                : (url.startsWith(link.href) || (link.href === route('dashboard') && (url === route('dashboard') || url.endsWith('/dashboard'))));
                             return (
                                 <Link
                                     key={link.href}

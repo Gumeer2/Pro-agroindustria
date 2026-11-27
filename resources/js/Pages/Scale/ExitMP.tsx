@@ -155,6 +155,13 @@ export default function ExitMP({
     const isVessel = order?.type === 'vessel' || !!order?.vessel_id;
     const vesselOp = (order?.vessel_operation_type || 'Descarga').toLowerCase();
     const isVesselDischarge = isVessel && vesselOp === 'descarga';
+    const isAmmoniaOrder = Boolean(
+        order?.is_ammonia ||
+        String(order?.oe_folio || order?.folio || "").toUpperCase().includes("-AMO-") ||
+        String(order?.product || "").toUpperCase().includes("AMON") ||
+        String(order?.product || "").toUpperCase().includes("NH3") ||
+        String(order?.product || "").toUpperCase().includes("SERVICIO DE CARGA")
+    );
 
     const initialScaleId = typeof window !== 'undefined' && localStorage.getItem("selected_scale_id")
         ? parseInt(localStorage.getItem("selected_scale_id")!)
@@ -176,6 +183,7 @@ export default function ExitMP({
         observations: (order?.type === 'sale' ? (order?.observations || "") : ""),
         reference: order?.reference || "",
         documenter_id: "",
+        continue_in_another_lot: false,
     });
 
     const availablePackagingTypes = Array.from(
@@ -256,7 +264,7 @@ export default function ExitMP({
     };
 
     const toleranceLimits = useMemo(() => {
-        if (!order) return null;
+        if (!order || isAmmoniaOrder) return null;
 
         const progWeightRaw = parseFloat(order.programmed_weight || order.programmed_tons) || 0;
         if (progWeightRaw <= 0) return null;
@@ -309,16 +317,8 @@ export default function ExitMP({
                 sackSize,
             };
         } else {
-            // GRANEL u otra presentación: +- 1% o +- 50 kg de tolerancia estándar
-            const margin = Math.max(50, progKg * 0.01);
-            return {
-                minKg: Math.round(progKg - margin),
-                maxKg: Math.round(progKg + margin),
-                idealKg: progKg,
-                progKg,
-                isEnvasado: false,
-                sackSize: null,
-            };
+            // Solo aplica rango de tolerancia oficial para órdenes de producto ENVASADO
+            return null;
         }
     }, [order]);
 
@@ -334,7 +334,9 @@ export default function ExitMP({
         }
 
         // --- ALERTA: Si el peso está fuera del límite de rango al presionar Capturar ---
-        if (toleranceLimits) {
+        // Únicamente debe alertar si la orden de embarque es de producto ENVASADO (y NO es Amoniaco)
+        const isEnvasado = !isAmmoniaOrder && (order?.presentation || "").toUpperCase().trim() === "ENVASADO";
+        if (!isAmmoniaOrder && isEnvasado && toleranceLimits && toleranceLimits.isEnvasado) {
             const currentNet = Math.abs(weight - (parseFloat(order?.entry_weight) || 0));
             const isOutOfRange = currentNet < toleranceLimits.minKg || currentNet > toleranceLimits.maxKg;
 
@@ -355,12 +357,14 @@ export default function ExitMP({
                             </div>
                         </div>
                     `,
-                    showCancelButton: false,
+                    showCancelButton: true,
                     showDenyButton: true,
                     confirmButtonText: 'Sí, continuar y capturar',
-                    denyButtonText: 'Ajuste de Peso',
+                    denyButtonText: 'Ajuste de Peso (Regresar a APT)',
+                    cancelButtonText: 'Cancelar / Verificar',
                     confirmButtonColor: '#4f46e5',
                     denyButtonColor: '#d97706',
+                    cancelButtonColor: '#6b7280',
                 });
 
                 if (result.isDenied) {
@@ -394,7 +398,7 @@ export default function ExitMP({
         let diffText = "";
         let diffHtml = "";
 
-        if (toleranceLimits && currentNet > 0) {
+        if (toleranceLimits && toleranceLimits.isEnvasado && currentNet > 0) {
             if (currentNet < toleranceLimits.minKg) {
                 const diff = toleranceLimits.minKg - currentNet;
                 diffText = `Faltan ${diff.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg (por debajo de tolerancia)`;
@@ -476,7 +480,12 @@ export default function ExitMP({
                 confirmButtonText: 'Aceptar',
             });
 
-            router.visit(route('scale.index', { scale_id: active_scale_id, view: 'table', tab: 'sale' }));
+            const targetId = order.oe_folio || order.folio || order.shipment_order_id || order.id;
+            const aptUrl = route('apt.shipment-process', {
+                from: 'production',
+                openAdjustment: targetId
+            });
+            window.location.href = aptUrl;
         } catch (error: any) {
             console.error("Error al regresar orden para ajuste:", error);
             const msg = error.response?.data?.message || 'Ocurrió un error al regresar la unidad a APT.';
@@ -693,6 +702,26 @@ export default function ExitMP({
     const currentWeight = capturedWeight !== null ? capturedWeight : (weight > 0 ? weight : 0);
     const entryWeight = parseFloat(order.entry_weight) || 0;
     const netWeight = Math.abs(currentWeight - entryWeight);
+    const netWeightTons = netWeight >= 100 ? netWeight / 1000 : netWeight;
+    const totalProgTons = parseFloat(order?.original_programmed_tons || order?.programmed_weight || order?.programmed_tons || 0) || 0;
+    const currentTicketTargetTons = parseFloat(order?.programmed_weight || order?.programmed_tons || totalProgTons || 0) || 0;
+    const splitLotRound = Number(order?.split_lot_round || (order?.is_second_lot_ticket ? 2 : 1));
+    const isThirdLotTicket = Boolean(order?.is_third_lot_ticket || splitLotRound >= 3);
+    const isGranelOrder = !isAmmoniaOrder && String(order?.presentation || "GRANEL").toUpperCase().trim() === "GRANEL";
+    const hasValidCapturedWeight = capturedWeight !== null && capturedWeight > 0 && capturedWeight > entryWeight;
+    const canContinueInAnotherLot = Boolean(
+        hasValidCapturedWeight &&
+        order?.type === 'sale' &&
+        !isAmmoniaOrder &&
+        !isThirdLotTicket &&
+        netWeight > 0 &&
+        (isGranelOrder || (currentTicketTargetTons > 0 && netWeightTons < currentTicketTargetTons))
+    );
+    const pendingTonsForNextLot = canContinueInAnotherLot
+        ? Math.max(0, Number((currentTicketTargetTons - netWeightTons).toFixed(3)))
+        : 0;
+    const nextLotOrdinalLabel = order?.is_second_lot_ticket ? "3ra Tara y Destare en 3er Lote" : "2da Tara y Destare en Otro Lote";
+    const currentTicketOrdinalLabel = order?.is_second_lot_ticket ? "2do Ticket" : "1er Ticket";
 
     const isDynamicReference = order?.is_external_warehouse && order?.has_chief_foreman;
 
@@ -907,6 +936,70 @@ export default function ExitMP({
 
                     {/* RIGHT: Details */}
                     <div className="lg:col-span-8 space-y-6">
+                        {order?.is_second_lot_ticket && (
+                            <div className="bg-indigo-50 border-2 border-indigo-300 rounded-2xl p-4 shadow-sm flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 text-white font-black text-sm">
+                                    {isThirdLotTicket ? "3°" : "2°"}
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <h4 className="font-black text-sm text-indigo-950 uppercase tracking-wide">
+                                            {isThirdLotTicket ? "3er Ticket" : "2do Ticket"} (Completando Toneladas Programadas en Otro Lote)
+                                        </h4>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-200 text-indigo-900 border border-indigo-300">
+                                                1er Ticket ({order.first_ticket_number || "Previo"}): {Number(order.first_ticket_net_tons || 0).toFixed(2)} TM
+                                            </span>
+                                            {isThirdLotTicket && (
+                                                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-200 text-indigo-900 border border-indigo-300">
+                                                    2do Ticket ({order.second_ticket_number || "Previo"}): {Number(order.second_ticket_net_tons || 0).toFixed(2)} TM
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-indigo-800 mt-1">
+                                        <b>Lote Actualizado:</b> {order.lot_folio || "N/A"} • <b>Almacén Actualizado:</b> {order.warehouse || "N/A"} • <b>Restante Programado:</b> {Number(order.programmed_weight || 0).toFixed(2)} TM (de {Number(order.original_programmed_tons || 0).toFixed(2)} TM totales).
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {canContinueInAnotherLot && (
+                            <div className={`rounded-2xl p-4 shadow-sm border-2 transition-all ${data.continue_in_another_lot ? "bg-amber-50 border-amber-400 ring-2 ring-amber-300/50" : "bg-slate-50 border-slate-200"}`}>
+                                <label className="flex items-start gap-3 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(data.continue_in_another_lot)}
+                                        onChange={(e) => setData("continue_in_another_lot", e.target.checked)}
+                                        className="mt-1 w-5 h-5 rounded border-amber-400 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="flex items-center justify-between flex-wrap gap-2">
+                                            <span className="font-black text-sm text-amber-950 uppercase tracking-wide">
+                                                Habilitar {nextLotOrdinalLabel} {!isGranelOrder && "(No alcanzó toneladas programadas)"}
+                                            </span>
+                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-200 text-amber-950 border border-amber-300">
+                                                {pendingTonsForNextLot > 0
+                                                    ? `Cargado: ${netWeightTons.toFixed(2)} TM / Restante: ${currentTicketTargetTons.toFixed(2)} TM (Faltan ${pendingTonsForNextLot.toFixed(2)} TM)`
+                                                    : `Cargado: ${netWeightTons.toFixed(2)} TM / Programado: ${currentTicketTargetTons.toFixed(2)} TM`}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-amber-900 mt-1">
+                                            {pendingTonsForNextLot > 0 ? (
+                                                <>
+                                                    Al activar esta opción, se generará el <b>{currentTicketOrdinalLabel}</b> normalmente por <b>{netWeightTons.toFixed(2)} TM</b> y la Orden de Embarque quedará habilitada para volver a <b>tarar y destarar las {pendingTonsForNextLot.toFixed(2)} TM restantes en otro lote/almacén</b>.
+                                                </>
+                                            ) : (
+                                                <>
+                                                    Al activar esta opción, se generará el <b>{currentTicketOrdinalLabel}</b> normalmente por <b>{netWeightTons.toFixed(2)} TM</b> y la Orden de Embarque quedará habilitada para volver a <b>tarar y destarar en otro lote/almacén</b>.
+                                                </>
+                                            )}
+                                        </p>
+                                    </div>
+                                </label>
+                            </div>
+                        )}
+
                         {order?.weight_adjustment_status === 'adjusted' && (
                             <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 shadow-sm flex items-start gap-3">
                                 <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-700">
@@ -1059,69 +1152,73 @@ export default function ExitMP({
                                     </div>
                                 )}
 
-                                {/* New Dropdowns: LOTE, ALMACÉN, ENVASE, DOCUMENTADOR — Ocultar si es Descarga de Barco */}
+                                {/* New Dropdowns: LOTE, ALMACÉN, ENVASE, DOCUMENTADOR — Ocultar si es Descarga de Barco. Para Amoniaco ocultar LOTE, ALMACÉN y ENVASE */}
                                 {!isVesselDischarge && (
                                     <div className="space-y-4 pt-4 border-t border-gray-100 md:col-span-2">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="space-y-1">
-                                                <InputLabel value="LOTE" className="text-indigo-600 font-black" />
-                                                <select
-                                                    value={data.lot_id}
-                                                    onChange={e => {
-                                                        const selectedLotId = e.target.value;
-                                                        const matchingLot = active_lots.find((l: any) => l.id?.toString() === selectedLotId?.toString());
-                                                        setData(prev => ({
-                                                            ...prev,
-                                                            lot_id: selectedLotId,
-                                                            warehouse: matchingLot?.warehouse || prev.warehouse
-                                                        }));
-                                                    }}
-                                                    disabled={!!order?.lot_id || order?.is_external_warehouse}
-                                                    className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!order?.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
-                                                >
-                                                    <option value="">{order?.is_external_warehouse ? 'N/A (EXTERNO)' : 'N/A'}</option>
-                                                    {active_lots.map((lot: any) => (
-                                                        <option key={lot.id} value={lot.id?.toString()}>{lot.folio}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                            {!isAmmoniaOrder && (
+                                                <>
+                                                    <div className="space-y-1">
+                                                        <InputLabel value="LOTE" className="text-indigo-600 font-black" />
+                                                        <select
+                                                            value={data.lot_id}
+                                                            onChange={e => {
+                                                                const selectedLotId = e.target.value;
+                                                                const matchingLot = active_lots.find((l: any) => l.id?.toString() === selectedLotId?.toString());
+                                                                setData(prev => ({
+                                                                    ...prev,
+                                                                    lot_id: selectedLotId,
+                                                                    warehouse: matchingLot?.warehouse || prev.warehouse
+                                                                }));
+                                                            }}
+                                                            disabled={!!order?.lot_id || order?.is_external_warehouse}
+                                                            className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!order?.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
+                                                        >
+                                                            <option value="">{order?.is_external_warehouse ? 'N/A (EXTERNO)' : 'N/A'}</option>
+                                                            {active_lots.map((lot: any) => (
+                                                                <option key={lot.id} value={lot.id?.toString()}>{lot.folio}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
 
-                                            <div className="space-y-1">
-                                                <div className="flex justify-between items-center">
-                                                    <InputLabel value="ALMACÉN" className="text-indigo-600 font-black" />
-                                                    {data.lot_id && (
-                                                        <span className="text-[10px] font-bold text-gray-400 uppercase">Auto por Lote</span>
-                                                    )}
-                                                </div>
-                                                <select
-                                                    value={data.lot_id ? (active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString())?.warehouse || data.warehouse || "") : data.warehouse}
-                                                    onChange={e => setData("warehouse", e.target.value)}
-                                                    disabled={!!data.lot_id || order?.is_external_warehouse}
-                                                    className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!data.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
-                                                >
-                                                    <option value="">{order?.is_external_warehouse ? 'ALMACÉN CLIENTE' : 'Seleccionar Almacén...'}</option>
-                                                    <option value="Almacen 1">Almacen 1</option>
-                                                    <option value="Almacen 2">Almacen 2</option>
-                                                    <option value="Almacen 3">Almacen 3</option>
-                                                    <option value="Almacen 4">Almacen 4</option>
-                                                    <option value="Almacen 5">Almacen 5</option>
-                                                </select>
-                                            </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex justify-between items-center">
+                                                            <InputLabel value="ALMACÉN" className="text-indigo-600 font-black" />
+                                                            {data.lot_id && (
+                                                                <span className="text-[10px] font-bold text-gray-400 uppercase">Auto por Lote</span>
+                                                            )}
+                                                        </div>
+                                                        <select
+                                                            value={data.lot_id ? (active_lots.find((l: any) => l.id?.toString() === data.lot_id?.toString())?.warehouse || data.warehouse || "") : data.warehouse}
+                                                            onChange={e => setData("warehouse", e.target.value)}
+                                                            disabled={!!data.lot_id || order?.is_external_warehouse}
+                                                            className={`w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold ${(!!data.lot_id || order?.is_external_warehouse) ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700'}`}
+                                                        >
+                                                            <option value="">{order?.is_external_warehouse ? 'ALMACÉN CLIENTE' : 'Seleccionar Almacén...'}</option>
+                                                            <option value="Almacen 1">Almacen 1</option>
+                                                            <option value="Almacen 2">Almacen 2</option>
+                                                            <option value="Almacen 3">Almacen 3</option>
+                                                            <option value="Almacen 4">Almacen 4</option>
+                                                            <option value="Almacen 5">Almacen 5</option>
+                                                        </select>
+                                                    </div>
 
-                                            <div className="space-y-1">
-                                                <InputLabel value="ENVASE" className="text-indigo-600 font-black" />
-                                                <select
-                                                    value={data.packaging_type}
-                                                    onChange={e => setData("packaging_type", e.target.value)}
-                                                    disabled={true}
-                                                    className="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold bg-gray-50 text-gray-400 cursor-not-allowed"
-                                                >
-                                                    <option value="N/A">N/A</option>
-                                                    {availablePackagingTypes.map((type) => (
-                                                        <option key={type} value={type}>{type}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                                    <div className="space-y-1">
+                                                        <InputLabel value="ENVASE" className="text-indigo-600 font-black" />
+                                                        <select
+                                                            value={data.packaging_type}
+                                                            onChange={e => setData("packaging_type", e.target.value)}
+                                                            disabled={true}
+                                                            className="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-bold bg-gray-50 text-gray-400 cursor-not-allowed"
+                                                        >
+                                                            <option value="N/A">N/A</option>
+                                                            {availablePackagingTypes.map((type) => (
+                                                                <option key={type} value={type}>{type}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </>
+                                            )}
 
                                             <div className="space-y-1">
                                                 <InputLabel value="DOCUMENTADOR (FIRMA)" className="text-green-600 font-black" />

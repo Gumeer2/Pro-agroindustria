@@ -66,7 +66,12 @@ class ShipmentOrder extends Model
 
     public function weight_ticket()
     {
-        return $this->hasOne(WeightTicket::class);
+        return $this->hasOne(WeightTicket::class)->latestOfMany();
+    }
+
+    public function weightTickets()
+    {
+        return $this->hasMany(WeightTicket::class);
     }
 
     public function vessel()

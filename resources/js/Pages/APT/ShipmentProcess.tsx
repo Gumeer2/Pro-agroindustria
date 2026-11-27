@@ -36,11 +36,13 @@ import {
     UserCheck,
     RotateCcw,
     ShieldAlert,
+    Info,
 } from "lucide-react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import { Dialog, Menu, Transition } from "@headlessui/react";
 import LoadingAssistantDropdown from "@/Components/LoadingAssistantDropdown";
+import SquadLeaderDropdown from "@/Components/SquadLeaderDropdown";
 import VerifierDropdown from "@/Components/VerifierDropdown";
 import QrScannerModal from "@/Components/QrScannerModal";
 import EnsacadoraSamplingModal from "@/Components/EnsacadoraSamplingModal";
@@ -101,6 +103,20 @@ interface HistoryItem {
     loading_assistant?: string | null;
     is_sampling_blocked?: boolean;
     sampling_unlock_count?: number;
+    second_lot_status?: string | null;
+    second_lot_assigned?: boolean;
+    split_lot_round?: number | null;
+    first_ticket_net_tons?: number | null;
+    first_ticket_number?: string | null;
+    first_lot_folio?: string | null;
+    first_warehouse?: string | null;
+    second_ticket_net_tons?: number | null;
+    second_ticket_number?: string | null;
+    second_lot_folio?: string | null;
+    second_warehouse?: string | null;
+    third_lot_folio?: string | null;
+    third_warehouse?: string | null;
+    remaining_programmed_tons?: number | null;
 }
 
 interface Props {
@@ -495,6 +511,7 @@ export default function ShipmentProcess({
     const [isSearchingQr, setIsSearchingQr] = useState(false);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [scannedOrder, setScannedOrder] = useState<any>(null);
+    const hasOpenedAdjustmentRef = useRef<Set<string>>(new Set());
 
     const refreshIncidents = async () => {
         try {
@@ -552,6 +569,50 @@ export default function ShipmentProcess({
     const [avgUnitWeight, setAvgUnitWeight] = useState<string>("");
     const [stowageGroups, setStowageGroups] = useState<Array<{ count: number; sacks: number }>>([]);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Configuración y validación automática de auxiliar y ensacadoras según el Auxiliar de Carga seleccionado
+    const selectedAssistantAssignment = useMemo(() => {
+        if (!loadingAssistant || !loadingAssistant.trim()) return null;
+        if (!warehouse_bagging_machines || warehouse_bagging_machines.length === 0) return null;
+
+        const normSelected = loadingAssistant.trim().toUpperCase();
+        const found = warehouse_bagging_machines.find(
+            (c: any) => (c.assistant_name || "").trim().toUpperCase() === normSelected
+        );
+        if (!found) return null;
+
+        const targetWhStr = (found.warehouse || "").toLowerCase();
+        const m = targetWhStr.match(/\d+/);
+        const whNum = found.warehouse_number || (m ? parseInt(m[0], 10) : 1);
+        const isFer =
+            found.company === "FERTINAL" ||
+            (found.hopper_tag && found.hopper_tag.includes("-F"));
+        const defaultLeft = isFer
+            ? `ENS-F0${whNum * 2 - 1}`
+            : whNum >= 5
+            ? `ENS-P${whNum * 2 - 1}`
+            : `ENS-P0${whNum * 2 - 1}`;
+        const defaultRight = isFer
+            ? `ENS-F0${whNum * 2}`
+            : whNum >= 5
+            ? `ENS-P${whNum * 2}`
+            : `ENS-P0${whNum * 2}`;
+        const defaultHopper = isFer ? `LE-F0${whNum}` : `LE-P0${whNum}`;
+
+        const formattedWarehouse = (found.warehouse || `Almacén 0${whNum}`)
+            .replace("Almac?n", "Almacén")
+            .replace("Almacen", "Almacén");
+
+        return {
+            whNum,
+            warehouseName: formattedWarehouse,
+            cubicle: found.cubicle || null,
+            leftTag: found.left_tag || defaultLeft,
+            rightTag: found.right_tag || defaultRight,
+            hopperTag: found.hopper_tag || defaultHopper,
+            assistantName: found.assistant_name,
+        };
+    }, [loadingAssistant, warehouse_bagging_machines]);
 
     const buildStowagesArray = (groups: Array<{ count: number; sacks: number }>): (number | null)[] => {
         const arr: (number | null)[] = Array(24).fill(null);
@@ -787,7 +848,7 @@ export default function ShipmentProcess({
     // Sondeo periódico para reflejar bloqueos y desbloqueos en tiempo real
     useEffect(() => {
         const interval = setInterval(() => {
-            if (!isStowageModalOpen && !isPrintModalOpen && !isSamplingModalOpen) {
+            if (!isStowageModalOpen && !isPrintModalOpen && !isSamplingModalOpen && !Swal.isVisible()) {
                 refreshHistory();
             }
         }, 3000);
@@ -844,7 +905,33 @@ export default function ShipmentProcess({
 
     const isSamplingReleased = (row: any): boolean => {
         if (!row) return false;
+        const slStatus = row.second_lot_status || row.stowage_plan?.second_lot_status;
+        if (slStatus === "in_progress" || slStatus === "lot_assigned") {
+            return Boolean(row.finished_at) && (row.sampling_release_status || row.stowage_plan?.sampling_release_status) === "released";
+        }
         return Boolean(row.finished_at) || (row.sampling_release_status || row.stowage_plan?.sampling_release_status) === "released";
+    };
+
+    const isSecondLotActive = (row: any): boolean => {
+        if (!row) return false;
+        const slStatus = row.second_lot_status || row.stowage_plan?.second_lot_status;
+        return slStatus === "in_progress" || slStatus === "lot_assigned" || slStatus === "pending_tare";
+    };
+
+    const getSplitLotRound = (row: any): number => {
+        if (!row) return 1;
+        return Number(row.split_lot_round || row.stowage_plan?.split_lot_round || 2);
+    };
+
+    const getSplitLotLabel = (row: any): string => {
+        return getSplitLotRound(row) >= 3 ? "3er Lote" : "2do Lote";
+    };
+
+    const isSecondLotPendingAssignment = (row: any): boolean => {
+        if (!row) return false;
+        const slStatus = row.second_lot_status || row.stowage_plan?.second_lot_status;
+        const assigned = Boolean(row.second_lot_assigned || row.stowage_plan?.second_lot_assigned || slStatus === "lot_assigned");
+        return (slStatus === "in_progress" || slStatus === "pending_tare") && !assigned;
     };
 
     const isInAptProcess = (row: any): boolean => {
@@ -898,6 +985,8 @@ export default function ShipmentProcess({
             return;
         }
 
+        const isTargetEnvasado = isRowEnvasado(voboTargetOrder);
+        const isTargetSecondLot = isSecondLotActive(voboTargetOrder);
         setIsSubmittingVobo(true);
         try {
             const res = await axios.post(
@@ -913,8 +1002,14 @@ export default function ShipmentProcess({
             await refreshHistory();
             Swal.fire({
                 icon: "success",
-                title: "¡VoBo Autorizado!",
-                text: res.data?.message || "VoBo registrado correctamente con lote y almacén asignados. El personal estibador ya puede realizar la toma de muestras.",
+                title: isTargetSecondLot
+                    ? `¡${getSplitLotLabel(voboTargetOrder)} / Almacén Asignado!`
+                    : (isTargetEnvasado ? "¡VoBo Autorizado!" : "¡Lote / Almacén Actualizado!"),
+                text: res.data?.message || (
+                    isTargetSecondLot
+                        ? `Se actualizó el ${getSplitLotLabel(voboTargetOrder).toLowerCase()} y almacén correctamente.`
+                        : "VoBo registrado correctamente con lote y almacén asignados."
+                ),
                 timer: 2500,
                 showConfirmButton: false,
             });
@@ -934,19 +1029,24 @@ export default function ShipmentProcess({
         handleOpenSampling(row);
     };
 
-    // Escuchar apertura directa del modal completo de capturas desde alertas globales o parámetros URL (?openSampling=...)
+    // Escuchar apertura directa del modal completo de capturas desde alertas globales o parámetros URL (?openSampling=..., ?openAdjustment=..., ?openStowage=...)
     useEffect(() => {
         const handleOpenFromEvent = (e: any) => {
-            const targetId = e.detail?.id || e.detail?.folio;
+            const targetId = e.detail?.id || e.detail?.folio || e.detail?.oe_folio;
             if (targetId && history && history.length > 0) {
                 const match = history.find(
                     (h: any) =>
                         String(h.id) === String(targetId) ||
                         String(h.shipment_order_id) === String(targetId) ||
-                        String(h.folio) === String(targetId)
+                        String(h.folio) === String(targetId) ||
+                        String(h.oe_folio) === String(targetId)
                 );
                 if (match) {
-                    handleOpenSampling(match);
+                    if (match.stowage_plan?.weight_adjustment_status === "pending" || match.weight_adjustment_status === "pending") {
+                        handleOpenStowagePlan(match);
+                    } else {
+                        handleOpenSampling(match);
+                    }
                 }
             }
         };
@@ -956,16 +1056,29 @@ export default function ShipmentProcess({
         try {
             const params = new URLSearchParams(window.location.search);
             const openSamplingId = params.get("openSampling");
-            if (openSamplingId && history && history.length > 0) {
+            const openAdjustmentId = params.get("openAdjustment") || params.get("openStowage");
+            const targetId = openAdjustmentId || openSamplingId;
+
+            if (targetId && history && history.length > 0) {
                 const match = history.find(
                     (h: any) =>
-                        String(h.id) === String(openSamplingId) ||
-                        String(h.shipment_order_id) === String(openSamplingId) ||
-                        String(h.folio) === String(openSamplingId)
+                        String(h.id) === String(targetId) ||
+                        String(h.shipment_order_id) === String(targetId) ||
+                        String(h.folio) === String(targetId) ||
+                        String(h.oe_folio) === String(targetId)
                 );
                 if (match) {
-                    handleOpenSampling(match);
-                    const newUrl = window.location.pathname;
+                    const matchKey = String(match.id || match.shipment_order_id || match.folio);
+                    if (!hasOpenedAdjustmentRef.current.has(matchKey) && !Swal.isVisible()) {
+                        hasOpenedAdjustmentRef.current.add(matchKey);
+                        if (openAdjustmentId || match.stowage_plan?.weight_adjustment_status === "pending" || match.weight_adjustment_status === "pending") {
+                            handleDirectReturnToScale(match);
+                        } else {
+                            handleOpenSampling(match);
+                        }
+                    }
+                    const fromParam = params.get("from");
+                    const newUrl = window.location.pathname + (fromParam ? `?from=${fromParam}` : "");
                     window.history.replaceState({}, "", newUrl);
                 }
             }
@@ -975,6 +1088,129 @@ export default function ShipmentProcess({
             window.removeEventListener("open-sampling-modal", handleOpenFromEvent);
         };
     }, [history]);
+
+    const handleDirectReturnToScale = async (orderItem: any) => {
+        if (!orderItem) return;
+        const safeFolio = orderItem.folio || orderItem.oe_folio || "";
+        const targetId = orderItem.id || orderItem.shipment_order_id || orderItem.history_id;
+        const currentStowagePlan = orderItem.stowage_plan || {};
+
+        const rawAdj = currentStowagePlan.adjustment;
+        const rawJust = currentStowagePlan.justification;
+        const hasAdj = rawAdj !== null && rawAdj !== undefined && String(rawAdj).trim() !== "" && String(rawAdj).toLowerCase() !== "null";
+        const hasJust = rawJust !== null && rawJust !== undefined && String(rawJust).trim() !== "" && String(rawJust).toLowerCase() !== "null";
+
+        const adjDisplay = hasAdj ? String(rawAdj) : null;
+        const justDisplay = hasJust ? String(rawJust) : null;
+        const basculaReason = currentStowagePlan.weight_adjustment_notes || currentStowagePlan.weight_adjustment_diff || "";
+
+        let summaryHtml = "";
+        if (adjDisplay) {
+            summaryHtml = `
+                <div><b>Ajuste Aplicado:</b> ${adjDisplay} sacos</div>
+                <div><b>Justificación:</b> ${justDisplay || "Sin justificación"}</div>
+            `;
+        } else if (basculaReason) {
+            summaryHtml = `
+                <div><b>Motivo Báscula:</b> ${basculaReason}</div>
+                <div><b>Estado:</b> Ajuste de peso realizado en almacén</div>
+            `;
+        } else {
+            summaryHtml = `
+                <div><b>Estado:</b> Ajuste de estiba / peso completado</div>
+            `;
+        }
+
+        const defaultNote = basculaReason
+            ? `Atención a báscula (${basculaReason}). Unidad regresa a verificar peso.`
+            : (hasJust
+                ? `Ajuste completado (${justDisplay}). Unidad regresa a verificar peso a báscula.`
+                : "Ajuste de peso realizado. Unidad regresa a verificar peso a báscula.");
+
+        const { value: obs, isConfirmed } = await Swal.fire({
+            title: "Regresar Unidad a Báscula",
+            html: `
+                <div style="text-align: left; font-size: 0.88rem;">
+                    <p style="margin-bottom: 0.6rem; color: #374151;">
+                        Se guardará el ajuste de estiba y la unidad <b>${safeFolio}</b> regresará a <b>Báscula</b> para verificar su peso.
+                    </p>
+                    <div style="background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 0.6rem; padding: 0.6rem; font-family: monospace; font-size: 0.82rem; line-height: 1.4; color: #78350f; margin-bottom: 0.75rem;">
+                        ${summaryHtml}
+                    </div>
+                    <label style="display: block; font-weight: bold; font-size: 0.82rem; margin-bottom: 0.3rem; color: #1f2937;">
+                        Observación para el Registro de Incidencias (Obligatorio):
+                    </label>
+                    <textarea id="direct_adjustment_notes" class="swal2-textarea" style="margin: 0; width: 100%; box-sizing: border-box; font-size: 0.85rem; border-radius: 0.5rem; height: 80px;" placeholder="Ej. Unidad verificada y ajustada en almacén. Regresa a verificar peso a báscula...">${defaultNote}</textarea>
+                </div>
+            `,
+            icon: "info",
+            showCancelButton: true,
+            confirmButtonText: "Guardar y Enviar a Báscula",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#16a34a",
+            cancelButtonColor: "#6b7280",
+            customClass: { container: "!z-[999999]" },
+            preConfirm: () => {
+                const text = (document.getElementById("direct_adjustment_notes") as HTMLTextAreaElement)?.value?.trim();
+                if (!text) {
+                    Swal.showValidationMessage("Debe ingresar la observación para el registro de incidencias.");
+                    return false;
+                }
+                return text;
+            }
+        });
+
+        if (!isConfirmed || !obs) return;
+
+        try {
+            Swal.fire({
+                title: "Enviando a Báscula...",
+                text: "Registrando ajuste e incidencia...",
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            const payload: any = {
+                send_to_scale_verify: true,
+                weight_adjustment_observation: obs,
+                stowage_plan: {
+                    ...currentStowagePlan,
+                    weight_adjustment_status: "adjusted",
+                    weight_adjustment_resolution_notes: obs
+                },
+                shipment_order_id: orderItem.shipment_order_id || orderItem.id,
+                history_id: orderItem.history_id || orderItem.id,
+                folio: safeFolio
+            };
+
+            await axios.post(
+                route("documentation.shipment-orders.save-stowage-plan", targetId),
+                payload
+            );
+
+            await refreshHistory();
+            await refreshIncidents();
+
+            Swal.fire({
+                icon: "success",
+                title: "¡Ajuste Guardado y Enviado a Báscula!",
+                html: `Se registró la observación en el módulo de <b>Incidencias</b>.<br/><br/><b>La unidad ${safeFolio} ya puede regresar a Báscula para verificar peso y generar su ticket.</b>`,
+                confirmButtonColor: "#16a34a",
+                confirmButtonText: "Entendido",
+            });
+        } catch (error: any) {
+            console.error("Error sending to scale:", error);
+            const msg = error.response?.data?.message || "Ocurrió un error al enviar la unidad a báscula.";
+            Swal.fire({
+                icon: "error",
+                title: "Error",
+                text: msg,
+                confirmButtonColor: "#4f46e5",
+            });
+        }
+    };
 
     const handleOpenStowagePlan = (order: any) => {
         if (isEstibadorUser && order && isInAptProcess(order)) {
@@ -998,6 +1234,11 @@ export default function ShipmentProcess({
     };
 
     const handleOpenSampling = (row: any) => {
+        if (row?.stowage_plan?.weight_adjustment_status === "pending" || row?.weight_adjustment_status === "pending") {
+            handleDirectReturnToScale(row);
+            return;
+        }
+
         const isRowEnvasadoVal = isRowEnvasado(row);
 
         if (isRowEnvasadoVal && !isStowagePlanCompleted(row)) {
@@ -1299,7 +1540,16 @@ export default function ShipmentProcess({
                     if (targetOrder.loading_squad_leader || targetOrder.squad_leader) {
                         setSquadLeader(targetOrder.loading_squad_leader || targetOrder.squad_leader);
                     }
-                    setLoadingAssistant(targetOrder.loading_assistant || "");
+                    let initialAssistant = targetOrder.loading_assistant || "";
+                    if (!initialAssistant && Array.isArray(warehouse_bagging_machines)) {
+                        const targetWhNum = normalizeWarehouseNumber(targetOrder.warehouse) || selectedWarehouseId;
+                        const whAsst = warehouse_bagging_machines.find((c: any) => {
+                            const cNum = c.warehouse_number || (c.warehouse && c.warehouse.match(/\d+/) ? parseInt(c.warehouse.match(/\d+/)[0], 10) : null);
+                            return cNum === targetWhNum;
+                        })?.assistant_name;
+                        if (whAsst) initialAssistant = whAsst;
+                    }
+                    setLoadingAssistant(initialAssistant);
                     setVerifier(plan.verifier || "");
                     setEstibaObservations(plan.comments || "");
                     setAvgUnitWeight(plan.avg_unit_weight !== undefined && plan.avg_unit_weight !== null ? String(plan.avg_unit_weight) : "");
@@ -1792,16 +2042,32 @@ export default function ShipmentProcess({
             }
         }
 
-        // Warehouse filter
+        // Warehouse filter (si tuvo cambio de lote/almacén, mostrar la orden en los almacenes asignados: 1ro, 2do y 3ro)
         const itemWhNum = normalizeWarehouseNumber(item.warehouse);
-        if (itemWhNum !== null && itemWhNum !== selectedWarehouseId) {
+        const firstWhNum = normalizeWarehouseNumber(item.first_warehouse || item.stowage_plan?.first_warehouse);
+        const secondWhNum = normalizeWarehouseNumber(item.second_warehouse || item.stowage_plan?.second_warehouse || item.warehouse);
+        const thirdWhNum = normalizeWarehouseNumber(item.third_warehouse || item.stowage_plan?.third_warehouse);
+        const matchesCurrentWh =
+            itemWhNum === null ||
+            itemWhNum === selectedWarehouseId ||
+            (firstWhNum !== null && firstWhNum === selectedWarehouseId) ||
+            (secondWhNum !== null && secondWhNum === selectedWarehouseId) ||
+            (thirdWhNum !== null && thirdWhNum === selectedWarehouseId);
+        if (!matchesCurrentWh) {
             return false;
         }
 
-        // Extra check: if lot_folio explicitly specifies APT{X}, it must match the selected warehouse
+        // Extra check: if lot_folio explicitly specifies APT{X}, it must match the selected warehouse (or first/second lot's warehouse)
         if (item.lot_folio) {
             const matchApt = item.lot_folio.match(/APT(\d+)/i);
-            if (matchApt && parseInt(matchApt[1], 10) !== selectedWarehouseId) {
+            const firstLotStr = String(item.first_lot_folio || item.stowage_plan?.first_lot_folio || "");
+            const secondLotStr = String(item.second_lot_folio || item.stowage_plan?.second_lot_folio || "");
+            const matchFirstApt = firstLotStr.match(/APT(\d+)/i);
+            const matchSecondApt = secondLotStr.match(/APT(\d+)/i);
+            const matchesCurrentLotWh = !matchApt || parseInt(matchApt[1], 10) === selectedWarehouseId;
+            const matchesFirstLotWh = matchFirstApt && parseInt(matchFirstApt[1], 10) === selectedWarehouseId;
+            const matchesSecondLotWh = matchSecondApt && parseInt(matchSecondApt[1], 10) === selectedWarehouseId;
+            if (!matchesCurrentLotWh && !matchesFirstLotWh && !matchesSecondLotWh && firstWhNum !== selectedWarehouseId && secondWhNum !== selectedWarehouseId) {
                 return false;
             }
         }
@@ -1820,11 +2086,13 @@ export default function ShipmentProcess({
         return (
             item.folio.toLowerCase().includes(q) ||
             (item.lot_folio && item.lot_folio.toLowerCase().includes(q)) ||
+            (item.first_lot_folio && item.first_lot_folio.toLowerCase().includes(q)) ||
             item.operator.toLowerCase().includes(q) ||
             item.squad_leader.toLowerCase().includes(q) ||
             item.product.toLowerCase().includes(q) ||
             item.plates.toLowerCase().includes(q) ||
-            (item.warehouse && item.warehouse.toLowerCase().includes(q))
+            (item.warehouse && item.warehouse.toLowerCase().includes(q)) ||
+            (item.first_warehouse && item.first_warehouse.toLowerCase().includes(q))
         );
     });
 
@@ -1841,64 +2109,68 @@ export default function ShipmentProcess({
 
             <div className="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Back Link & Header with Active Warehouse Indicator */}
-                <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                        {!isEstibadorUser && (
-                            <Link
-                                href={route("apt.production")}
-                                className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3.5 py-2 rounded-xl border border-gray-200 shadow-sm text-sm font-semibold mb-4"
-                            >
-                                <ArrowLeft className="w-4 h-4 mr-1.5 text-gray-500" />
-                                Volver a Gestión de almacenes
-                            </Link>
-                        )}
-                        <div className="flex items-center gap-3">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${isEstibadorUser ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}>
-                                {isEstibadorUser ? <Layers className="w-6 h-6" /> : <Truck className="w-6 h-6" />}
-                            </div>
-                            <div>
-                                <h2 className="text-2xl font-bold text-gray-900">
-                                    {pageTitle}
-                                </h2>
-                                <p className="text-sm text-gray-500">
-                                    {pageSubtitle}
-                                </p>
-                            </div>
+                {(!isEstibadorUser || estibadoresTab === "nota_estiba") && (
+                    <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            {!isEstibadorUser && (
+                                <Link
+                                    href={route("apt.production")}
+                                    className="inline-flex items-center text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3.5 py-2 rounded-xl border border-gray-200 shadow-sm text-sm font-semibold mb-4"
+                                >
+                                    <ArrowLeft className="w-4 h-4 mr-1.5 text-gray-500" />
+                                    Volver a Gestión de almacenes
+                                </Link>
+                            )}
+                            {!isEstibadorUser && (
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm bg-blue-50 text-blue-600">
+                                        <Truck className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-gray-900">
+                                            {pageTitle}
+                                        </h2>
+                                        <p className="text-sm text-gray-500">
+                                            {pageSubtitle}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    </div>
 
-                    {/* Active Warehouse Indicator Badge (Solo en proceso regular o dentro de la tarjeta Nota de Estiba) */}
-                    {(!isEstibadorUser || estibadoresTab === "nota_estiba") && (
-                        <button
-                            type="button"
-                            onClick={() => setIsWarehouseModalOpen(true)}
-                            className="flex items-center gap-3 px-5 py-3 bg-white border-2 border-indigo-100 hover:border-indigo-300 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 group relative cursor-pointer active:scale-95"
-                            title="Cambiar almacén activo"
-                        >
-                            <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200 group-hover:scale-105 transition-transform">
-                                <Warehouse className="w-5 h-5" />
-                            </div>
-                            <div className="text-left">
-                                <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1 group-hover:text-indigo-600 transition-colors">
-                                    Almacén Activo
+                        {/* Active Warehouse Indicator Badge (Solo en proceso regular o dentro de la tarjeta Nota de Estiba) */}
+                        {(!isEstibadorUser || estibadoresTab === "nota_estiba") && (
+                            <button
+                                type="button"
+                                onClick={() => setIsWarehouseModalOpen(true)}
+                                className="flex items-center gap-3 px-5 py-3 bg-white border-2 border-indigo-100 hover:border-indigo-300 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 group relative cursor-pointer active:scale-95"
+                                title="Cambiar almacén activo"
+                            >
+                                <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200 group-hover:scale-105 transition-transform">
+                                    <Warehouse className="w-5 h-5" />
                                 </div>
-                                <div className="text-sm font-black text-gray-800 leading-none flex items-center gap-2">
-                                    <span className="text-indigo-600 text-lg font-black">
-                                        ALMACÉN 0{selectedWarehouseId}
-                                    </span>
-                                    {selectedWarehouseId === 5 && (
-                                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
-                                            {selectedCubicle ? `Cub. 0${selectedCubicle}` : "Todos los cubículos"}
+                                <div className="text-left">
+                                    <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1 group-hover:text-indigo-600 transition-colors">
+                                        Almacén Activo
+                                    </div>
+                                    <div className="text-sm font-black text-gray-800 leading-none flex items-center gap-2">
+                                        <span className="text-indigo-600 text-lg font-black">
+                                            ALMACÉN 0{selectedWarehouseId}
                                         </span>
-                                    )}
+                                        {selectedWarehouseId === 5 && (
+                                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                                                {selectedCubicle ? `Cub. 0${selectedCubicle}` : "Todos los cubículos"}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="ml-2 p-1.5 bg-gray-50 rounded-lg text-gray-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors border border-gray-100">
-                                <Settings className="w-4 h-4" />
-                            </div>
-                        </button>
-                    )}
-                </div>
+                                <div className="ml-2 p-1.5 bg-gray-50 rounded-lg text-gray-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors border border-gray-100">
+                                    <Settings className="w-4 h-4" />
+                                </div>
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {/* Submódulos para Estibadores (Menú de Tarjetas) */}
                 {isEstibadorUser && estibadoresTab === "menu" && (
@@ -2397,28 +2669,11 @@ export default function ShipmentProcess({
                                         <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                                             Encargado de Cuadrilla
                                         </label>
-                                        <div className="relative">
-                                            <select
-                                                value={squadLeader}
-                                                onChange={(e) => setSquadLeader(e.target.value)}
-                                                className="w-full appearance-none rounded-xl border border-gray-300 bg-white px-4 py-3 pr-10 text-gray-800 font-medium shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                            >
-                                                <option value="">Seleccione encargado de cuadrilla...</option>
-                                                {squad_leaders.map((leader) => (
-                                                    <option key={leader} value={leader}>
-                                                        {leader}
-                                                    </option>
-                                                ))}
-                                                {!squad_leaders.includes("PABLO FRANCISCO VIVAS TORRES") && (
-                                                    <option value="PABLO FRANCISCO VIVAS TORRES">
-                                                        PABLO FRANCISCO VIVAS TORRES
-                                                    </option>
-                                                )}
-                                            </select>
-                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-gray-400">
-                                                <ChevronsUpDown className="w-5 h-5" />
-                                            </div>
-                                        </div>
+                                        <SquadLeaderDropdown
+                                            value={squadLeader}
+                                            initialSquadLeaders={squad_leaders}
+                                            onChange={(name) => setSquadLeader(name)}
+                                        />
                                     </div>
 
                                     {/* Auxiliar de Carga */}
@@ -2431,6 +2686,67 @@ export default function ShipmentProcess({
                                             initialAssistants={assistants}
                                             onChange={(name) => setLoadingAssistant(name)}
                                         />
+
+                                        {/* Validación de asignación del auxiliar seleccionado */}
+                                        {selectedAssistantAssignment ? (
+                                            <>
+                                                <div className="mt-1.5 flex items-center justify-between text-xs bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1 text-indigo-900 font-bold">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                        <span>
+                                                            Auxiliar asignado en {selectedAssistantAssignment.warehouseName}:{" "}
+                                                            <strong className="text-indigo-950">
+                                                                {selectedAssistantAssignment.assistantName}
+                                                            </strong>
+                                                        </span>
+                                                    </span>
+                                                </div>
+
+                                                {/* Ensacadoras y tolva asignadas a este auxiliar */}
+                                                <div className="mt-2 p-2 rounded-xl bg-slate-50 border border-indigo-100 flex items-center justify-between flex-wrap gap-2 text-xs">
+                                                    <div className="flex items-center gap-2">
+                                                        <Settings className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                        <span className="font-bold text-gray-700 text-[11px]">Ensacadoras Operativas:</span>
+                                                        <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-mono font-bold text-[11px]">
+                                                            Izq: {selectedAssistantAssignment.leftTag}
+                                                        </span>
+                                                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono font-bold text-[11px]">
+                                                            Der: {selectedAssistantAssignment.rightTag}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-indigo-600">
+                                                        Tolva {selectedAssistantAssignment.hopperTag}
+                                                    </span>
+                                                </div>
+                                            </>
+                                        ) : loadingAssistant ? (
+                                            <>
+                                                <div className="mt-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1 flex items-center gap-1.5 font-semibold">
+                                                    <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                    <span>
+                                                        El auxiliar <strong className="font-bold">{loadingAssistant}</strong> no tiene tolva ni ensacadoras asignadas.
+                                                    </span>
+                                                </div>
+
+                                                <div className="mt-2 p-2 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-between flex-wrap gap-2 text-xs">
+                                                    <div className="flex items-center gap-2">
+                                                        <Settings className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                                        <span className="font-bold text-gray-500 text-[11px]">Ensacadoras Operativas:</span>
+                                                        <span className="px-2 py-0.5 rounded bg-gray-200 text-gray-600 font-mono font-bold text-[11px]">
+                                                            Sin asignación
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-gray-400">
+                                                        Sin tolva asignada
+                                                    </span>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="mt-1.5 text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 flex items-center gap-1.5">
+                                                <Info className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                                <span>Seleccione un auxiliar de carga para ver su tolva y ensacadoras asignadas.</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Encargado de Almacén / Turno */}
@@ -2774,20 +3090,55 @@ export default function ShipmentProcess({
                                                 )}
                                                 <div className="text-[9px] text-gray-500 font-medium whitespace-nowrap">
                                                     {isVoBoApproved(row) && row.warehouse ? (
-                                                        <>
-                                                            {row.warehouse}
-                                                            {row.cubicle ? ` • Cub. 0${row.cubicle}` : ""}
-                                                        </>
+                                                        (() => {
+                                                            const firstWh = row.first_warehouse || row.stowage_plan?.first_warehouse;
+                                                            const secondWh = row.second_warehouse || row.stowage_plan?.second_warehouse;
+                                                            const thirdWh = row.third_warehouse || row.stowage_plan?.third_warehouse;
+                                                            const currentWh = row.warehouse;
+                                                            const whList: Array<{ label: string; wh: string }> = [];
+                                                            if (firstWh) whList.push({ label: "1°", wh: firstWh });
+                                                            if (secondWh && (!firstWh || normalizeWarehouseNumber(secondWh) !== normalizeWarehouseNumber(firstWh))) {
+                                                                whList.push({ label: "2°", wh: secondWh });
+                                                            }
+                                                            const finalWh = thirdWh || currentWh;
+                                                            if (finalWh) {
+                                                                const lastEntry = whList[whList.length - 1];
+                                                                if (!lastEntry || normalizeWarehouseNumber(finalWh) !== normalizeWarehouseNumber(lastEntry.wh)) {
+                                                                    whList.push({ label: `${whList.length + 1}°`, wh: finalWh });
+                                                                }
+                                                            }
+                                                            return whList.length > 1 ? (
+                                                                <span className="inline-flex items-center gap-1 font-bold text-indigo-700">
+                                                                    {whList.map((item, idx) => (
+                                                                        <Fragment key={idx}>
+                                                                            {idx > 0 && <span className="text-gray-400">→</span>}
+                                                                            <span>{item.label} {item.wh}</span>
+                                                                        </Fragment>
+                                                                    ))}
+                                                                    {row.cubicle ? ` • Cub. 0${row.cubicle}` : ""}
+                                                                </span>
+                                                            ) : (
+                                                                <>
+                                                                    {currentWh}
+                                                                    {row.cubicle ? ` • Cub. 0${row.cubicle}` : ""}
+                                                                </>
+                                                            );
+                                                        })()
                                                     ) : (
                                                         <span className="text-gray-400 italic">Sin Almacén</span>
                                                     )}
                                                 </div>
                                                 {row.stowage_plan?.weight_adjustment_status === "pending" && (
                                                     <div className="mt-1">
-                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={row.stowage_plan?.weight_adjustment_notes || 'Unidad regresada de báscula para ajuste de peso'}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDirectReturnToScale(row)}
+                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 animate-pulse cursor-pointer shadow-xs transition"
+                                                            title={row.stowage_plan?.weight_adjustment_notes || 'Unidad regresada de báscula para ajuste de peso. Haga clic para enviar a báscula'}
+                                                        >
                                                             <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
                                                             Ajuste de Peso Requerido
-                                                        </span>
+                                                        </button>
                                                     </div>
                                                 )}
                                                 {row.stowage_plan?.weight_adjustment_status === "adjusted" && (
@@ -2798,14 +3149,68 @@ export default function ShipmentProcess({
                                                         </span>
                                                     </div>
                                                 )}
+                                                {isSecondLotActive(row) && (
+                                                    <div className="mt-1">
+                                                        <span
+                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-900 border border-indigo-300"
+                                                            title={`1er Ticket (${row.first_ticket_number || "1er Lote"}): ${row.first_ticket_net_tons ?? 0} TM${row.second_ticket_net_tons ? ` • 2do Ticket (${row.second_ticket_number || "2do Lote"}): ${row.second_ticket_net_tons} TM` : ""} • Restan: ${row.remaining_programmed_tons ?? 0} TM`}
+                                                        >
+                                                            <Layers className="w-2.5 h-2.5 text-indigo-700" />
+                                                            {(row.second_lot_status || row.stowage_plan?.second_lot_status) === "pending_tare"
+                                                                ? `Esp. ${getSplitLotRound(row) >= 3 ? "3ra Tara" : "2da Tara"} (Restan ${row.remaining_programmed_tons ?? 0} TM)`
+                                                                : `${getSplitLotLabel(row)} • Restan ${row.remaining_programmed_tons ?? 0} TM`}
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </td>
 
                                             {/* Lote */}
                                             <td className="px-2.5 py-2.5 text-left whitespace-nowrap" title={row.lot_folio || "Sin Lote"}>
                                                 {row.lot_folio ? (
-                                                    <span className="inline-block px-1.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200">
-                                                        {row.lot_folio}
-                                                    </span>
+                                                    (() => {
+                                                        const firstLot = row.first_lot_folio || row.stowage_plan?.first_lot_folio;
+                                                        const secondLot = row.second_lot_folio || row.stowage_plan?.second_lot_folio;
+                                                        const thirdLot = row.third_lot_folio || row.stowage_plan?.third_lot_folio;
+                                                        const currentLot = row.lot_folio;
+
+                                                        const lotEntries: Array<{ num: number; folio: string }> = [];
+                                                        const pushUnique = (folio?: string | null) => {
+                                                            const clean = String(folio || "").trim();
+                                                            if (!clean) return;
+                                                            if (!lotEntries.some((e) => e.folio.toUpperCase() === clean.toUpperCase())) {
+                                                                lotEntries.push({ num: lotEntries.length + 1, folio: clean });
+                                                            }
+                                                        };
+                                                        pushUnique(firstLot);
+                                                        pushUnique(secondLot);
+                                                        pushUnique(thirdLot);
+                                                        pushUnique(currentLot);
+
+                                                        return lotEntries.length > 1 ? (
+                                                            <div className="flex flex-col gap-1 items-start">
+                                                                {lotEntries.map((entry, idx) => {
+                                                                    const isLatest = idx === lotEntries.length - 1;
+                                                                    return (
+                                                                        <span
+                                                                            key={entry.num}
+                                                                            className={`inline-block px-1.5 py-0.5 rounded-md font-black border ${
+                                                                                isLatest
+                                                                                    ? "text-[10px] bg-indigo-50 text-indigo-900 border-indigo-200"
+                                                                                    : "text-[9.5px] bg-slate-100 text-slate-700 border-slate-300"
+                                                                            }`}
+                                                                            title={`Lote #${entry.num}: ${entry.folio}`}
+                                                                        >
+                                                                            {entry.num}° {entry.folio}
+                                                                        </span>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="inline-block px-1.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-900 border border-indigo-200">
+                                                                {currentLot}
+                                                            </span>
+                                                        );
+                                                    })()
                                                 ) : (
                                                     <span className="text-gray-400 font-medium italic text-xs">
                                                         Sin Lote
@@ -2897,10 +3302,14 @@ export default function ShipmentProcess({
                                                                     type="button"
                                                                     onClick={() => handleOpenSampling(row)}
                                                                     className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
-                                                                    title={`Muestras completadas (${samplingStatus.samplesCount}/${samplingStatus.targetSamples}). Haga clic para ver.`}
+                                                                    title={`Muestras (${samplingStatus.samplesCount}/${samplingStatus.targetSamples}). Haga clic para ver o editar muestras.`}
                                                                 >
                                                                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                                    <span>{samplingStatus.samplesCount}/{samplingStatus.targetSamples}</span>
+                                                                    <span>
+                                                                        {isSecondLotActive(row)
+                                                                            ? `Editar Muestras (${samplingStatus.samplesCount}/${samplingStatus.targetSamples})`
+                                                                            : `${samplingStatus.samplesCount}/${samplingStatus.targetSamples}`}
+                                                                    </span>
                                                                 </button>
                                                                 <span
                                                                     className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0"
@@ -3023,27 +3432,40 @@ export default function ShipmentProcess({
                                                                 )}
 
                                                                 {isVoBoApproved(row) && (
-                                                                    row.is_sampling_blocked ? (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleRemoteUnlock(row)}
-                                                                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                            title="Muestreo bloqueado por peso fuera de tolerancia: Haga clic para autorizar el desbloqueo"
-                                                                        >
-                                                                            <Unlock className="w-3 h-3" />
-                                                                            <span>Desbloquear</span>
-                                                                        </button>
-                                                                    ) : !isSamplingReleased(row) && samplingStatus.isCompleted ? (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleOpenSampling(row)}
-                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
-                                                                            title="Paso 3: Ver toma de muestras y liberar al finalizar"
-                                                                        >
-                                                                            <Unlock className="w-3 h-3" />
-                                                                            <span>Liberar Muestras</span>
-                                                                        </button>
-                                                                    ) : null
+                                                                    <>
+                                                                        {isSecondLotPendingAssignment(row) && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleApproveVoBo(row)}
+                                                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer"
+                                                                                title={`Cambiar Lote y/o Almacén para el ${getSplitLotLabel(row)} (Mantiene intacta la Nota de Estiba)`}
+                                                                            >
+                                                                                <Warehouse className="w-3 h-3" />
+                                                                                <span>{getSplitLotLabel(row)} / Almacén</span>
+                                                                            </button>
+                                                                        )}
+                                                                        {row.is_sampling_blocked ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleRemoteUnlock(row)}
+                                                                                className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                                title="Muestreo bloqueado por peso fuera de tolerancia: Haga clic para autorizar el desbloqueo"
+                                                                            >
+                                                                                <Unlock className="w-3 h-3" />
+                                                                                <span>Desbloquear</span>
+                                                                            </button>
+                                                                        ) : !isSamplingReleased(row) && samplingStatus.isCompleted ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleOpenSampling(row)}
+                                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap flex items-center gap-1 animate-pulse shrink-0 cursor-pointer"
+                                                                                title="Paso 3: Ver / editar toma de muestras y liberar al finalizar"
+                                                                            >
+                                                                                <Unlock className="w-3 h-3" />
+                                                                                <span>Liberar Muestras</span>
+                                                                            </button>
+                                                                        ) : null}
+                                                                    </>
                                                                 )}
 
                                                                 <button
@@ -3066,6 +3488,17 @@ export default function ShipmentProcess({
                                                             </>
                                                         ) : (
                                                             <>
+                                                                {isSecondLotPendingAssignment(row) && !row.finished_at && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleApproveVoBo(row)}
+                                                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-1 rounded-md text-[10px] transition shadow-xs whitespace-nowrap shrink-0 flex items-center gap-1 cursor-pointer"
+                                                                        title={`Seleccionar el ${getSplitLotLabel(row)} y/o Almacén para completar las toneladas programadas`}
+                                                                    >
+                                                                        <Warehouse className="w-3 h-3" />
+                                                                        <span>{getSplitLotLabel(row)} / Almacén</span>
+                                                                    </button>
+                                                                )}
                                                                 {row.status === "loading" && !row.finished_at && (
                                                                     <button
                                                                         type="button"
@@ -3231,7 +3664,7 @@ export default function ShipmentProcess({
                     setSamplingRevision((r) => r + 1);
                     await refreshHistory();
                 }}
-                hideSaveButton={!isEstibadorUser}
+                hideSaveButton={!isEstibadorUser && !isSecondLotActive(activeSamplingOrder)}
                 isEstibadorUser={isEstibadorUser}
                 canRelease={
                     !isEstibadorUser &&
@@ -3340,10 +3773,16 @@ export default function ShipmentProcess({
                                             </div>
                                             <div>
                                                 <Dialog.Title as="h3" className="text-base font-black tracking-tight leading-tight">
-                                                    Visto Bueno (VoBo) a Nota de Estiba
+                                                    {isSecondLotActive(voboTargetOrder)
+                                                        ? `Asignar ${getSplitLotLabel(voboTargetOrder)} / Almacén (Completar Toneladas)`
+                                                        : "Visto Bueno (VoBo) a Nota de Estiba"}
                                                 </Dialog.Title>
                                                 <p className="text-xs text-emerald-100 font-medium">
-                                                    Asignación de Lote y Almacén • Supervisión PROAGRO
+                                                    {isSecondLotActive(voboTargetOrder)
+                                                        ? (isRowEnvasado(voboTargetOrder)
+                                                            ? `Actualización para ${getSplitLotLabel(voboTargetOrder)} • Mantiene intacta la Nota de Estiba`
+                                                            : `Actualización de Lote y Almacén para ${getSplitLotLabel(voboTargetOrder)} • Supervisión PROAGRO`)
+                                                        : "Asignación de Lote y Almacén • Supervisión PROAGRO"}
                                                 </p>
                                             </div>
                                         </div>
@@ -3385,7 +3824,21 @@ export default function ShipmentProcess({
                                         )}
 
                                         <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                                            Para autorizar el <b>VoBo</b> y habilitar la toma de muestras de ensacadora, seleccione el <b>lote que cargará</b> y el <b>número de almacén</b>:
+                                            {isSecondLotActive(voboTargetOrder) ? (
+                                                isRowEnvasado(voboTargetOrder) ? (
+                                                    <>
+                                                        Seleccione el <b>{getSplitLotLabel(voboTargetOrder)}</b> y el <b>número de almacén</b> (puede mantener el mismo almacén o cambiarlo). La <b>Nota de Estiba se mantiene intacta</b> y solo se actualiza el almacén y lote:
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        Seleccione el <b>{getSplitLotLabel(voboTargetOrder)}</b> y el <b>número de almacén</b> (puede mantener el mismo almacén o cambiarlo) para completar las toneladas programadas de la orden:
+                                                    </>
+                                                )
+                                            ) : (
+                                                <>
+                                                    Para autorizar el <b>VoBo</b> y habilitar la toma de muestras de ensacadora, seleccione el <b>lote que cargará</b> y el <b>número de almacén</b>:
+                                                </>
+                                            )}
                                         </p>
 
                                         {/* Número de almacén */}
@@ -3481,18 +3934,22 @@ export default function ShipmentProcess({
 
                                     {/* Footer */}
                                     <div className="bg-slate-50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const orderToReview = voboTargetOrder;
-                                                setIsVoboModalOpen(false);
-                                                handleOpenStowagePlan(orderToReview);
-                                            }}
-                                            className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-xs flex items-center justify-center gap-1.5"
-                                        >
-                                            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
-                                            Revisar Nota Primero
-                                        </button>
+                                        {isRowEnvasado(voboTargetOrder) ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const orderToReview = voboTargetOrder;
+                                                    setIsVoboModalOpen(false);
+                                                    handleOpenStowagePlan(orderToReview);
+                                                }}
+                                                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-xs flex items-center justify-center gap-1.5"
+                                            >
+                                                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+                                                Revisar Nota Primero
+                                            </button>
+                                        ) : (
+                                            <div />
+                                        )}
                                         <div className="w-full sm:w-auto flex items-center gap-2 justify-end">
                                             <button
                                                 type="button"
@@ -3509,7 +3966,13 @@ export default function ShipmentProcess({
                                                 className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
                                             >
                                                 <CheckCircle2 className="w-4 h-4" />
-                                                <span>{isSubmittingVobo ? "Autorizando..." : "Autorizar VoBo"}</span>
+                                                <span>
+                                                    {isSubmittingVobo
+                                                        ? "Guardando..."
+                                                        : isSecondLotActive(voboTargetOrder)
+                                                        ? `Guardar ${getSplitLotLabel(voboTargetOrder)} / Almacén`
+                                                        : "Autorizar VoBo"}
+                                                </span>
                                             </button>
                                         </div>
                                     </div>

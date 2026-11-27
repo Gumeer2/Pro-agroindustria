@@ -524,11 +524,7 @@ export default function WarehouseBaggingManager({ configs, equipments }: Props) 
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-                    <div className="text-xs text-gray-500 font-medium bg-gray-50 px-3 py-2 rounded-xl border border-gray-200 hidden xl:block">
-                        Asigna ensacadoras <strong className="text-indigo-700">Izquierda</strong> y <strong className="text-emerald-700">Derecha</strong> con validación en tiempo real.
-                    </div>
-
+                <div className="flex items-center gap-3 w-full md:w-auto justify-end">
                     <button
                         type="button"
                         onClick={openCreateModal}
@@ -942,8 +938,6 @@ export default function WarehouseBaggingManager({ configs, equipments }: Props) 
                                         let label = `${eq.tag} - ${eq.brand} ${eq.model} (Serie: ${eq.serial_number})`;
                                         if (isSameWarehouseRight) {
                                             label += ` ⚠️ [Seleccionada en Derecha]`;
-                                        } else if (usage) {
-                                            label += ` ⚠️ [En uso en ${usage.warehouse} - ${usage.position}]`;
                                         }
 
                                         return (
@@ -987,8 +981,6 @@ export default function WarehouseBaggingManager({ configs, equipments }: Props) 
                                         let label = `${eq.tag} - ${eq.brand} ${eq.model} (Serie: ${eq.serial_number})`;
                                         if (isSameWarehouseLeft) {
                                             label += ` ⚠️ [Seleccionada en Izquierda]`;
-                                        } else if (usage) {
-                                            label += ` ⚠️ [En uso en ${usage.warehouse} - ${usage.position}]`;
                                         }
 
                                         return (

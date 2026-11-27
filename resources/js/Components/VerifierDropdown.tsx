@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
-import { Check, ChevronsUpDown, Plus, UserCheck } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Trash2, UserCheck } from "lucide-react";
 import { Dialog, Listbox, Transition } from "@headlessui/react";
+import Swal from "sweetalert2";
 import axios from "axios";
 
 interface Verifier {
@@ -43,6 +44,47 @@ export default function VerifierDropdown({
     const closeDialog = () => {
         setIsDialogOpen(false);
         setNewName("");
+    };
+
+    const handleDelete = async (verifier: Verifier, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+        const result = await Swal.fire({
+            title: "¿Eliminar Verificador?",
+            text: `¿Estás seguro de eliminar a "${verifier.name}"?`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#dc2626",
+            cancelButtonColor: "#64748b",
+            confirmButtonText: "Sí, eliminar",
+            cancelButtonText: "Cancelar",
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await axios.delete(route("verifiers.destroy", verifier.id));
+                await fetchVerifiers();
+                if (value === verifier.name) {
+                    onChange("");
+                }
+                Swal.fire({
+                    icon: "success",
+                    title: "Eliminado",
+                    text: `Verificador "${verifier.name}" eliminado correctamente.`,
+                    timer: 1500,
+                    showConfirmButton: false,
+                });
+            } catch (error: any) {
+                Swal.fire({
+                    icon: "error",
+                    title: "Error",
+                    text:
+                        error.response?.data?.message ||
+                        "No se pudo eliminar el verificador",
+                });
+            }
+        }
     };
 
     const handleSave = async () => {
@@ -114,7 +156,7 @@ export default function VerifierDropdown({
                                     key={verifier.id}
                                     value={verifier.id}
                                     className={({ active }) =>
-                                        `relative cursor-default select-none py-2.5 pl-10 pr-4 ${
+                                        `relative cursor-default select-none py-2.5 pl-10 pr-10 ${
                                             active
                                                 ? "bg-indigo-600 text-white"
                                                 : "text-gray-900"
@@ -122,26 +164,42 @@ export default function VerifierDropdown({
                                     }
                                 >
                                     {({ selected: isSelected, active }) => (
-                                        <>
-                                            <span
-                                                className={
-                                                    isSelected
-                                                        ? "font-bold"
-                                                        : "font-normal"
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center">
+                                                <span
+                                                    className={
+                                                        isSelected
+                                                            ? "font-bold"
+                                                            : "font-normal"
+                                                    }
+                                                >
+                                                    {verifier.name}
+                                                </span>
+                                                {isSelected && (
+                                                    <Check
+                                                        className={`absolute left-3 top-2.5 h-5 w-5 ${
+                                                            active
+                                                                ? "text-white"
+                                                                : "text-indigo-600"
+                                                        }`}
+                                                    />
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={(e) =>
+                                                    handleDelete(verifier, e)
                                                 }
+                                                className={`p-1 rounded hover:bg-red-500/20 text-red-500 ${
+                                                    active
+                                                        ? "text-white hover:text-red-200"
+                                                        : ""
+                                                }`}
+                                                title="Eliminar verificador"
                                             >
-                                                {verifier.name}
-                                            </span>
-                                            {isSelected && (
-                                                <Check
-                                                    className={`absolute left-3 top-2.5 h-5 w-5 ${
-                                                        active
-                                                            ? "text-white"
-                                                            : "text-indigo-600"
-                                                    }`}
-                                                />
-                                            )}
-                                        </>
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     )}
                                 </Listbox.Option>
                             ))}

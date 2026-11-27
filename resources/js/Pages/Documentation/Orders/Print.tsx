@@ -138,8 +138,11 @@ export default function Print({ order, secondOrder }: Props) {
     // Check if Consignee is SADER (case insensitive)
     const isSader = order.consigned_to?.toUpperCase().includes('SADER');
 
-    // Check if Sales Order is OV-AMO
-    const isOvAmo = order.sales_order?.folio?.toUpperCase().startsWith('OV-AMO');
+    // Check if Sales Order is OV-AMO or OE is PA2026-AMO-XXXX
+    const isOvAmo =
+        order.sales_order?.folio?.toUpperCase().startsWith('OV-AMO') ||
+        order.folio?.toUpperCase().includes('-AMO-') ||
+        String(order.product_text || order.product?.name || order.product || '').toUpperCase().includes('AMON');
 
     return (
         <div className="bg-gray-100 min-h-screen p-4 print:p-0 print:bg-white text-sans">
@@ -264,7 +267,10 @@ th, td {
             <div className="max-w-[215mm] mx-auto bg-white p-2 overflow-x-auto print:overflow-visible print:p-0 print:m-0 print:max-w-none print:w-full print-content-wrapper">
                 {ordersToPrint.map((currentOrder, orderIdx) => {
                     const currentQrUrl = orderIdx === 0 ? qrDataUrl : secondQrDataUrl;
-                    const currentIsOvAmo = currentOrder.sales_order?.folio?.toUpperCase().startsWith('OV-AMO');
+                    const currentIsOvAmo =
+                        currentOrder.sales_order?.folio?.toUpperCase().startsWith('OV-AMO') ||
+                        currentOrder.folio?.toUpperCase().includes('-AMO-') ||
+                        String(currentOrder.product_text || currentOrder.product?.name || currentOrder.product || '').toUpperCase().includes('AMON');
                     const isLastOrder = orderIdx === ordersToPrint.length - 1;
 
                     return (

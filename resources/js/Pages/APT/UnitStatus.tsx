@@ -173,28 +173,26 @@ export default function UnitStatus({
                                 <ArrowLeft className="w-3.5 h-3.5 mr-1" />
                                 Volver
                             </Link>
-                            <h2 className="text-xl font-bold text-gray-800 flex items-center border-l-4 border-indigo-500 pl-4">
-                                {isFromProduction ? (
-                                    mainView === 'fertinal' ? (
-                                        <>Líneas de Envasado (Fertinal)</>
-                                    ) : mainView === 'warehouse-config' ? (
-                                        <>Ensacadoras por Almacén</>
-                                    ) : (
+                            {mainView !== 'warehouse-config' && (
+                                <h2 className="text-xl font-bold text-gray-800 flex items-center border-l-4 border-indigo-500 pl-4">
+                                    {isFromProduction ? (
+                                        mainView === 'fertinal' ? (
+                                            <>Líneas de Envasado (Fertinal)</>
+                                        ) : (
+                                            <>Líneas de Envasado (Pro-Agro)</>
+                                        )
+                                    ) : mainView === 'destare' ? (
+                                        <>
+                                            <Truck className="w-6 h-6 mr-2 text-indigo-600" />
+                                            Pendientes de Salida (Destare)
+                                        </>
+                                    ) : mainView === 'pro-agro' ? (
                                         <>Líneas de Envasado (Pro-Agro)</>
-                                    )
-                                ) : mainView === 'destare' ? (
-                                    <>
-                                        <Truck className="w-6 h-6 mr-2 text-indigo-600" />
-                                        Pendientes de Salida (Destare)
-                                    </>
-                                ) : mainView === 'pro-agro' ? (
-                                    <>Líneas de Envasado (Pro-Agro)</>
-                                ) : mainView === 'warehouse-config' ? (
-                                    <>Ensacadoras por Almacén</>
-                                ) : (
-                                    <>Líneas de Envasado (Fertinal)</>
-                                )}
-                            </h2>
+                                    ) : (
+                                        <>Líneas de Envasado (Fertinal)</>
+                                    )}
+                                </h2>
+                            )}
                         </div>
 
                         {/* Switcher: in production mode, show Pro-Agro, Fertinal and Ensacadoras por Almacén */}

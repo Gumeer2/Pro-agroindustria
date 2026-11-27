@@ -41,6 +41,7 @@ export default function InventoryHub({ auth, metrics }: Props) {
 
     const searchLower = searchTerm.toLowerCase();
     const showProductsCard = !searchTerm ||
+        "entrada y salida de insumos".includes(searchLower) ||
         "entrada y salida de productos".includes(searchLower) ||
         "productos".includes(searchLower) ||
         "entrada".includes(searchLower) ||
@@ -80,7 +81,7 @@ export default function InventoryHub({ auth, metrics }: Props) {
                                     </span>
                                 </h1>
                                 <p className="text-gray-500 text-sm mt-0.5">
-                                    Control integral de Entrada y Salida de Productos y Producción
+                                    Control integral de Entrada y Salida de Insumos y Producción
                                 </p>
                             </div>
                         </div>
@@ -103,7 +104,7 @@ export default function InventoryHub({ auth, metrics }: Props) {
 
                 {/* Main Grid: 2 Symmetric Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto items-stretch">
-                    {/* CARD 1: Entrada y Salida de Productos */}
+                    {/* CARD 1: Entrada y Salida de Insumos */}
                     {showProductsCard && (
                         <Link
                             href={typeof route === "function" ? `${route("apt.inventory.products-hub")}?from=${fromParam || "production"}` : `/apt/inventory/products-hub?from=${fromParam || "production"}`}
@@ -122,7 +123,7 @@ export default function InventoryHub({ auth, metrics }: Props) {
                                 </div>
 
                                 <h2 className="text-2xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors flex items-center gap-2">
-                                    Entrada y Salida de Productos
+                                    Entrada y Salida de Insumos
                                     <ArrowUpRight className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity text-blue-600" />
                                 </h2>
                                 <p className="text-gray-500 text-sm mt-2.5 leading-relaxed">
@@ -132,7 +133,7 @@ export default function InventoryHub({ auth, metrics }: Props) {
 
                             <div className="mt-8 pt-5 border-t border-gray-100 relative z-10">
                                 <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
-                                    <span className="font-medium text-gray-400 uppercase tracking-wider">Total Productos</span>
+                                    <span className="font-medium text-gray-400 uppercase tracking-wider">Total de Insumos</span>
                                     <span className="font-bold text-gray-900 text-sm">
                                         {metrics?.total_products || 0} catálogo
                                     </span>

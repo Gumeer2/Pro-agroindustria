@@ -105,6 +105,9 @@ class SalesOrder extends Model
 
         // Track shipment orders that have active adjustments so we only count their assigned weight once
         $adjustedShipmentIds = [];
+        // Track envasado shipment orders with multiple tickets (split lots) so we don't double-count programmed_tons
+        $envasadoShipmentTons = [];
+        $envasadoShipmentNetSum = [];
 
         // Sum net weight for trips that have completed weighing (Destare)
         foreach ($trips as $trip) {
@@ -143,7 +146,7 @@ class SalesOrder extends Model
                     $isEnvasado = str_contains($presUpper, 'ENVAS') || str_contains($presUpper, 'SACO');
 
                     if ($isEnvasado) {
-                        // REGLA: Para envasado se considera el peso programado
+                        // REGLA: Para envasado se considera el peso programado de la OE (sin duplicarlo si la OE tuvo 2 tickets por cambio de lote)
                         $prog = 0;
                         if ($shipmentOrder && (float) ($shipmentOrder->programmed_tons ?? 0) > 0) {
                             $prog = (float) $shipmentOrder->programmed_tons;
@@ -155,16 +158,33 @@ class SalesOrder extends Model
                             $prog = (float) ($linkedAssignment->original_tm ?? $linkedAssignment->tm);
                         }
 
-                        if ($prog > 0) {
-                            $total += ($prog >= 100 ? ($prog / 1000) : $prog);
+                        $progTons = $prog > 0 ? ($prog >= 100 ? ($prog / 1000) : $prog) : 0;
+                        $ticketNetTons = ((float) $ticket->net_weight / 1000);
+
+                        if ($shipmentOrder && $progTons > 0) {
+                            $soKey = (string) $shipmentOrder->id;
+                            $rawPlan = $shipmentOrder->stowage_plan;
+                            $planArr = is_string($rawPlan) ? (json_decode($rawPlan, true) ?: []) : (is_array($rawPlan) ? $rawPlan : []);
+                            $isSplitPending = !empty($planArr['second_lot_status']) && $planArr['second_lot_status'] !== 'completed';
+
+                            $envasadoShipmentTons[$soKey] = $progTons;
+                            $envasadoShipmentNetSum[$soKey] = ($envasadoShipmentNetSum[$soKey] ?? 0.0) + $ticketNetTons;
+                            if ($isSplitPending) {
+                                // Si aún falta el 2do lote, contar solo lo destarado hasta ahora
+                                $envasadoShipmentTons[$soKey] = min($progTons, $envasadoShipmentNetSum[$soKey]);
+                            }
                         } else {
-                            $total += ((float) $ticket->net_weight / 1000);
+                            $total += ($progTons > 0 ? $progTons : $ticketNetTons);
                         }
                     } else {
                         $total += ((float) $ticket->net_weight / 1000);
                     }
                 }
             }
+        }
+
+        foreach ($envasadoShipmentTons as $soTons) {
+            $total += (float) $soTons;
         }
 
         // Also check if THIS SalesOrder was assigned weight as DESTINATION in any active adjustments

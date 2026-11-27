@@ -14,7 +14,7 @@ import {
     AlertCircle,
     Ship,
 } from "lucide-react";
-import { FormEventHandler, useState, Fragment } from "react";
+import { FormEventHandler, useState, useEffect, Fragment } from "react";
 import { Combobox, Transition } from "@headlessui/react";
 import Swal from "sweetalert2";
 
@@ -83,6 +83,48 @@ export default function Edit({
 
     const selectedClient =
         clients.find((c) => c.id.toString() === data.client_id) || null;
+
+    const selectedProduct = products.find((p) => String(p.id) === String(data.product_id));
+    const selectedProdName = (selectedProduct?.name || "").toUpperCase();
+    const isAmmoniaSelected = Boolean(
+        data.product_id && (
+            selectedProdName.includes("AMON") ||
+            selectedProdName.includes("NH3") ||
+            selectedProdName.includes("SERVICIO DE CARGA")
+        )
+    );
+
+    const handleProductChange = (productId: string) => {
+        const selectedProd = products.find((p) => String(p.id) === String(productId));
+        const prodName = (selectedProd?.name || "").toUpperCase();
+        const isAmmoniaOrService =
+            prodName.includes("AMONIACO") ||
+            prodName.includes("AMONÍACO") ||
+            prodName.includes("NH3") ||
+            prodName.includes("SERVICIO DE CARGA");
+
+        setData((prev) => ({
+            ...prev,
+            product_id: productId,
+            delivery_conditions: isAmmoniaOrService ? "GRANEL" : prev.delivery_conditions,
+        }));
+    };
+
+    useEffect(() => {
+        if (data.product_id) {
+            const selectedProd = products.find((p) => String(p.id) === String(data.product_id));
+            const prodName = (selectedProd?.name || "").toUpperCase();
+            const isAmmoniaOrService =
+                prodName.includes("AMONIACO") ||
+                prodName.includes("AMONÍACO") ||
+                prodName.includes("NH3") ||
+                prodName.includes("SERVICIO DE CARGA");
+
+            if (isAmmoniaOrService && data.delivery_conditions !== "GRANEL") {
+                setData("delivery_conditions", "GRANEL");
+            }
+        }
+    }, [data.product_id, products]);
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
@@ -404,10 +446,16 @@ export default function Edit({
                                             }
                                             className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 pl-10 appearance-none bg-white text-sm"
                                         >
-                                            <option value="">Seleccione...</option>
-                                            <option value="GRANEL">GRANEL</option>
-                                            <option value="ENVASADO">ENVASADO</option>
-                                            <option value="GRANEL/ENVASADO">GRANEL/ENVASADO</option>
+                                            {isAmmoniaSelected ? (
+                                                <option value="GRANEL">GRANEL</option>
+                                            ) : (
+                                                <>
+                                                    <option value="">Seleccione...</option>
+                                                    <option value="GRANEL">GRANEL</option>
+                                                    <option value="ENVASADO">ENVASADO</option>
+                                                    <option value="GRANEL/ENVASADO">GRANEL/ENVASADO</option>
+                                                </>
+                                            )}
                                         </select>
                                         <Truck className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
                                     </div>
@@ -430,8 +478,7 @@ export default function Edit({
                                         <select
                                             value={data.product_id}
                                             onChange={(e) =>
-                                                setData(
-                                                    "product_id",
+                                                handleProductChange(
                                                     e.target.value,
                                                 )
                                             }

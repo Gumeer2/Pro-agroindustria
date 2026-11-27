@@ -163,6 +163,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/quality', [\App\Http\Controllers\QualityController::class, 'index'])->name('quality.index');
         Route::get('/quality/oe-tracker', [\App\Http\Controllers\DocumentationController::class, 'oeTrackerIndex'])->name('quality.oe-tracker');
 
+        // Production Module
+        Route::get('/production', [\App\Http\Controllers\ProductionController::class, 'index'])->name('production.index');
+        Route::get('/production/llenaderas', [\App\Http\Controllers\ProductionController::class, 'llenaderas'])->name('production.llenaderas');
+        Route::get('/production/llenaderas/search-order', [\App\Http\Controllers\ProductionController::class, 'searchOrder'])->name('production.llenaderas.search-order');
+        Route::get('/production/llenaderas/history', [\App\Http\Controllers\ProductionController::class, 'history'])->name('production.llenaderas.history');
+        Route::post('/production/llenaderas/start-loading', [\App\Http\Controllers\ProductionController::class, 'startLoading'])->name('production.llenaderas.start-loading');
+        Route::post('/production/llenaderas/finish-loading', [\App\Http\Controllers\ProductionController::class, 'finishLoading'])->name('production.llenaderas.finish-loading');
+        Route::post('/production/llenaderas/update-percentage', [\App\Http\Controllers\ProductionController::class, 'updatePercentage'])->name('production.llenaderas.update-percentage');
+
         // Documentation Module
         Route::get('/documentation/dock', [\App\Http\Controllers\DocumentationController::class , 'dock'])->name('documentation.dock');
         Route::get('/documentation/qr/print', [\App\Http\Controllers\DocumentationController::class , 'qrPrint'])->name('documentation.qr');
@@ -423,8 +432,14 @@ Route::middleware('auth')->group(function () {
         Route::delete('/service-providers/{serviceProvider}', [\App\Http\Controllers\ServiceProviderController::class, 'destroy'])->name('service-providers.destroy');
         Route::get('/loading-assistants', [\App\Http\Controllers\LoadingAssistantController::class, 'index'])->name('loading-assistants.index');
         Route::post('/loading-assistants', [\App\Http\Controllers\LoadingAssistantController::class, 'store'])->name('loading-assistants.store');
+        Route::delete('/loading-assistants/{id}', [\App\Http\Controllers\LoadingAssistantController::class, 'destroy'])->name('loading-assistants.destroy');
+
+        Route::get('/squad-leaders', [\App\Http\Controllers\SquadLeaderController::class, 'index'])->name('squad-leaders.index');
+        Route::post('/squad-leaders', [\App\Http\Controllers\SquadLeaderController::class, 'store'])->name('squad-leaders.store');
+        Route::delete('/squad-leaders/{id}', [\App\Http\Controllers\SquadLeaderController::class, 'destroy'])->name('squad-leaders.destroy');
         Route::get('/verifiers', [\App\Http\Controllers\VerifierController::class, 'index'])->name('verifiers.index');
         Route::post('/verifiers', [\App\Http\Controllers\VerifierController::class, 'store'])->name('verifiers.store');
+        Route::delete('/verifiers/{id}', [\App\Http\Controllers\VerifierController::class, 'destroy'])->name('verifiers.destroy');
 
         // Loading Order References (Scale module references)
         Route::get('/loading-order-references', [\App\Http\Controllers\LoadingOrderReferenceController::class , 'index'])->name('loading-order-references.index');

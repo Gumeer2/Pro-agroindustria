@@ -21,6 +21,62 @@ use App\Helpers\OperationalTimeHelper;
 
 class WeightTicketController extends Controller
 {
+    /**
+     * Determine if a ShipmentOrder belongs to the Ammonia (Amoniaco) workflow.
+     */
+    private function isAmmoniaOrder(?\App\Models\ShipmentOrder $order): bool
+    {
+        if (!$order) {
+            return false;
+        }
+
+        $folio = strtoupper(trim((string) ($order->folio ?? '')));
+        if ($folio !== '' && (preg_match('/^PA\d{4}-AMO-\d+/i', $folio) || str_contains($folio, '-AMO-'))) {
+            return true;
+        }
+
+        $prodText = mb_strtoupper(trim((string) (is_string($order->product) ? $order->product : ($order->product?->name ?? ''))), 'UTF-8');
+        if ($prodText !== '' && (
+            str_contains($prodText, 'AMONIACO') || 
+            str_contains($prodText, 'AMONÍACO') || 
+            str_contains($prodText, 'NH3') ||
+            str_contains($prodText, 'SERVICIO DE CARGA')
+        )) {
+            return true;
+        }
+
+        $soFolio = strtoupper(trim((string) ($order->sales_order?->folio ?? '')));
+        if ($soFolio !== '' && (str_starts_with($soFolio, 'OV-AMO') || str_contains($soFolio, '-AMO'))) {
+            return true;
+        }
+
+        $soProd = mb_strtoupper(trim((string) ($order->sales_order?->product?->name ?? '')), 'UTF-8');
+        if ($soProd !== '' && (
+            str_contains($soProd, 'AMONIACO') || 
+            str_contains($soProd, 'AMONÍACO') || 
+            str_contains($soProd, 'NH3') ||
+            str_contains($soProd, 'SERVICIO DE CARGA')
+        )) {
+            return true;
+        }
+
+        if ($order->relationLoaded('items') && $order->items) {
+            foreach ($order->items as $item) {
+                $itemProd = mb_strtoupper(trim((string) ($item->product?->name ?? '')), 'UTF-8');
+                if ($itemProd !== '' && (
+                    str_contains($itemProd, 'AMONIACO') || 
+                    str_contains($itemProd, 'AMONÍACO') || 
+                    str_contains($itemProd, 'NH3') ||
+                    str_contains($itemProd, 'SERVICIO DE CARGA')
+                )) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     public function index(Request $request)
     {
         $activeTab = $request->input('tab', 'sale');
@@ -196,6 +252,14 @@ class WeightTicketController extends Controller
                 }
 
                 $programmedWeight = $order->shipment_order?->programmed_tons ?? $order->programmed_tons ?? 'N/A';
+                if ($order->shipment_order) {
+                    $rawSoPlan = $order->shipment_order->stowage_plan;
+                    $soPlanArr = is_string($rawSoPlan) ? (json_decode($rawSoPlan, true) ?: []) : (is_array($rawSoPlan) ? $rawSoPlan : []);
+                    $slStatus = $soPlanArr['second_lot_status'] ?? null;
+                    if (!empty($slStatus) && in_array($slStatus, ['in_progress', 'lot_assigned'], true) && isset($soPlanArr['remaining_programmed_tons']) && (float) $soPlanArr['remaining_programmed_tons'] > 0) {
+                        $programmedWeight = (float) $soPlanArr['remaining_programmed_tons'];
+                    }
+                }
                 $presentation = $order->shipment_order?->presentation ?? 'GRANEL';
                 $productName = $order->product?->name ?? $order->shipment_order?->product?->name ?? $order->shipment_order?->product ?? 'N/A';
 
@@ -215,10 +279,12 @@ class WeightTicketController extends Controller
 
                 if ($order->shipment_order_id && $order->shipment_order) {
                     $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
+                    $isAmmonia = $this->isAmmoniaOrder($order->shipment_order);
                     if (!$hasLoadedFinished) {
                         $canDestare = false;
                         $destareBlockTitle = "Carga No Finalizada";
-                        $destareBlockMessage = "<p class='text-sm'>La orden de embarque <b>" . ($order->shipment_order->folio ?? $order->folio) . "</b> aún no ha sido marcada como finalizada en el módulo de <b>Gestión de Proceso de Embarques</b>.</p><p class='text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200'>Debe darse por finalizada la carga en el proceso de embarques antes de poder realizar el destare.</p>";
+                        $moduleLabel = $isAmmonia ? "Llenaderas (Producción)" : "Gestión de Proceso de Embarques";
+                        $destareBlockMessage = "<p class='text-sm'>La orden de embarque <b>" . ($order->shipment_order->folio ?? $order->folio) . "</b> aún no ha sido marcada como finalizada en el módulo de <b>{$moduleLabel}</b>.</p><p class='text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg mt-2 border border-amber-200'>Debe iniciar y finalizar la carga en {$moduleLabel} antes de poder realizar el destare.</p>";
                     }
 
                     // Candado estricto: Para producto envasado, requerir las muestras validadas y guardadas
@@ -742,17 +808,28 @@ class WeightTicketController extends Controller
     {
         $scaleId = $request->query('scale_id') ?? $request->cookie('selected_scale_id') ?? 1;
 
-        $pendingShipmentOrders = \App\Models\ShipmentOrder::whereDoesntHave('weight_ticket', function ($q) {
-            $q->where('weighing_status', '!=', 'cancelled');
+        $pendingShipmentOrders = \App\Models\ShipmentOrder::where(function ($ticketQ) {
+            $ticketQ->whereDoesntHave('weightTickets', function ($q) {
+                $q->where('weighing_status', '!=', 'cancelled');
+            })->orWhere(function ($splitQ) {
+                $splitQ->where('stowage_plan', 'like', '%"second_lot_status":"pending_tare"%')
+                    ->whereDoesntHave('weightTickets', function ($q) {
+                        $q->where('weighing_status', 'in_progress');
+                    });
+            });
         })
             ->where('status', '!=', 'cancelled')
-            ->whereHas('accessLogs', function ($q) {
-                $q->where(function ($sq) {
-                    $sq->where('access_logs.status', 'in_plant')
-                       ->orWhereNotNull('access_logs.entry_at');
+            ->where(function ($outer) {
+                $outer->whereHas('accessLogs', function ($q) {
+                    $q->where(function ($sq) {
+                        $sq->where('access_logs.status', 'in_plant')
+                           ->orWhereNotNull('access_logs.entry_at');
+                    })
+                    ->whereNull('access_logs.exit_at')
+                    ->whereNotNull('access_logs.subject_id');
                 })
-                ->whereNull('access_logs.exit_at')
-                ->whereNotNull('access_logs.subject_id');
+                ->orWhere('folio', 'like', 'PA%-AMO-%')
+                ->orWhere('product', 'like', '%AMON%');
             })
             ->with(['accessLogs' => function ($q) {
                 $q->where(function ($sq) {
@@ -817,11 +894,15 @@ class WeightTicketController extends Controller
                         ])->with('error', 'ALERTA: Operación Bloqueada. La orden de embarque (' . ($order->shipment_order->folio ?? $order->folio) . ') se encuentra en proceso de AJUSTE DE PESO en Almacén (APT).');
                     }
 
+                    $moduleName = $this->isAmmoniaOrder($order->shipment_order)
+                        ? 'Llenaderas (Producción)'
+                        : 'Gestión de Proceso de Embarques';
+
                     return redirect()->route('scale.index', [
                         'scale_id' => $request->input('scale_id', 1),
                         'view' => 'table',
                         'tab' => 'sale',
-                    ])->with('error', 'ALERTA: Operación Bloqueada. La orden de embarque (' . ($order->shipment_order->folio ?? $order->folio) . ') no ha finalizado su proceso en el módulo de Gestión de Proceso de Embarques.');
+                    ])->with('error', 'ALERTA: Operación Bloqueada. La orden de embarque (' . ($order->shipment_order->folio ?? $order->folio) . ') no ha finalizado su proceso de carga en el módulo de ' . $moduleName . '.');
                 }
             }
 
@@ -952,16 +1033,24 @@ class WeightTicketController extends Controller
                     ->first();
             }
 
-            if ($presentation === 'GRANEL' && !empty($assignment?->presentation)) {
-                $presentation = $assignment->presentation;
-            } elseif ($presentation === 'GRANEL' && !empty($candidateOperatorIds)) {
-                $opPres = \App\Models\ExitOperator::whereIn('id', $candidateOperatorIds)->whereNotNull('presentation')->value('presentation');
-                if ($opPres) {
-                    $presentation = $opPres;
+            $isAmmonia = ($order->shipment_order && $this->isAmmoniaOrder($order->shipment_order))
+                || (str_contains(strtoupper((string)($order->folio ?? '')), '-AMO-'))
+                || (str_contains(strtoupper((string)($productName ?? '')), 'AMON'));
+
+            if (!$isAmmonia) {
+                if ($presentation === 'GRANEL' && !empty($assignment?->presentation)) {
+                    $presentation = $assignment->presentation;
+                } elseif ($presentation === 'GRANEL' && !empty($candidateOperatorIds)) {
+                    $opPres = \App\Models\ExitOperator::whereIn('id', $candidateOperatorIds)->whereNotNull('presentation')->value('presentation');
+                    if ($opPres) {
+                        $presentation = $opPres;
+                    }
                 }
+            } else {
+                $presentation = 'GRANEL';
             }
 
-            $isEnvasado = mb_strtoupper(trim($presentation), 'UTF-8') === 'ENVASADO';
+            $isEnvasado = !$isAmmonia && (mb_strtoupper(trim($presentation), 'UTF-8') === 'ENVASADO');
 
             // Detected packaging type from assignment / operator
             $detectedType = null;
@@ -984,18 +1073,33 @@ class WeightTicketController extends Controller
 
             // Determine packaging_type for orderData
             $packagingType = 'N/A';
-            if (!empty($order->weight_ticket?->packaging_type) && $order->weight_ticket->packaging_type !== 'N/A') {
-                $packagingType = $order->weight_ticket->packaging_type;
-            } elseif ($isEnvasado && !empty($detectedType)) {
-                $packagingType = $detectedType;
+            if (!$isAmmonia) {
+                if (!empty($order->weight_ticket?->packaging_type) && $order->weight_ticket->packaging_type !== 'N/A') {
+                    $packagingType = $order->weight_ticket->packaging_type;
+                } elseif ($isEnvasado && !empty($detectedType)) {
+                    $packagingType = $detectedType;
+                }
             }
 
             $rawStowage = $order->shipment_order?->stowage_plan;
             $stowageData = is_string($rawStowage) ? (json_decode($rawStowage, true) ?: []) : (is_array($rawStowage) ? $rawStowage : []);
 
+            $secondLotStatus = $stowageData['second_lot_status'] ?? null;
+            $splitLotRound = (int) ($stowageData['split_lot_round'] ?? (!empty($secondLotStatus) ? 2 : 1));
+            $isSecondLotTicket = !empty($secondLotStatus) && in_array($secondLotStatus, ['in_progress', 'lot_assigned', 'completed'], true);
+            $isThirdLotTicket = $isSecondLotTicket && $splitLotRound >= 3;
+            $firstTicketNetTons = isset($stowageData['first_ticket_net_tons']) ? (float) $stowageData['first_ticket_net_tons'] : 0.0;
+            $secondTicketNetTons = isset($stowageData['second_ticket_net_tons']) ? (float) $stowageData['second_ticket_net_tons'] : 0.0;
+            $remainingProgrammedTons = isset($stowageData['remaining_programmed_tons']) ? (float) $stowageData['remaining_programmed_tons'] : null;
+
+            $effectiveProgWeight = ($isSecondLotTicket && $remainingProgrammedTons !== null && $remainingProgrammedTons > 0)
+                ? $remainingProgrammedTons
+                : $progWeight;
+
             $orderData = [
                 'id' => $order->id,
                 'folio' => $order->folio,
+                'is_ammonia' => $isAmmonia,
                 'provider' => $order->shipment_order?->client?->business_name
                     ?? $order->shipment_order?->client?->name
                     ?? ($order->client_name ?? ($order->client->business_name ?? 'N/A')),
@@ -1012,11 +1116,25 @@ class WeightTicketController extends Controller
                 'lot_observations' => $order->shipment_order?->lot?->observations ?? $order->weight_ticket?->lot?->observations ?? null,
                 'reference' => $order->reference ?? ($order->request_id ?? ''),
                 'consignee' => $order->consignee ?? ($order->consigned_to ?? ''),
-                'programmed_weight' => $progWeight,
+                'programmed_weight' => $effectiveProgWeight,
+                'original_programmed_tons' => $order->shipment_order->programmed_tons ?? $progWeight,
+                'is_second_lot_ticket' => $isSecondLotTicket,
+                'is_third_lot_ticket' => $isThirdLotTicket,
+                'split_lot_round' => $splitLotRound,
+                'second_lot_status' => $secondLotStatus,
+                'first_ticket_net_tons' => $firstTicketNetTons,
+                'first_ticket_number' => $stowageData['first_ticket_number'] ?? null,
+                'first_lot_folio' => $stowageData['first_lot_folio'] ?? null,
+                'first_warehouse' => $stowageData['first_warehouse'] ?? null,
+                'second_ticket_net_tons' => $secondTicketNetTons,
+                'second_ticket_number' => $stowageData['second_ticket_number'] ?? null,
+                'second_lot_folio' => $stowageData['second_lot_folio'] ?? null,
+                'second_warehouse' => $stowageData['second_warehouse'] ?? null,
+                'remaining_programmed_tons' => $remainingProgrammedTons,
                 'type' => $order->shipment_order_id ? 'sale' : 'vessel',
                 'presentation' => $presentation,
                 'packaging_type' => $packagingType,
-                'programmed_tons' => $order->shipment_order->programmed_tons ?? 0,
+                'programmed_tons' => $effectiveProgWeight,
                 'oe_folio' => $order->shipment_order?->folio ?? null,
                 'observations' => $order->observations ?? '',
                 'is_external_warehouse' => (bool) ($order->vessel?->is_external_warehouse ?? false),
@@ -1071,104 +1189,143 @@ class WeightTicketController extends Controller
 
     public function returnForWeightAdjustment(Request $request, $id)
     {
-        $order = LoadingOrder::with(['shipment_order'])->find($id);
-        if (!$order) {
-            $order = ShipmentOrder::find($id);
-        }
-        if (!$order) {
-            return response()->json(['message' => 'Orden no encontrada.'], 404);
-        }
+        try {
+            $order = LoadingOrder::with(['shipment_order'])->find($id);
+            if (!$order) {
+                $order = ShipmentOrder::find($id);
+            }
+            if (!$order) {
+                return response()->json(['message' => 'Orden no encontrada.'], 404);
+            }
 
-        $shipmentOrder = $order instanceof ShipmentOrder ? $order : $order->shipment_order;
-        if (!$shipmentOrder) {
-            return response()->json(['message' => 'No se encontró la orden de embarque asociada.'], 404);
-        }
+            $shipmentOrder = $order instanceof ShipmentOrder ? $order : $order->shipment_order;
+            if (!$shipmentOrder) {
+                return response()->json(['message' => 'No se encontró la orden de embarque asociada.'], 404);
+            }
 
-        $validated = $request->validate([
-            'reason' => 'required|string|max:1000',
-            'weight' => 'nullable|numeric',
-            'diff_text' => 'nullable|string|max:255',
-        ]);
+            $validated = $request->validate([
+                'reason' => 'required|string|max:1000',
+                'weight' => 'nullable|numeric',
+                'diff_text' => 'nullable|string|max:255',
+            ]);
 
-        $history = ShipmentProcessHistory::where('shipment_order_id', $shipmentOrder->id)->latest()->first();
+            $history = ShipmentProcessHistory::where('shipment_order_id', $shipmentOrder->id)->latest()->first();
 
-        $rawStowage = $history?->stowage_plan ?: $shipmentOrder->stowage_plan ?: [];
-        $stowagePlan = is_string($rawStowage) ? (json_decode($rawStowage, true) ?: []) : (is_array($rawStowage) ? $rawStowage : []);
+            $rawStowage = $history?->stowage_plan ?: $shipmentOrder->stowage_plan ?: [];
+            $stowagePlan = is_string($rawStowage) ? (json_decode($rawStowage, true) ?: []) : (is_array($rawStowage) ? $rawStowage : []);
 
-        $weightVal = !empty($validated['weight']) ? (float)$validated['weight'] : null;
-        $weightText = $weightVal ? number_format($weightVal, 2) . ' kg' : 'N/A';
-        $diffText = $validated['diff_text'] ?? '';
+            $weightVal = !empty($validated['weight']) ? (float)$validated['weight'] : null;
+            $weightText = $weightVal ? number_format($weightVal, 2) . ' kg' : 'N/A';
+            $diffText = $validated['diff_text'] ?? '';
 
-        $stowagePlan['weight_adjustment_status'] = 'pending';
-        $stowagePlan['weight_adjustment_notes'] = $validated['reason'];
-        $stowagePlan['weight_adjustment_weight'] = $weightVal;
-        $stowagePlan['weight_adjustment_diff'] = $diffText;
-        $stowagePlan['weight_adjustment_requested_at'] = now()->toIso8601String();
-        $stowagePlan['weight_adjustment_requested_by'] = auth()->user()?->name ?? 'Operador de Báscula';
+            $stowagePlan['weight_adjustment_status'] = 'pending';
+            $stowagePlan['weight_adjustment_notes'] = $validated['reason'];
+            $stowagePlan['weight_adjustment_weight'] = $weightVal;
+            $stowagePlan['weight_adjustment_diff'] = $diffText;
+            $stowagePlan['weight_adjustment_requested_at'] = now()->toIso8601String();
+            $stowagePlan['weight_adjustment_requested_by'] = auth()->user()?->name ?? 'Operador de Báscula';
 
-        // Regresar la orden al estado pendiente/en proceso de carga para que no pueda destarar hasta ser liberada
-        $shipmentOrder->update([
-            'status' => 'loading',
-            'loading_finished_at' => null,
-            'stowage_plan' => $stowagePlan,
-        ]);
-
-        if ($history) {
-            $history->update([
+            // Regresar la orden al estado pendiente/en proceso de carga para que no pueda destarar hasta ser liberada
+            $shipmentOrder->update([
                 'status' => 'loading',
-                'finished_at' => null,
+                'loading_finished_at' => null,
                 'stowage_plan' => $stowagePlan,
             ]);
+
+            if ($history) {
+                $history->update([
+                    'status' => 'loading',
+                    'finished_at' => null,
+                    'stowage_plan' => $stowagePlan,
+                ]);
+            }
+
+            // Registrar incidencia en ShipmentSamplingIncident
+            $fullReason = "Regreso de Báscula por Ajuste de Peso: " . $validated['reason'];
+            if ($diffText) {
+                $fullReason .= " (" . $diffText . ", Peso Báscula: " . $weightText . ")";
+            }
+
+            ShipmentSamplingIncident::create([
+                'shipment_order_id' => $shipmentOrder->id,
+                'order_folio' => $shipmentOrder->folio ?? $order->folio,
+                'warehouse' => $shipmentOrder->warehouse ?? $history?->warehouse ?? 'Almacén',
+                'unlocked_by_user_id' => auth()->id(),
+                'unlocked_by_name' => auth()->user()?->name ?? 'Operador de Báscula',
+                'assistant_name' => 'Báscula Salida',
+                'unlock_count' => 1,
+                'reason' => $fullReason,
+                'unlocked_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Unidad regresada a Gestión de Proceso de Embarque (APT) para ajuste de peso exitosamente.',
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error("Error en returnForWeightAdjustment: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al regresar unidad: ' . $e->getMessage(),
+            ], 500);
         }
-
-        // Registrar incidencia en ShipmentSamplingIncident
-        $fullReason = "Regreso de Báscula por Ajuste de Peso: " . $validated['reason'];
-        if ($diffText) {
-            $fullReason .= " (" . $diffText . ", Peso Báscula: " . $weightText . ")";
-        }
-
-        ShipmentSamplingIncident::create([
-            'shipment_order_id' => $shipmentOrder->id,
-            'order_folio' => $shipmentOrder->folio ?? $order->folio,
-            'warehouse' => $shipmentOrder->warehouse ?? $history?->warehouse ?? 'Almacén',
-            'unlocked_by_user_id' => auth()->id(),
-            'unlocked_by_name' => auth()->user()?->name ?? 'Operador de Báscula',
-            'assistant_name' => 'Báscula Salida',
-            'unlock_count' => 1,
-            'reason' => $fullReason,
-            'unlocked_at' => now(),
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Unidad regresada a Gestión de Proceso de Embarque (APT) para ajuste de peso exitosamente.',
-        ]);
     }
 
     public function searchFolio(Request $request)
     {
-        $folio = $request->input('folio');
+        $rawFolio = trim((string) $request->input('folio'));
 
-        if (!$folio) {
+        if (!$rawFolio) {
             return response()->json(['error' => 'Por favor ingrese un folio.'], 400);
         }
 
+        $folio = strtoupper(preg_replace('/^QR\s*[:#-]?\s*/i', '', $rawFolio));
+        $folio = str_replace(["'", '/', '?', '_', '.'], '-', $folio);
+
         // Search in ShipmentOrders (Ordenes de Embarque) for Sales/Exit
-        $order = \App\Models\ShipmentOrder::with(['client', 'items.product', 'driver', 'vehicle', 'transporter', 'sales_order'])
-            ->where('folio', $folio)
+        $order = \App\Models\ShipmentOrder::with(['client', 'items.product', 'driver', 'vehicle', 'transporter', 'sales_order.product'])
+            ->where(function ($q) use ($folio, $rawFolio) {
+                $q->where('folio', $folio)
+                  ->orWhere('folio', $rawFolio)
+                  ->orWhere('id', $rawFolio);
+            })
             ->first();
+
+        if (!$order) {
+            $normalizedFolio = preg_replace('/[^A-Z0-9]/', '', $folio);
+            if ($normalizedFolio !== '') {
+                $stripNonAlnum = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(%s), '-', ''), '_', ''), ' ', ''), '.', ''), \"'\", ''), '/', '')";
+                $order = \App\Models\ShipmentOrder::with(['client', 'items.product', 'driver', 'vehicle', 'transporter', 'sales_order.product'])
+                    ->whereRaw(sprintf($stripNonAlnum, 'folio') . ' = ?', [$normalizedFolio])
+                    ->first();
+            }
+        }
 
         if (!$order) {
             return response()->json(['error' => 'Orden de Embarque no encontrada.'], 404);
         }
 
-        // Check if ticket exists via weight_ticket relation
-        // Only block if there is an ACTIVE (non-cancelled) ticket
-        if ($order->weight_ticket && $order->weight_ticket->weighing_status !== 'cancelled') {
+        // Check if ticket exists via weightTickets relation
+        // Only block if there is an ACTIVE (non-cancelled) ticket, UNLESS the OE was enabled for a 2nd tare in another lot
+        $rawOrderPlan = $order->stowage_plan;
+        $orderPlanData = is_string($rawOrderPlan) ? (json_decode($rawOrderPlan, true) ?: []) : (is_array($rawOrderPlan) ? $rawOrderPlan : []);
+        $isPendingSecondTare = (($orderPlanData['second_lot_status'] ?? null) === 'pending_tare');
+
+        $hasActiveInProgressTicket = \App\Models\WeightTicket::where('shipment_order_id', $order->id)
+            ->where('weighing_status', 'in_progress')
+            ->exists();
+
+        $hasAnyActiveTicket = \App\Models\WeightTicket::where('shipment_order_id', $order->id)
+            ->where('weighing_status', '!=', 'cancelled')
+            ->exists();
+
+        if ($hasActiveInProgressTicket || ($hasAnyActiveTicket && !$isPendingSecondTare)) {
             return response()->json(['error' => 'Esta orden ya tiene un ticket de báscula activo generado.'], 403);
         }
 
-        // VALIDATION: Must be scanned and assigned to an operator in Surveillance
+        $isAmmonia = $this->isAmmoniaOrder($order);
+
+        // VALIDATION: Must be scanned and assigned to an operator in Surveillance (Except for Ammonia procedure which skips Surveillance)
         $activeAccessLog = $order->accessLogs()
             ->where(function ($q) {
                 $q->where('access_logs.status', 'in_plant')
@@ -1180,14 +1337,14 @@ class WeightTicketController extends Controller
             ->latest('access_logs.id')
             ->first();
 
-        if (!$activeAccessLog || !$activeAccessLog->subject) {
+        if (!$isAmmonia && (!$activeAccessLog || !$activeAccessLog->subject)) {
             return response()->json([
                 'title' => 'Sin Entrada en Vigilancia',
                 'error' => "ALERTA: La orden de embarque '{$order->folio}' no se puede tarar porque aún no ha sido escaneada ni asignada a un operador en Vigilancia. Debe registrar su entrada en Vigilancia antes de realizar el pesaje de tara."
             ], 422);
         }
 
-        if (isset($activeAccessLog->subject->status) && $activeAccessLog->subject->status === 'vetoed') {
+        if ($activeAccessLog && $activeAccessLog->subject && isset($activeAccessLog->subject->status) && $activeAccessLog->subject->status === 'vetoed') {
             return response()->json([
                 'title' => 'Operador Vetado',
                 'error' => "ALERTA: El operador '{$activeAccessLog->subject->name}' asignado a esta orden en Vigilancia se encuentra VETADO."
@@ -1206,31 +1363,49 @@ class WeightTicketController extends Controller
             $programmedWeight = $totalKg > 0 ? ($totalKg / 1000) : 0;
         }
 
-        $productName = $order->items->first()?->product->name ?? 'N/A';
+        $originalProgrammedWeight = $programmedWeight;
+        if ($isPendingSecondTare && isset($orderPlanData['remaining_programmed_tons']) && (float) $orderPlanData['remaining_programmed_tons'] > 0) {
+            $programmedWeight = (float) $orderPlanData['remaining_programmed_tons'];
+        }
+
+        $productName = $order->items->first()?->product->name ?? ($order->sales_order?->product?->name ?? 'N/A');
         // Priority if product column exists directly
         if (!empty($order->product) && is_string($order->product)) {
             $productName = $order->product;
         }
 
-        $productId = $order->items->first()?->product_id;
+        $productId = $order->items->first()?->product_id ?? $order->sales_order?->product_id;
 
         // Operator resolution: prioritize operator assigned in Vigilancia
         $exitOperator = null;
-        if ($activeAccessLog->subject instanceof \App\Models\ExitOperator) {
+        if ($activeAccessLog && $activeAccessLog->subject instanceof \App\Models\ExitOperator) {
             $exitOperator = $activeAccessLog->subject;
         }
 
         if (!$exitOperator) {
-            $operatorName = trim($order->operator_name);
-            $tractorPlate = preg_replace('/[^A-Za-z0-9]/', '', $order->tractor_plate);
+            $operatorName = trim((string) $order->operator_name);
+            $tractorPlate = preg_replace('/[^A-Za-z0-9]/', '', (string) $order->tractor_plate);
 
-            $exitOperator = \App\Models\ExitOperator::where('name', 'like', "%{$operatorName}%")
-                ->get()
-                ->filter(function ($op) use ($tractorPlate) {
-                    $opPlate = preg_replace('/[^A-Za-z0-9]/', '', $op->tractor_plate);
-                    return $opPlate === $tractorPlate;
-                })
-                ->first();
+            if ($operatorName !== '') {
+                $exitOperator = \App\Models\ExitOperator::where('name', 'like', "%{$operatorName}%")
+                    ->get()
+                    ->filter(function ($op) use ($tractorPlate) {
+                        $opPlate = preg_replace('/[^A-Za-z0-9]/', '', (string) $op->tractor_plate);
+                        return $tractorPlate === '' || $opPlate === $tractorPlate;
+                    })
+                    ->first();
+
+                if (!$exitOperator) {
+                    $exitOperator = \App\Models\ExitOperator::where('name', 'like', "%{$operatorName}%")->first();
+                }
+            }
+        }
+
+        if ($exitOperator && isset($exitOperator->status) && $exitOperator->status === 'vetoed') {
+            return response()->json([
+                'title' => 'Operador Vetado',
+                'error' => "ALERTA: El operador '{$exitOperator->name}' asignado a esta orden se encuentra VETADO."
+            ], 403);
         }
 
         $operatorId = $exitOperator?->id;
@@ -1261,6 +1436,16 @@ class WeightTicketController extends Controller
             'withdrawal_letter' => $order->sale_order_folio ?? '',
             'presentation' => $order->presentation ?? 'GRANEL', // Crucial for dynamic validation
             'programmed_weight' => $programmedWeight,
+            'original_programmed_weight' => $originalProgrammedWeight,
+            'is_second_lot_tare' => $isPendingSecondTare,
+            'split_lot_round' => $isPendingSecondTare ? ((int) ($orderPlanData['split_lot_round'] ?? 2)) : 1,
+            'first_ticket_net_tons' => $isPendingSecondTare ? ((float) ($orderPlanData['first_ticket_net_tons'] ?? 0)) : null,
+            'first_ticket_number' => $isPendingSecondTare ? ($orderPlanData['first_ticket_number'] ?? null) : null,
+            'first_lot_folio' => $isPendingSecondTare ? ($orderPlanData['first_lot_folio'] ?? null) : null,
+            'second_ticket_net_tons' => $isPendingSecondTare ? ((float) ($orderPlanData['second_ticket_net_tons'] ?? 0)) : null,
+            'second_ticket_number' => $isPendingSecondTare ? ($orderPlanData['second_ticket_number'] ?? null) : null,
+            'second_lot_folio' => $isPendingSecondTare ? ($orderPlanData['second_lot_folio'] ?? null) : null,
+            'remaining_programmed_tons' => $isPendingSecondTare ? $programmedWeight : null,
             'unit_type' => $order->unit_type ?? ($exitOperator?->unit_type ?? 'N/A'), // Unified for frontend
             'linked_full_info' => \App\Models\WeightTicket::where('companion_shipment_order_id', $order->id)
                 ->where('weighing_status', '!=', 'cancelled')
@@ -1292,23 +1477,33 @@ class WeightTicketController extends Controller
             $operator = VesselOperator::with(['vessel.client', 'vessel.product'])->find($qr);
         }
 
-        // 3. Search by Folio of LoadingOrder (e.g. 31034, TK-31034, etc.)
+        // 3. Search by Folio of LoadingOrder (e.g. 31034, TK-31034, or OE folio PA2026-AMO-0001)
         if (!$operator) {
+            $normalizedQr = strtoupper(str_replace(["'", '/', '?', '_', '.'], '-', $qr));
             $loadingOrder = LoadingOrder::with([
                 'vessel_operator.vessel.client',
                 'vessel_operator.vessel.product',
                 'vessel.client',
                 'vessel.product',
-                'weight_ticket'
+                'weight_ticket',
+                'shipment_order',
             ])
-                ->where(function ($q) use ($qr) {
+                ->where(function ($q) use ($qr, $normalizedQr) {
                     $q->where('folio', $qr)
-                        ->orWhereHas('weight_ticket', fn($w) => $w->where('ticket_number', $qr)->orWhere('ticket_number', 'TK-' . $qr));
+                        ->orWhere('folio', $normalizedQr)
+                        ->orWhereHas('weight_ticket', fn($w) => $w->where('ticket_number', $qr)->orWhere('ticket_number', 'TK-' . $qr))
+                        ->orWhereHas('shipment_order', fn($so) => $so->where('folio', $qr)->orWhere('folio', $normalizedQr));
                 })
                 ->latest()
                 ->first();
 
             if ($loadingOrder) {
+                if ($loadingOrder->shipment_order_id && $request->input('context') !== 'apt') {
+                    return response()->json([
+                        'type' => 'loading_order',
+                        'id' => $loadingOrder->id,
+                    ]);
+                }
                 if ($loadingOrder->vessel_operator) {
                     $operator = $loadingOrder->vessel_operator;
                 } elseif ($loadingOrder->vessel_operator_id) {
@@ -1498,17 +1693,27 @@ class WeightTicketController extends Controller
         $shipmentOrder = null;
 
         if ($shipmentOrderId) {
-            $shipmentOrder = \App\Models\ShipmentOrder::find($shipmentOrderId);
+            $shipmentOrder = \App\Models\ShipmentOrder::with(['sales_order.product', 'items.product'])->find($shipmentOrderId);
             if ($shipmentOrder) {
+                $rawOrderPlan = $shipmentOrder->stowage_plan;
+                $orderPlanData = is_string($rawOrderPlan) ? (json_decode($rawOrderPlan, true) ?: []) : (is_array($rawOrderPlan) ? $rawOrderPlan : []);
+                $isPendingSecondTare = (($orderPlanData['second_lot_status'] ?? null) === 'pending_tare');
+
                 // Check if already has an active ticket
+                $hasInProgressTicket = \App\Models\WeightTicket::where('shipment_order_id', $shipmentOrderId)
+                    ->where('weighing_status', 'in_progress')
+                    ->exists();
                 $existingTicket = \App\Models\WeightTicket::where('shipment_order_id', $shipmentOrderId)
                     ->where('weighing_status', '!=', 'cancelled')
                     ->exists();
-                if ($existingTicket) {
+
+                if ($hasInProgressTicket || ($existingTicket && !$isPendingSecondTare)) {
                     return back()->withErrors(['error' => "OPERACIÓN BLOQUEADA: La orden de embarque '{$shipmentOrder->folio}' ya cuenta con un ticket de báscula activo."]);
                 }
 
-                // Check Surveillance scan & operator assignment
+                $isAmmonia = $this->isAmmoniaOrder($shipmentOrder);
+
+                // Check Surveillance scan & operator assignment (Except for Ammonia procedure which skips Surveillance)
                 $hasSurveillanceAccess = $shipmentOrder->accessLogs()
                     ->where(function ($q) {
                         $q->where('access_logs.status', 'in_plant')
@@ -1518,7 +1723,7 @@ class WeightTicketController extends Controller
                     ->whereNotNull('access_logs.subject_id')
                     ->exists();
 
-                if (!$hasSurveillanceAccess) {
+                if (!$isAmmonia && !$hasSurveillanceAccess) {
                     return back()->withErrors([
                         'error' => "OPERACIÓN BLOQUEADA: La orden de embarque '{$shipmentOrder->folio}' no puede tararse porque aún no ha sido escaneada ni asignada a un operador en Vigilancia."
                     ]);
@@ -1528,8 +1733,9 @@ class WeightTicketController extends Controller
 
         $companionShipmentOrderId = !empty($validated['companion_shipment_order_id']) ? $validated['companion_shipment_order_id'] : null;
         if ($companionShipmentOrderId) {
-            $companionOrder = \App\Models\ShipmentOrder::find($companionShipmentOrderId);
+            $companionOrder = \App\Models\ShipmentOrder::with(['sales_order.product', 'items.product'])->find($companionShipmentOrderId);
             if ($companionOrder) {
+                $isCompanionAmmonia = $this->isAmmoniaOrder($companionOrder);
                 $hasCompanionAccess = $companionOrder->accessLogs()
                     ->where(function ($q) {
                         $q->where('access_logs.status', 'in_plant')
@@ -1539,7 +1745,7 @@ class WeightTicketController extends Controller
                     ->whereNotNull('access_logs.subject_id')
                     ->exists();
 
-                if (!$hasCompanionAccess) {
+                if (!$isCompanionAmmonia && !$hasCompanionAccess) {
                     return back()->withErrors([
                         'error' => "OPERACIÓN BLOQUEADA: La orden complementaria '{$companionOrder->folio}' no puede tararse porque aún no ha sido escaneada ni asignada a un operador en Vigilancia."
                     ]);
@@ -1677,6 +1883,96 @@ class WeightTicketController extends Controller
                     'companion_shipment_order_id' => $validated['companion_shipment_order_id'] ?? null,
                     'full_part' => $validated['full_part'] ?? null,
                 ]);
+
+                // Si esta tara corresponde al 2do lote de una Orden de Embarque con destare parcial previo:
+                // activar en APT / Estibadores el estado 'in_progress' para que desde la fila de la tabla puedan asignar el 2do lote/almacén
+                if ($shipmentOrder) {
+                    $rawSoPlan = $shipmentOrder->stowage_plan;
+                    $soPlan = is_string($rawSoPlan) ? (json_decode($rawSoPlan, true) ?: []) : (is_array($rawSoPlan) ? $rawSoPlan : []);
+                    if (($soPlan['second_lot_status'] ?? null) === 'pending_tare') {
+                        $soPlan['second_lot_status'] = 'in_progress';
+                        $soPlan['second_lot_tare_at'] = now()->toIso8601String();
+                        $soPlan['second_lot_loading_order_id'] = $loadingOrderId;
+                        $soPlan['second_lot_assigned'] = false;
+
+                        $presUpper = strtoupper(trim((string) ($shipmentOrder->presentation ?? '')));
+                        $isSoEnvasado = str_contains($presUpper, 'ENVAS') || str_contains($presUpper, 'SACO');
+
+                        if ($isSoEnvasado) {
+                            // Mantener intacta la nota de estiba, solo pedir asignación/confirmación del nuevo lote/almacén y permitir editar/reemplazar muestras antes de liberar
+                            $soPlan['sampling_release_status'] = 'pending_release';
+                            unset($soPlan['released_by'], $soPlan['released_user_id'], $soPlan['released_at']);
+                        }
+
+                        $shipmentOrder->update([
+                            'status' => 'loading',
+                            'loading_finished_at' => null,
+                            'stowage_plan' => $soPlan,
+                        ]);
+
+                        $history = ShipmentProcessHistory::where('shipment_order_id', $shipmentOrder->id)->latest()->first();
+                        if ($history) {
+                            $rawHistPlan = $history->stowage_plan;
+                            $histPlan = is_string($rawHistPlan) ? (json_decode($rawHistPlan, true) ?: []) : (is_array($rawHistPlan) ? $rawHistPlan : []);
+                            $mergedHistPlan = array_merge($histPlan, $soPlan);
+                            $history->update([
+                                'status' => 'loading',
+                                'finished_at' => null,
+                                'stowage_plan' => $mergedHistPlan,
+                            ]);
+                        }
+                    }
+                }
+
+                // Para órdenes de Amoniaco (que no pasan a Vigilancia al entrar), asegurar registro in_plant en AccessLog al tarar para permitir Salida (Paso 8)
+                if ($shipmentOrder && $this->isAmmoniaOrder($shipmentOrder)) {
+                    $hasInPlantLog = $shipmentOrder->accessLogs()
+                        ->where('access_logs.status', 'in_plant')
+                        ->whereNull('access_logs.exit_at')
+                        ->exists();
+
+                    if (!$hasInPlantLog) {
+                        $opSubject = $exitOperatorId
+                            ? \App\Models\ExitOperator::find($exitOperatorId)
+                            : null;
+                        if (!$opSubject && !empty($shipmentOrder->operator_name)) {
+                            $opSubject = \App\Models\ExitOperator::firstOrCreate(
+                                ['name' => $shipmentOrder->operator_name],
+                                [
+                                    'tractor_plate' => $shipmentOrder->tractor_plate ?? 'S/P',
+                                    'trailer_plate' => $shipmentOrder->trailer_plate ?? 'S/P',
+                                    'economic_number' => $shipmentOrder->economic_number ?? $shipmentOrder->unit_number ?? 'S/N',
+                                    'transport_line' => $shipmentOrder->transport_company ?? 'N/A',
+                                    'license' => $shipmentOrder->license_number ?? 'N/A',
+                                    'status' => 'active',
+                                ]
+                            );
+                        }
+                        if ($opSubject) {
+                            $existingOpLog = \App\Models\AccessLog::where('status', 'in_plant')
+                                ->whereNull('exit_at')
+                                ->where('subject_id', $opSubject->id)
+                                ->where('subject_type', 'App\Models\ExitOperator')
+                                ->latest('id')
+                                ->first();
+
+                            if ($existingOpLog) {
+                                $existingOpLog->shipmentOrders()->syncWithoutDetaching([$shipmentOrder->id]);
+                            } else {
+                                $newLog = \App\Models\AccessLog::create([
+                                    'subject_id' => $opSubject->id,
+                                    'subject_type' => 'App\Models\ExitOperator',
+                                    'status' => 'in_plant',
+                                    'entry_at' => now(),
+                                    'checklist_passed' => true,
+                                    'user_id' => auth()->id(),
+                                    'notes' => "Registro automático en planta al tarar (Proceso Amoniaco) - OE {$shipmentOrder->folio}",
+                                ]);
+                                $newLog->shipmentOrders()->sync([$shipmentOrder->id]);
+                            }
+                        }
+                    }
+                }
             });
 
             return redirect()->route('scale.index')->with('success', 'Entrada registrada correctamente.');
@@ -1699,10 +1995,13 @@ class WeightTicketController extends Controller
             'reference' => 'nullable|string|max:255',
             'documenter_id' => 'nullable|exists:users,id',
             'scale_id' => 'nullable|integer',
+            'continue_in_another_lot' => 'nullable|boolean',
         ]);
 
+        $continueInAnotherLot = $request->boolean('continue_in_another_lot');
+
         try {
-            DB::transaction(function () use ($validated) {
+            DB::transaction(function () use ($validated, $continueInAnotherLot, $request) {
                 // Find LoadingOrder (Unified Flow)
                 $order = LoadingOrder::with(['weight_ticket', 'shipment_order'])->findOrFail($validated['shipment_order_id']);
                 $ticket = $order->weight_ticket;
@@ -1722,7 +2021,10 @@ class WeightTicketController extends Controller
 
                     $hasLoadedFinished = !empty($order->shipment_order->loading_finished_at) || $order->shipment_order->status === 'loaded';
                     if (!$hasLoadedFinished) {
-                        throw new \Exception("ALERTA: Operación Bloqueada. La orden de embarque (" . ($order->shipment_order->folio ?? $order->folio) . ") no ha finalizado su proceso en el módulo de Gestión de Proceso de Embarques.");
+                        $modLabel = $this->isAmmoniaOrder($order->shipment_order)
+                            ? 'Llenaderas (Producción)'
+                            : 'Gestión de Proceso de Embarques';
+                        throw new \Exception("ALERTA: Operación Bloqueada. La orden de embarque (" . ($order->shipment_order->folio ?? $order->folio) . ") no ha finalizado su proceso de carga en el módulo de {$modLabel}.");
                     }
                 }
 
@@ -1751,21 +2053,25 @@ class WeightTicketController extends Controller
                 $net = abs($secondWeight - $firstWeight);
                 $netTons = $net >= 100 ? ($net / 1000) : $net;
 
-                $assignedLotId = $validated['lot_id'] ?? $order->shipment_order?->lot_id ?? $ticket->lot_id ?? null;
+                $isAmmoniaExit = $order->shipment_order ? $this->isAmmoniaOrder($order->shipment_order) : false;
+
+                $assignedLotId = $isAmmoniaExit ? null : ($validated['lot_id'] ?? $order->shipment_order?->lot_id ?? $ticket->lot_id ?? null);
 
                 // Determine Warehouse to update in LoadingOrder
-                $finalWarehouse = $order->warehouse ?? $order->shipment_order?->warehouse;
-                if (!empty($validated['lot_id'])) {
-                    $lot = \App\Models\Lot::find($validated['lot_id']);
-                    if ($lot && $lot->warehouse) {
-                        $finalWarehouse = $lot->warehouse;
+                $finalWarehouse = $isAmmoniaExit ? null : ($order->warehouse ?? $order->shipment_order?->warehouse);
+                if (!$isAmmoniaExit) {
+                    if (!empty($validated['lot_id'])) {
+                        $lot = \App\Models\Lot::find($validated['lot_id']);
+                        if ($lot && $lot->warehouse) {
+                            $finalWarehouse = $lot->warehouse;
+                        }
+                    } elseif (!empty($validated['warehouse'])) {
+                        $finalWarehouse = $validated['warehouse'];
                     }
-                } elseif (!empty($validated['warehouse'])) {
-                    $finalWarehouse = $validated['warehouse'];
-                }
 
-                // Inventory Validation: Prevent destare if warehouse has insufficient or 0 stock
-                \App\Services\UreaStockService::validateAvailableStock($order, $finalWarehouse, $netTons);
+                    // Inventory Validation: Prevent destare if warehouse has insufficient or 0 stock
+                    \App\Services\UreaStockService::validateAvailableStock($order, $finalWarehouse, $netTons);
+                }
 
                 $ticketUpdate = [
                     'gross_weight' => $secondWeight,
@@ -1773,7 +2079,7 @@ class WeightTicketController extends Controller
                     'weighing_status' => 'completed',
                     'weigh_out_at' => now(),
                     'lot_id' => $assignedLotId,
-                    'packaging_type' => $validated['packaging_type'] ?? null,
+                    'packaging_type' => $isAmmoniaExit ? null : ($validated['packaging_type'] ?? null),
                     'weighmaster_id' => auth()->id(),
                     'documenter_id' => $validated['documenter_id'] ?? null,
                 ];
@@ -1802,6 +2108,135 @@ class WeightTicketController extends Controller
                 }
 
                 $order->update($updateData);
+
+                // Manejo de Orden de Embarque con 1er Destare Parcial (Continuar en otro lote) o 2do Destare Final
+                if ($order->shipment_order_id && $order->shipment_order) {
+                    $so = $order->shipment_order;
+                    $rawSoPlan = $so->stowage_plan;
+                    $soPlan = is_string($rawSoPlan) ? (json_decode($rawSoPlan, true) ?: []) : (is_array($rawSoPlan) ? $rawSoPlan : []);
+                    $history = ShipmentProcessHistory::where('shipment_order_id', $so->id)->latest()->first();
+
+                    $progTonsTotal = (float) ($so->programmed_tons ?: 0);
+                    if ($progTonsTotal <= 0 && (float) ($so->programmed_weight ?? 0) > 0) {
+                        $pw = (float) $so->programmed_weight;
+                        $progTonsTotal = $pw >= 100 ? ($pw / 1000) : $pw;
+                    }
+
+                    $isAlreadySecondLot = !empty($soPlan['second_lot_status']) && in_array($soPlan['second_lot_status'], ['in_progress', 'lot_assigned'], true);
+                    $currentRound = (int) ($soPlan['split_lot_round'] ?? ($isAlreadySecondLot ? 2 : 1));
+                    $soPresUpper = strtoupper(trim((string) ($so->presentation ?? 'GRANEL')));
+                    $isSoGranel = $soPresUpper === 'GRANEL';
+
+                    if ($continueInAnotherLot && !$isAlreadySecondLot && ($isSoGranel || ($progTonsTotal > 0 && $netTons < $progTonsTotal))) {
+                        // 1er Destare Parcial -> Habilita 2do Lote / 2da Tara
+                        $remainingTons = $progTonsTotal > $netTons ? round($progTonsTotal - $netTons, 3) : round($progTonsTotal, 3);
+                        $firstLotObj = $assignedLotId ? \App\Models\Lot::find($assignedLotId) : $so->lot;
+
+                        $soPlan['second_lot_status'] = 'pending_tare';
+                        $soPlan['split_lot_round'] = 2;
+                        $soPlan['first_loading_order_id'] = $order->id;
+                        $soPlan['first_ticket_id'] = $ticket->id;
+                        $soPlan['first_ticket_number'] = $ticket->ticket_number;
+                        $soPlan['first_ticket_net_tons'] = round($netTons, 3);
+                        $soPlan['first_ticket_net_kg'] = round($net, 2);
+                        $soPlan['first_lot_id'] = $assignedLotId;
+                        $soPlan['first_lot_folio'] = $firstLotObj?->folio ?? null;
+                        $soPlan['first_warehouse'] = $finalWarehouse;
+                        $soPlan['original_programmed_tons'] = $progTonsTotal;
+                        $soPlan['remaining_programmed_tons'] = $remainingTons;
+                        $soPlan['second_lot_assigned'] = false;
+
+                        $so->update([
+                            'status' => 'loading',
+                            'loading_finished_at' => null,
+                            'stowage_plan' => $soPlan,
+                        ]);
+
+                        if ($history) {
+                            $rawHPlan = $history->stowage_plan;
+                            $hPlan = is_string($rawHPlan) ? (json_decode($rawHPlan, true) ?: []) : (is_array($rawHPlan) ? $rawHPlan : []);
+                            $history->update([
+                                'status' => 'loading',
+                                'finished_at' => null,
+                                'stowage_plan' => array_merge($hPlan, $soPlan),
+                            ]);
+                        }
+                    } elseif ($continueInAnotherLot && $isAlreadySecondLot && $currentRound === 2) {
+                        // 2do Destare Parcial -> Habilita 3er Lote / 3ra Tara
+                        $firstNet = (float) ($soPlan['first_ticket_net_tons'] ?? 0);
+                        $accumulatedTons = round($firstNet + $netTons, 3);
+                        $remainingAfterSecond = round(max(0.01, $progTonsTotal - $accumulatedTons), 3);
+                        $secondLotObj = $assignedLotId ? \App\Models\Lot::find($assignedLotId) : $so->lot;
+
+                        $soPlan['second_lot_status'] = 'pending_tare';
+                        $soPlan['split_lot_round'] = 3;
+                        $soPlan['second_loading_order_id'] = $order->id;
+                        $soPlan['second_ticket_id'] = $ticket->id;
+                        $soPlan['second_ticket_number'] = $ticket->ticket_number;
+                        $soPlan['second_ticket_net_tons'] = round($netTons, 3);
+                        $soPlan['second_ticket_net_kg'] = round($net, 2);
+                        $soPlan['second_lot_id'] = $assignedLotId;
+                        $soPlan['second_lot_folio'] = $secondLotObj?->folio ?? ($soPlan['second_lot_folio'] ?? null);
+                        $soPlan['second_warehouse'] = $finalWarehouse ?: ($soPlan['second_warehouse'] ?? null);
+                        $soPlan['remaining_programmed_tons'] = $remainingAfterSecond;
+                        $soPlan['second_lot_assigned'] = false;
+
+                        $so->update([
+                            'status' => 'loading',
+                            'loading_finished_at' => null,
+                            'stowage_plan' => $soPlan,
+                        ]);
+
+                        if ($history) {
+                            $rawHPlan = $history->stowage_plan;
+                            $hPlan = is_string($rawHPlan) ? (json_decode($rawHPlan, true) ?: []) : (is_array($rawHPlan) ? $rawHPlan : []);
+                            $history->update([
+                                'status' => 'loading',
+                                'finished_at' => null,
+                                'stowage_plan' => array_merge($hPlan, $soPlan),
+                            ]);
+                        }
+                    } elseif ($isAlreadySecondLot) {
+                        $soPlan['second_lot_status'] = 'completed';
+                        if ($currentRound >= 3) {
+                            $thirdLotObj = $assignedLotId ? \App\Models\Lot::find($assignedLotId) : $so->lot;
+                            $soPlan['third_ticket_id'] = $ticket->id;
+                            $soPlan['third_ticket_number'] = $ticket->ticket_number;
+                            $soPlan['third_ticket_net_tons'] = round($netTons, 3);
+                            $soPlan['third_ticket_net_kg'] = round($net, 2);
+                            $soPlan['third_lot_id'] = $assignedLotId;
+                            $soPlan['third_lot_folio'] = $thirdLotObj?->folio ?? ($soPlan['third_lot_folio'] ?? null);
+                            $soPlan['third_warehouse'] = $finalWarehouse ?: ($soPlan['third_warehouse'] ?? null);
+                        } else {
+                            $secondLotObj = $assignedLotId ? \App\Models\Lot::find($assignedLotId) : $so->lot;
+                            $soPlan['second_ticket_id'] = $ticket->id;
+                            $soPlan['second_ticket_number'] = $ticket->ticket_number;
+                            $soPlan['second_ticket_net_tons'] = round($netTons, 3);
+                            $soPlan['second_ticket_net_kg'] = round($net, 2);
+                            $soPlan['second_lot_id'] = $assignedLotId;
+                            $soPlan['second_lot_folio'] = $secondLotObj?->folio ?? ($soPlan['second_lot_folio'] ?? null);
+                            $soPlan['second_warehouse'] = $finalWarehouse ?: ($soPlan['second_warehouse'] ?? null);
+                        }
+
+                        $so->update([
+                            'status' => 'completed',
+                            'warehouse' => $finalWarehouse ?: $so->warehouse,
+                            'lot_id' => $assignedLotId ?: $so->lot_id,
+                            'stowage_plan' => $soPlan,
+                        ]);
+
+                        if ($history) {
+                            $rawHPlan = $history->stowage_plan;
+                            $hPlan = is_string($rawHPlan) ? (json_decode($rawHPlan, true) ?: []) : (is_array($rawHPlan) ? $rawHPlan : []);
+                            $history->update([
+                                'status' => 'completed',
+                                'warehouse' => $finalWarehouse ?: $history->warehouse,
+                                'lot_id' => $assignedLotId ?: $history->lot_id,
+                                'stowage_plan' => array_merge($hPlan, $soPlan),
+                            ]);
+                        }
+                    }
+                }
 
 
                 // Mark linked trip as completed if applicable
@@ -1856,13 +2291,26 @@ class WeightTicketController extends Controller
                     if ($assignment) {
                         $presUpper = strtoupper(trim($assignment->presentation ?? $order->shipment_order?->presentation ?? $order->presentation ?? ''));
                         $isEnvasado = str_contains($presUpper, 'ENVAS') || str_contains($presUpper, 'SACO');
-                        $finalAssignmentTm = $isEnvasado ? (float) ($assignment->original_tm ?? $assignment->tm) : $netTons;
+
+                        $rawSoPlanForAsg = $order->shipment_order?->stowage_plan;
+                        $soPlanForAsg = is_string($rawSoPlanForAsg) ? (json_decode($rawSoPlanForAsg, true) ?: []) : (is_array($rawSoPlanForAsg) ? $rawSoPlanForAsg : []);
+                        $isPartialFirstExit = (($soPlanForAsg['second_lot_status'] ?? null) === 'pending_tare');
+                        $isSecondLotFinalExit = (($soPlanForAsg['second_lot_status'] ?? null) === 'completed');
+                        $firstNetForAsg = isset($soPlanForAsg['first_ticket_net_tons']) ? (float) $soPlanForAsg['first_ticket_net_tons'] : 0.0;
+                        $secondNetForAsg = isset($soPlanForAsg['second_ticket_net_tons']) ? (float) $soPlanForAsg['second_ticket_net_tons'] : 0.0;
+                        $splitRoundForAsg = (int) ($soPlanForAsg['split_lot_round'] ?? 2);
+                        $accumulatedSoFar = $splitRoundForAsg >= 3
+                            ? round($firstNetForAsg + $secondNetForAsg + ($isSecondLotFinalExit ? $netTons : 0), 2)
+                            : round($firstNetForAsg + ($isSecondLotFinalExit ? $netTons : 0), 2);
+                        $totalRealTons = ($isSecondLotFinalExit || $isPartialFirstExit) ? $accumulatedSoFar : $netTons;
+
+                        $finalAssignmentTm = $isEnvasado ? (float) ($assignment->original_tm ?? $assignment->tm) : $totalRealTons;
 
                         $assignment->update([
                             'original_tm' => $assignment->original_tm ?? $assignment->tm,
                             'tm' => $finalAssignmentTm,
-                            'destared_tm' => $isEnvasado ? $finalAssignmentTm : $netTons,
-                            'destare_status' => 'completed',
+                            'destared_tm' => $isEnvasado ? ($isPartialFirstExit ? $accumulatedSoFar : $finalAssignmentTm) : $totalRealTons,
+                            'destare_status' => $isPartialFirstExit ? 'pending' : 'completed',
                             'destared_at' => now(),
                             'loading_order_id' => $order->id,
                         ]);
@@ -2012,6 +2460,25 @@ class WeightTicketController extends Controller
             $clientName = $order->shipment_order->client->business_name ?? ($order->shipment_order->client->name ?? $clientName);
             $productName = $order->shipment_order->product->name ?? ($order->shipment_order->product ?? $productName);
             $programmedWeight = $order->shipment_order->programmed_tons ?? 0;
+
+            $rawSoPlanPrint = $order->shipment_order->stowage_plan;
+            $soPlanPrint = is_string($rawSoPlanPrint) ? (json_decode($rawSoPlanPrint, true) ?: []) : (is_array($rawSoPlanPrint) ? $rawSoPlanPrint : []);
+            $isThirdTicketOfOrder = !empty($soPlanPrint['third_ticket_id']) && (int) $soPlanPrint['third_ticket_id'] === (int) $ticket->id;
+            $isSecondTicketOfOrder = !empty($soPlanPrint['second_ticket_id']) && (int) $soPlanPrint['second_ticket_id'] === (int) $ticket->id;
+            if (!$isSecondTicketOfOrder && !$isThirdTicketOfOrder && !empty($soPlanPrint['first_ticket_id']) && (int) $soPlanPrint['first_ticket_id'] !== (int) $ticket->id) {
+                $isSecondTicketOfOrder = true;
+            }
+            if ($isThirdTicketOfOrder && isset($soPlanPrint['remaining_programmed_tons']) && (float) $soPlanPrint['remaining_programmed_tons'] > 0) {
+                $programmedWeight = (float) $soPlanPrint['remaining_programmed_tons'];
+            } elseif ($isSecondTicketOfOrder) {
+                $origProg = (float) ($soPlanPrint['original_programmed_tons'] ?? $programmedWeight);
+                $firstNet = (float) ($soPlanPrint['first_ticket_net_tons'] ?? 0);
+                if ($origProg > 0 && $firstNet > 0 && $origProg > $firstNet) {
+                    $programmedWeight = round($origProg - $firstNet, 3);
+                } elseif (isset($soPlanPrint['remaining_programmed_tons']) && (float) $soPlanPrint['remaining_programmed_tons'] > 0) {
+                    $programmedWeight = (float) $soPlanPrint['remaining_programmed_tons'];
+                }
+            }
         } else {
             // Vessel Fallback
             $clientName = $order->vessel->client->name ?? $clientName;

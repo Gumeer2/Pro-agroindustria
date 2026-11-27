@@ -115,6 +115,7 @@ export default function Create({
     destinations,
     sales_orders,
     default_folio,
+    default_ammonia_folio,
     scale_operators,
     auto_operator_id,
     first_order_id,
@@ -126,10 +127,18 @@ export default function Create({
     destinations: CatalogOption[];
     sales_orders: SalesOrder[];
     default_folio: string;
+    default_ammonia_folio?: string;
     scale_operators?: { id: number; name: string }[];
     auto_operator_id?: string | number | null;
     first_order_id?: string | null;
 }) {
+    const ammoniaDefaultFolio = default_ammonia_folio || `PA${new Date().getFullYear()}-AMO-0001`;
+    const isAmmoniaSalesOrder = (so?: SalesOrder | null) => {
+        if (!so) return false;
+        const f = String(so.folio || "").toUpperCase();
+        const p = String(so.product?.name || (so as any).product_name || "").toUpperCase();
+        return f.startsWith("OV-AMO") || f.includes("-AMO") || p.includes("AMONIACO") || p.includes("AMONÍACO") || p.includes("NH3") || p.includes("SERVICIO DE CARGA");
+    };
     const { data, setData, post, processing, errors } = useForm({
         folio: default_folio || "",
         sales_order_id: "", // Reference to OV
@@ -247,9 +256,18 @@ export default function Create({
         // Now cleanText should be just the ID (e.g., "3")
 
         try {
+            const domProd = (typeof document !== "undefined" ? (document.querySelector('[name="product"]') as HTMLInputElement)?.value : "") || data.product || "";
+            const domSoId = (typeof document !== "undefined" ? (document.querySelector('[name="sales_order_id"]') as HTMLSelectElement)?.value : "") || data.sales_order_id || "";
+            const domFolio = (typeof document !== "undefined" ? (document.querySelector('[name="folio"]') as HTMLInputElement)?.value : "") || data.folio || "";
+
             // Search by ID first (assuming text is ID)
             const response = await axios.get(route("documentation.operators.search"), {
-                params: { q: cleanText },
+                params: {
+                    q: cleanText,
+                    sales_order_id: domSoId,
+                    product: domProd,
+                    folio: domFolio,
+                },
             });
 
             const operators: Operator[] = response.data;
@@ -289,7 +307,9 @@ export default function Create({
                 return;
             }
 
-            if (!selectedOperator.is_authorized_in_plant) {
+            const isPipaUnit = String(selectedOperator.unit_type || "").toUpperCase().includes("PIPA");
+
+            if (!selectedOperator.is_authorized_in_plant && !isPipaUnit) {
                 const isPending = selectedOperator.surveillance_status === "pending";
                 const message = isPending
                     ? `El operador está en estado PENDIENTE. Motivo: ${selectedOperator.surveillance_notes || 'Sin especificar'}. Por favor verifique con vigilancia antes de continuar.`
@@ -308,8 +328,18 @@ export default function Create({
                 return;
             }
 
-            // Validar si la unidad ya tiene todas sus asignaciones documentadas (SOLO APLICA SI ES FULL POR TIPO DE UNIDAD)
-            const isFullUnit = Boolean(
+            const currentSo = data.sales_order_id
+                ? sales_orders.find((s) => String(s.id) === String(data.sales_order_id))
+                : null;
+            const isCurrentAmmonia =
+                isAmmoniaSalesOrder(currentSo) ||
+                String(data.product || "").toUpperCase().includes("AMON") ||
+                String(data.product || "").toUpperCase().includes("SERVICIO DE CARGA") ||
+                String(data.folio || "").toUpperCase().includes("-AMO-");
+            const isAmmoniaOperatorFlow = isPipaUnit || isCurrentAmmonia;
+
+            // Validar si la unidad ya tiene todas sus asignaciones documentadas (SOLO APLICA SI ES FULL POR TIPO DE UNIDAD Y NO ES FLUJO AMONIACO)
+            const isFullUnit = !isAmmoniaOperatorFlow && Boolean(
                 selectedOperator.unit_type && selectedOperator.unit_type.toUpperCase().includes('FULL')
             );
 
@@ -534,10 +564,29 @@ export default function Create({
     const handleOperatorSelect = (operator: Operator | null) => {
         if (!operator) return;
 
+        const currentSo = data.sales_order_id
+            ? sales_orders.find((s) => String(s.id) === String(data.sales_order_id))
+            : null;
+        const isCurrentAmmonia =
+            isAmmoniaSalesOrder(currentSo) ||
+            String(data.product || "").toUpperCase().includes("AMON") ||
+            String(data.product || "").toUpperCase().includes("SERVICIO DE CARGA") ||
+            String(data.folio || "").toUpperCase().includes("-AMO-");
+        const isPipaUnit = String(operator.unit_type || "").toUpperCase().includes("PIPA");
+        const hasNonAmmoniaAssignment = Boolean(
+            operator.assignments &&
+            operator.assignments.some((a) => {
+                const f = String(a.folio || "").toUpperCase();
+                const p = String(a.product_name || "").toUpperCase();
+                return !(f.startsWith("OV-AMO") || f.includes("-AMO") || p.includes("AMON") || p.includes("NH3") || p.includes("SERVICIO DE CARGA"));
+            })
+        );
+        const isAmmoniaFlow = isCurrentAmmonia || (isPipaUnit && !hasNonAmmoniaAssignment);
+
         let defaultAsgId: string | number = "";
         let undocumentedCount = 0;
 
-        if (operator.assignments && operator.assignments.length > 0) {
+        if (!isAmmoniaFlow && operator.assignments && operator.assignments.length > 0) {
             setOperatorAssignments(operator.assignments);
             const firstUndocumented = operator.assignments.find((a) => !a.is_documented);
             undocumentedCount = operator.assignments.filter((a) => !a.is_documented).length;
@@ -548,7 +597,7 @@ export default function Create({
                 defaultAsgId = "";
                 setSelectedAssignmentId("");
             }
-        } else if (operator.sales_order_id) {
+        } else if (!isAmmoniaFlow && operator.sales_order_id) {
             setOperatorAssignments([
                 {
                     id: "default",
@@ -567,7 +616,7 @@ export default function Create({
             setSelectedAssignmentId("");
         }
 
-        if (operator.assignments && operator.assignments.length > 0 && undocumentedCount === 0) {
+        if (!isAmmoniaFlow && operator.assignments && operator.assignments.length > 0 && undocumentedCount === 0) {
             // No hay asignaciones pendientes disponibles para documentar
             return;
         }
@@ -576,10 +625,28 @@ export default function Create({
             assignment_id: defaultAsgId,
         };
 
-        const activeAssignment = (operator.assignments && operator.assignments.length > 0)
+        if (isAmmoniaFlow && !data.sales_order_id) {
+            const ammoniaOrders = sales_orders.filter((s) => isAmmoniaSalesOrder(s));
+            autoFields.folio = ammoniaDefaultFolio;
+            if (ammoniaOrders.length === 1) {
+                const onlyAmo = ammoniaOrders[0];
+                autoFields.sales_order_id = String(onlyAmo.id);
+                autoFields.client_id = onlyAmo.client_id ? String(onlyAmo.client_id) : "";
+                autoFields.client_name = onlyAmo.client?.business_name || "";
+                autoFields.rfc = onlyAmo.client?.rfc || "";
+                autoFields.address = onlyAmo.client?.address || "";
+                autoFields.product = onlyAmo.product?.name || "AMONIACO";
+                autoFields.balance = onlyAmo.balance !== undefined ? String(onlyAmo.balance) : "0";
+                autoFields.presentation = "GRANEL";
+            }
+        } else if (isCurrentAmmonia) {
+            autoFields.folio = String(data.folio || "").toUpperCase().includes("-AMO-") ? data.folio : ammoniaDefaultFolio;
+        }
+
+        const activeAssignment = (!isAmmoniaFlow && operator.assignments && operator.assignments.length > 0)
             ? (operator.assignments.find((a) => !a.is_documented) || null)
             : null;
-        const targetSoId = (activeAssignment?.sales_order_id || operator.sales_order_id || "").toString();
+        const targetSoId = !isAmmoniaFlow ? (activeAssignment?.sales_order_id || operator.sales_order_id || "").toString() : "";
 
         // Auto-llenar campos si el operador tiene Orden de Venta asignada
         if (targetSoId) {
@@ -724,8 +791,13 @@ export default function Create({
             const sackObs = sackTypeVal ? `TIPO DE SACO: ${sackTypeVal.toUpperCase()}` : "";
             const finalObservations = [vesselObs, sackObs].filter(Boolean).join(" ");
 
+            const isAmo = isAmmoniaSalesOrder(so);
+
             setData((data) => ({
                 ...data,
+                folio: isAmo
+                    ? (String(data.folio || "").toUpperCase().includes("-AMO-") ? data.folio : ammoniaDefaultFolio)
+                    : (String(data.folio || "").toUpperCase().includes("-AMO-") ? (default_folio || "") : data.folio),
                 assignment_id: matchAssignment?.id || data.assignment_id,
                 sales_order_id: soId,
                 client_id: so.client_id.toString(),
@@ -735,8 +807,8 @@ export default function Create({
                 product: so.product?.name || "",
                 balance: so.balance ? so.balance.toString() : "0",
                 observations: finalObservations,
-                presentation: matchAssignment?.presentation ? matchAssignment.presentation.toUpperCase() : data.presentation,
-                sack_type: matchAssignment?.sack ? matchAssignment.sack.replace(/[^0-9]/g, "") : data.sack_type,
+                presentation: isAmo ? "GRANEL" : (matchAssignment?.presentation ? matchAssignment.presentation.toUpperCase() : data.presentation),
+                sack_type: isAmo ? "" : (matchAssignment?.sack ? matchAssignment.sack.replace(/[^0-9]/g, "") : data.sack_type),
                 programmed_tons: matchAssignment?.tm ? String(matchAssignment.tm) : (matchAssignment ? "" : data.programmed_tons),
                 trailer_plate: matchAssignment?.trailer_plate || data.trailer_plate,
             }));
@@ -756,7 +828,7 @@ export default function Create({
         }
     };
 
-    // Solo mostrar las Órdenes de Venta que tiene asignadas (y pendientes de documentar) el operador escaneado
+    // Solo mostrar las Órdenes de Venta que tiene asignadas (y pendientes de documentar) el operador escaneado, además de las OV de Amoniaco
     const filteredSalesOrders = useMemo(() => {
         if (!data.operator_id) {
             return sales_orders;
@@ -767,6 +839,7 @@ export default function Create({
             : operatorAssignments;
 
         const list = sales_orders.filter((so) =>
+            isAmmoniaSalesOrder(so) ||
             activeAsgs.some((a) => a.sales_order_id?.toString() === so.id.toString()) ||
             (data.sales_order_id && so.id.toString() === data.sales_order_id.toString())
         );
@@ -783,7 +856,7 @@ export default function Create({
             }
         });
 
-        return list;
+        return list.length > 0 ? list : sales_orders;
     }, [data.operator_id, data.sales_order_id, sales_orders, operatorAssignments]);
 
     const validateForm = () => {
@@ -916,6 +989,30 @@ export default function Create({
                     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }
+            return;
+        }
+
+        const isPipaUnit = Boolean(
+            (data.unit_type && data.unit_type.toUpperCase().includes("PIPA")) ||
+            (selectedOperator?.unit_type && selectedOperator.unit_type.toUpperCase().includes("PIPA"))
+        );
+
+        if (selectedOperator && !selectedOperator.is_authorized_in_plant && !isPipaUnit) {
+            const isPending = selectedOperator.surveillance_status === "pending";
+            const message = isPending
+                ? `El operador está en estado PENDIENTE. Motivo: ${selectedOperator.surveillance_notes || "Sin especificar"}. Por favor verifique con vigilancia antes de continuar.`
+                : "El operador debe autorizarse primero en el módulo de Vigilancia y Control de Acceso para permitir documentar. Por favor pase a escanear a Vigilancia.";
+
+            Swal.fire({
+                icon: "warning",
+                title: isPending ? "PENDIENTE" : "Pase a escanear a Vigilancia",
+                text: message,
+                confirmButtonText: "Entendido",
+                confirmButtonColor: "#f59e0b",
+                background: "#ffffff",
+                color: "#172554",
+                backdrop: "rgba(15, 23, 42, 0.45)",
+            });
             return;
         }
 
@@ -1316,27 +1413,22 @@ export default function Create({
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setQrInput(val);
-                                                // If operator is NOT selected, update operator_name directly as they type
-                                                if (!data.operator_id) {
-                                                    setData("operator_name", val);
-                                                    clearClientError("operator_name");
-                                                } else {
-                                                    // If operator IS selected, clearing it resets the selection
-                                                    if (val === "") {
-                                                        setData(d => ({
-                                                            ...d,
-                                                            operator_id: "",
-                                                            operator_name: "",
-                                                            transport_company: "",
-                                                            unit_type: "",
-                                                            tractor_plate: "",
-                                                            trailer_plate: "",
-                                                            economic_number: "",
-                                                            unit_number: "",
-                                                            license_number: "",
-                                                        }));
-                                                        setOperatorAssignments([]);
-                                                    }
+                                                // If operator is selected, clearing it resets the selection
+                                                if (data.operator_id && val === "") {
+                                                    setData(d => ({
+                                                        ...d,
+                                                        operator_id: "",
+                                                        operator_name: "",
+                                                        transport_company: "",
+                                                        unit_type: "",
+                                                        tractor_plate: "",
+                                                        trailer_plate: "",
+                                                        economic_number: "",
+                                                        unit_number: "",
+                                                        license_number: "",
+                                                    }));
+                                                    setOperatorAssignments([]);
+                                                    setSelectedOperator(null);
                                                 }
                                             }}
                                             className={`w-full rounded-lg border-2 shadow-sm py-2.5 pl-10 pr-10 outline-none transition-all ${data.operator_id

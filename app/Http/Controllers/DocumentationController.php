@@ -70,17 +70,10 @@ class DocumentationController extends Controller
                 ];
             }),
             'default_folio' => function () {
-                $maxFolio = ShipmentOrder::where('folio', 'like', 'PA' . date('Y') . '-%')
-                    ->get()
-                    ->map(function ($order) {
-                        $parts = explode('-', $order->folio);
-                        return (count($parts) === 2 && is_numeric($parts[1])) ? (int) $parts[1] : 0;
-                    })
-                    ->max();
-
-                $nextNumber = ($maxFolio ?? 0) + 1;
-
-                return 'PA' . date('Y') . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+                return $this->generateNextFolio();
+            },
+            'default_ammonia_folio' => function () {
+                return $this->generateNextAmmoniaFolio();
             },
         ]);
     }
@@ -114,6 +107,48 @@ class DocumentationController extends Controller
         $nextNumber = ($maxFolio ?? 0) + 1;
 
         return 'PA' . date('Y') . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+    }
+
+    private function generateNextAmmoniaFolio(): string
+    {
+        $year = date('Y');
+        $prefix = "PA{$year}-AMO-";
+        $maxFolio = ShipmentOrder::where('folio', 'like', $prefix . '%')
+            ->get()
+            ->map(function ($order) {
+                $parts = explode('-', $order->folio);
+                return (count($parts) === 3 && strtoupper($parts[1]) === 'AMO' && is_numeric($parts[2])) ? (int) $parts[2] : 0;
+            })
+            ->max();
+
+        $nextNumber = ($maxFolio ?? 0) + 1;
+
+        return $prefix . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+    }
+
+    private function isAmmoniaOrderData(?SalesOrder $salesOrder = null, ?string $productName = null, ?string $folio = null): bool
+    {
+        $folioUpper = strtoupper(trim((string) $folio));
+        if ($folioUpper !== '' && (preg_match('/^PA\d{4}-AMO-\d+/i', $folioUpper) || str_contains($folioUpper, '-AMO-'))) {
+            return true;
+        }
+
+        $prodUpper = mb_strtoupper(trim((string) ($productName ?: ($salesOrder?->product?->name ?? ''))), 'UTF-8');
+        if ($prodUpper !== '' && (
+            str_contains($prodUpper, 'AMONIACO') || 
+            str_contains($prodUpper, 'AMONÍACO') || 
+            str_contains($prodUpper, 'NH3') ||
+            str_contains($prodUpper, 'SERVICIO DE CARGA')
+        )) {
+            return true;
+        }
+
+        $soFolioUpper = strtoupper(trim((string) ($salesOrder?->folio ?? '')));
+        if ($soFolioUpper !== '' && (str_starts_with($soFolioUpper, 'OV-AMO') || str_contains($soFolioUpper, '-AMO'))) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -174,7 +209,18 @@ class DocumentationController extends Controller
         }
 
         // 1. Sales Order reference (Permitido guardar aunque exceda saldo para permitir Ajuste de Órdenes de Venta posterior)
-        $salesOrder = SalesOrder::findOrFail($validated['sales_order_id']);
+        $salesOrder = SalesOrder::with('product')->findOrFail($validated['sales_order_id']);
+        $isAmmoniaOrder = $this->isAmmoniaOrderData($salesOrder, $validated['product'] ?? null, $validated['folio'] ?? null);
+
+        // Si el proceso es Amoniaco, asegurar nomenclatura PA{YEAR}-AMO-{0001}
+        if ($isAmmoniaOrder) {
+            $rawFolio = strtoupper(trim((string) ($validated['folio'] ?? '')));
+            if (!preg_match('/^PA\d{4}-AMO-\d{4}$/i', $rawFolio) || ShipmentOrder::where('folio', $rawFolio)->exists()) {
+                $validated['folio'] = $this->generateNextAmmoniaFolio();
+            } else {
+                $validated['folio'] = $rawFolio;
+            }
+        }
 
         // 2. Normalize casing for identifiers
         $toUpperFields = [
@@ -266,8 +312,58 @@ class DocumentationController extends Controller
             ? \App\Models\ExitOperator::where('name', $validated['operator_name'])->first()
             : (!empty($request->input('operator_id')) ? \App\Models\ExitOperator::find($request->input('operator_id')) : null);
 
+        $unitTypeToCheck = strtoupper(trim((string) ($exitOp?->unit_type ?? $validated['unit_type'] ?? '')));
+        $isPipaOrderUnit = str_contains($unitTypeToCheck, 'PIPA');
+
+        if ($exitOp && !$isPipaOrderUnit) {
+            $lastOpLog = AccessLog::where('subject_id', $exitOp->id)
+                ->where(function ($q) {
+                    $q->where('subject_type', \App\Models\ExitOperator::class)
+                        ->orWhere('subject_type', 'App\Models\ExitOperator');
+                })
+                ->latest('created_at')
+                ->first();
+
+            $isOpAuthorizedInPlant = $lastOpLog && $lastOpLog->status === 'in_plant' && is_null($lastOpLog->exit_at);
+            if ($isOpAuthorizedInPlant && $lastOpLog) {
+                $lastLogOrders = $lastOpLog->shipmentOrders()->where('shipment_orders.status', '!=', 'cancelled')->get();
+                if ($lastLogOrders->isNotEmpty()) {
+                    $isFullOp = str_contains($unitTypeToCheck, 'FULL');
+                    $pendingAsgCount = ClientOperatorAssignment::where('operator_id', $exitOp->id)
+                        ->where(function ($q) {
+                            $q->whereNull('destare_status')->orWhere('destare_status', 'pending');
+                        })->count();
+                    $maxOrdersForLog = $isFullOp ? max(2, $pendingAsgCount) : 1;
+                    $allLogOrdersCompleted = $lastLogOrders->every(function ($ord) {
+                        return in_array($ord->status, ['completed', 'closed'], true) || ($ord->destare_status ?? '') === 'completed';
+                    });
+                    if ($allLogOrdersCompleted && ($lastLogOrders->count() >= $maxOrdersForLog || $pendingAsgCount === 0)) {
+                        $isOpAuthorizedInPlant = false;
+                    }
+                }
+            }
+
+            if (!$isOpAuthorizedInPlant) {
+                if ($lastOpLog && $lastOpLog->status === 'pending') {
+                    $motivo = $lastOpLog->notes ?: 'Sin especificar';
+                    return back()->withInput()->withErrors([
+                        'operator_name' => "PENDIENTE: El operador está en estado PENDIENTE en Vigilancia. Motivo: {$motivo}. Por favor verifique con vigilancia antes de continuar.",
+                    ]);
+                }
+                if ($lastOpLog && $lastOpLog->status === 'rejected') {
+                    $motivo = $lastOpLog->notes ? " Motivo: {$lastOpLog->notes}" : "";
+                    return back()->withInput()->withErrors([
+                        'operator_name' => "Acceso Denegado en Vigilancia: Este operador fue rechazado por el personal de vigilancia.{$motivo}",
+                    ]);
+                }
+                return back()->withInput()->withErrors([
+                    'operator_name' => "Pase a escanear a Vigilancia: El operador debe autorizarse primero en el módulo de Vigilancia y Control de Acceso (solo las unidades PIPA o FULL PIPA pueden pasar a documentar sin pasar por Vigilancia).",
+                ]);
+            }
+        }
+
         $firstAssignment = null;
-        if ($exitOp) {
+        if ($exitOp && !$isAmmoniaOrder) {
             if ($request->filled('assignment_id') && is_numeric($request->input('assignment_id'))) {
                 $firstAssignment = ClientOperatorAssignment::where('id', (int) $request->input('assignment_id'))
                     ->where('operator_id', $exitOp->id)
@@ -340,7 +436,7 @@ class DocumentationController extends Controller
             $firstAssignment->update(['shipment_order_id' => $order->id]);
         }
 
-        if ($exitOp) {
+        if ($exitOp && !$isAmmoniaOrder) {
             // Si es unidad FULL y aún tiene la 2da parte pendiente sin documentar, pasar automáticamente a la 2da parte en el formulario
             $isFullUnit = str_contains(strtoupper($exitOp->unit_type ?? $validated['unit_type'] ?? ''), 'FULL');
 
@@ -491,6 +587,11 @@ class DocumentationController extends Controller
     public function searchOperators(Request $request)
     {
         $query = $request->input('q');
+        $reqProduct = $request->input('product');
+        $reqFolio = $request->input('folio');
+        $reqSalesOrderId = $request->input('sales_order_id');
+        $reqSalesOrder = $reqSalesOrderId ? SalesOrder::with('product')->find($reqSalesOrderId) : null;
+        $isAmmoniaContext = $this->isAmmoniaOrderData($reqSalesOrder, $reqProduct, $reqFolio);
 
         // El usuario se refiere a "Operadores de Salida" gestionados en ExitOperatorController
         $operators = \App\Models\ExitOperator::where(function ($q) use ($query) {
@@ -501,7 +602,7 @@ class DocumentationController extends Controller
             ->orderBy('name')
             ->limit(20)
             ->get()
-            ->map(function ($op) {
+            ->map(function ($op) use ($isAmmoniaContext) {
                 $lastLog = AccessLog::where('subject_id', $op->id)
                     ->where(function ($q) {
                         $q->where('subject_type', \App\Models\ExitOperator::class)
@@ -537,12 +638,32 @@ class DocumentationController extends Controller
                     ->orderBy('id', 'asc')
                     ->get();
 
-                $assignments = $pendingAssignments->isNotEmpty()
-                    ? $pendingAssignments
-                    : ClientOperatorAssignment::where('operator_id', $op->id)
-                        ->with(['salesOrder.client', 'salesOrder.product', 'salesOrder.vessel'])
-                        ->orderBy('updated_at', 'desc')
-                        ->get();
+                $hasActualPending = $pendingAssignments->isNotEmpty();
+                $hasAmmoniaAssignment = $pendingAssignments->contains(fn($a) => $this->isAmmoniaOrderData($a->salesOrder));
+                $isPipaUnit = str_contains(strtoupper(trim((string) ($op->unit_type ?? ''))), 'PIPA');
+
+                // Solo las unidades tipo PIPA o FULL PIPA pueden pasar a documentar sin pasar por Vigilancia.
+                // Todas las demás unidades (Full, Sencillo, Tortón, Volteo, etc.) DEBEN contar con un registro de entrada vigente
+                // en Vigilancia (y que aún no haya agotado todas las asignaciones de su viaje actual) o mostrar el aviso de Vigilancia / PENDIENTE.
+                if ($isPipaUnit) {
+                    $isAuthorizedInPlant = true;
+                    $assignments = $pendingAssignments;
+                } else {
+                    if ($isAuthorizedInPlant && $lastLog) {
+                        $lastLogOrders = $lastLog->shipmentOrders()->where('shipment_orders.status', '!=', 'cancelled')->get();
+                        if ($lastLogOrders->isNotEmpty()) {
+                            $isFullOp = str_contains(strtoupper($op->unit_type ?? ''), 'FULL');
+                            $maxOrdersForLog = $isFullOp ? max(2, $pendingAssignments->count()) : 1;
+                            $allLogOrdersCompleted = $lastLogOrders->every(function ($ord) {
+                                return in_array($ord->status, ['completed', 'closed'], true) || ($ord->destare_status ?? '') === 'completed';
+                            });
+                            if ($allLogOrdersCompleted && ($lastLogOrders->count() >= $maxOrdersForLog || !$hasActualPending)) {
+                                $isAuthorizedInPlant = false;
+                            }
+                        }
+                    }
+                    $assignments = $pendingAssignments;
+                }
 
                 $isFullUnit = str_contains(strtoupper($op->unit_type ?? ''), 'FULL');
                 $trailerParts = array_values(array_filter(array_map('trim', explode('/', $op->trailer_plate ?? ''))));
@@ -618,7 +739,9 @@ class DocumentationController extends Controller
                     ? $assignments->firstWhere('id', $defaultMapped['id'])
                     : null;
 
-                $salesOrderId = $latestAssignment?->sales_order_id ?? ($allDocumented ? null : $op->sales_order_id);
+                $salesOrderId = ($isAmmoniaContext || !$hasActualPending)
+                    ? null
+                    : ($latestAssignment?->sales_order_id ?? ($allDocumented ? null : $op->sales_order_id));
                 $salesOrder = $latestAssignment?->salesOrder;
                 if (!$salesOrder && $salesOrderId) {
                     $salesOrder = SalesOrder::with(['client', 'product', 'vessel'])->find($salesOrderId);
@@ -653,6 +776,7 @@ class DocumentationController extends Controller
                     'sack' => $sack,
                     'type' => $type,
                     'has_pending_assignments' => $hasPendingAssignments,
+                    'has_actual_pending_assignments' => $pendingAssignments->isNotEmpty(),
                     'all_documented' => $allDocumented,
                     'is_full' => $isFullUnit,
                     'documented_folios' => $mappedAssignments->pluck('documented_folio')->filter()->unique()->values()->all(),
@@ -680,7 +804,7 @@ class DocumentationController extends Controller
                 ->orderBy('operator_name')
                 ->limit(20)
                 ->get()
-                ->map(function ($op) {
+                ->map(function ($op) use ($isAmmoniaContext) {
                     $lastLog = AccessLog::where('subject_id', $op->id)
                         ->where(function ($q) {
                             $q->where('subject_type', \App\Models\VesselOperator::class)
@@ -689,7 +813,8 @@ class DocumentationController extends Controller
                         ->latest('created_at')
                         ->first();
 
-                    $isAuthorizedInPlant = $lastLog && $lastLog->status === 'in_plant' && is_null($lastLog->exit_at);
+                    $isPipaUnit = str_contains(strtoupper(trim((string) ($op->unit_type ?? ''))), 'PIPA');
+                    $isAuthorizedInPlant = $isPipaUnit || ($lastLog && $lastLog->status === 'in_plant' && is_null($lastLog->exit_at));
                     $surveillanceStatus = 'none';
                     if ($lastLog) {
                         if ($lastLog->status === 'in_plant' && is_null($lastLog->exit_at)) {
@@ -3102,6 +3227,59 @@ class DocumentationController extends Controller
         }
 
         $now = now();
+        $isSecondLotFlow = !empty($stowagePlan['second_lot_status']) && in_array($stowagePlan['second_lot_status'], ['in_progress', 'lot_assigned'], true);
+        $currentSplitRound = (int) ($stowagePlan['split_lot_round'] ?? ($isSecondLotFlow ? 2 : 1));
+        if ($isSecondLotFlow) {
+            if (empty($stowagePlan['first_lot_folio'])) {
+                $prevLot = $history?->lot ?? $order?->lot;
+                if (!$prevLot && ($history?->lot_id ?? $order?->lot_id)) {
+                    $prevLot = Lot::find($history?->lot_id ?? $order?->lot_id);
+                }
+                if ($prevLot && (string) $prevLot->id !== (string) $lot->id) {
+                    $stowagePlan['first_lot_id'] = $prevLot->id;
+                    $stowagePlan['first_lot_folio'] = $prevLot->folio;
+                }
+            }
+            if (empty($stowagePlan['first_warehouse'])) {
+                $prevWh = $history?->warehouse ?? $order?->warehouse ?? ($stowagePlan['warehouse'] ?? null);
+                if ($prevWh) {
+                    $stowagePlan['first_warehouse'] = $prevWh;
+                }
+            }
+            if ($currentSplitRound >= 3) {
+                if (empty($stowagePlan['second_lot_folio'])) {
+                    $prevLot = $history?->lot ?? $order?->lot;
+                    if (!$prevLot && ($history?->lot_id ?? $order?->lot_id)) {
+                        $prevLot = Lot::find($history?->lot_id ?? $order?->lot_id);
+                    }
+                    if ($prevLot && (string) $prevLot->id !== (string) ($stowagePlan['first_lot_id'] ?? '')) {
+                        $stowagePlan['second_lot_id'] = $prevLot->id;
+                        $stowagePlan['second_lot_folio'] = $prevLot->folio;
+                    }
+                }
+                if (empty($stowagePlan['second_warehouse'])) {
+                    $prevWh = $history?->warehouse ?? $order?->warehouse ?? ($stowagePlan['warehouse'] ?? null);
+                    if ($prevWh) {
+                        $stowagePlan['second_warehouse'] = $prevWh;
+                    }
+                }
+                $stowagePlan['third_lot_id'] = $lot->id;
+                $stowagePlan['third_lot_folio'] = $lot->folio;
+                $stowagePlan['third_warehouse'] = $warehouse;
+                $stowagePlan['third_lot_assigned_at'] = $now->toIso8601String();
+                $stowagePlan['third_lot_assigned_by'] = $user?->name ?? 'Supervisor PROAGRO';
+            } else {
+                $stowagePlan['second_lot_id'] = $lot->id;
+                $stowagePlan['second_lot_folio'] = $lot->folio;
+                $stowagePlan['second_warehouse'] = $warehouse;
+                $stowagePlan['second_lot_assigned_at'] = $now->toIso8601String();
+                $stowagePlan['second_lot_assigned_by'] = $user?->name ?? 'Supervisor PROAGRO';
+            }
+            $stowagePlan['second_lot_status'] = 'lot_assigned';
+            $stowagePlan['second_lot_assigned'] = true;
+            $stowagePlan['sampling_release_status'] = 'pending_release';
+            unset($stowagePlan['released_by'], $stowagePlan['released_user_id'], $stowagePlan['released_at']);
+        }
         $stowagePlan['vobo_status'] = 'approved';
         $stowagePlan['vobo_by'] = $user?->name ?? 'Supervisor PROAGRO';
         $stowagePlan['vobo_user_id'] = $user?->id;
@@ -3110,14 +3288,25 @@ class DocumentationController extends Controller
         $stowagePlan['lot_id'] = $lot->id;
         $stowagePlan['lot_folio'] = $lot->folio;
 
+        $presText = strtoupper((string) ($order?->presentation ?? ''));
+        $isEnvasadoOrder = str_contains($presText, 'ENVAS') || str_contains($presText, 'SACO') || ((int)($order?->stowage_count ?? $history?->stowage_count ?? 0) > 0);
+
+        $historyUpdate = [
+            'lot_id' => $lot->id,
+            'warehouse' => $warehouse,
+            'cubicle' => $cubicle,
+            'stowage_plan' => $stowagePlan,
+        ];
+        if ($isEnvasadoOrder) {
+            $historyUpdate['stowage_plan_status'] = 'completed';
+        }
+        if ($isSecondLotFlow) {
+            $historyUpdate['status'] = 'loading';
+            $historyUpdate['finished_at'] = null;
+        }
+
         if ($history) {
-            $history->update([
-                'lot_id' => $lot->id,
-                'warehouse' => $warehouse,
-                'cubicle' => $cubicle,
-                'stowage_plan' => $stowagePlan,
-                'stowage_plan_status' => 'completed',
-            ]);
+            $history->update($historyUpdate);
         } else if ($order) {
             $history = ShipmentProcessHistory::create([
                 'shipment_order_id' => $order->id,
@@ -3130,31 +3319,65 @@ class DocumentationController extends Controller
                 'started_at' => $order->loaded_at ?? $now,
                 'status' => 'loading',
                 'stowage_plan' => $stowagePlan,
-                'stowage_plan_status' => 'completed',
-                'stowage_plan_saved_at' => $now,
-                'stowage_plan_saved_by' => $user?->id,
+                'stowage_plan_status' => $isEnvasadoOrder ? 'completed' : ($order->stowage_plan_status ?: 'pending'),
+                'stowage_plan_saved_at' => $isEnvasadoOrder ? ($order->stowage_plan_saved_at ?? $now) : $order->stowage_plan_saved_at,
+                'stowage_plan_saved_by' => $isEnvasadoOrder ? ($order->stowage_plan_saved_by ?? $user?->id) : $order->stowage_plan_saved_by,
                 'stowage_count' => $order->stowage_count,
             ]);
         }
 
         if ($order) {
-            $order->update([
+            $orderUpdate = [
                 'lot_id' => $lot->id,
                 'warehouse' => $warehouse,
                 'cubicle' => $cubicle,
                 'stowage_plan' => $stowagePlan,
-                'stowage_plan_status' => 'completed',
                 'loaded_at' => $order->loaded_at ?? $now,
-                'status' => ($order->status === 'created' || !$order->status) ? 'loading' : $order->status,
-            ]);
+                'status' => ($isSecondLotFlow || $order->status === 'created' || !$order->status) ? 'loading' : $order->status,
+            ];
+            if ($isEnvasadoOrder) {
+                $orderUpdate['stowage_plan_status'] = 'completed';
+            }
+            if ($isSecondLotFlow) {
+                $orderUpdate['loading_finished_at'] = null;
+            }
+            $order->update($orderUpdate);
+
+            // Sincronizar también el LoadingOrder activo (in_progress) con el nuevo almacén y su WeightTicket con el nuevo lote
+            $activeLo = \App\Models\LoadingOrder::where('shipment_order_id', $order->id)
+                ->whereHas('weight_ticket', fn($q) => $q->where('weighing_status', 'in_progress'))
+                ->latest('created_at')
+                ->first();
+            if ($activeLo) {
+                $loUpdate = ['warehouse' => $warehouse];
+                if (Schema::hasColumn('loading_orders', 'cubicle')) {
+                    $loUpdate['cubicle'] = $cubicle;
+                }
+                if (Schema::hasColumn('loading_orders', 'lot_id')) {
+                    $loUpdate['lot_id'] = $lot->id;
+                }
+                $activeLo->update($loUpdate);
+                $activeLo->weight_ticket?->update([
+                    'lot_id' => $lot->id,
+                ]);
+            }
         }
 
         $formatted = $history
             ? $this->formatProcessHistoryItem($history->fresh(['shipmentOrder.items.product', 'lot']))
             : $this->formatLoadingHistoryItem($order->fresh(['items.product', 'lot']));
 
+        $roundLabel = $currentSplitRound >= 3 ? '3er Lote' : '2do Lote';
+        $successMessage = $isSecondLotFlow
+            ? ($isEnvasadoOrder
+                ? "{$roundLabel} y almacén actualizados correctamente (Nota de Estiba intacta). Ya puede actualizar o liberar las muestras."
+                : "{$roundLabel} y almacén asignados correctamente para completar las toneladas programadas.")
+            : ($isEnvasadoOrder
+                ? 'VoBo de Nota de Estiba registrado correctamente con lote y almacén asignados. El personal estibador ya puede iniciar la toma de muestras.'
+                : 'Lote y almacén actualizados correctamente.');
+
         return response()->json([
-            'message' => 'VoBo de Nota de Estiba registrado correctamente con lote y almacén asignados. El personal estibador ya puede iniciar la toma de muestras.',
+            'message' => $successMessage,
             'stowage_plan' => $stowagePlan,
             'item' => $formatted,
         ]);
@@ -3584,6 +3807,20 @@ class DocumentationController extends Controller
             'loading_assistant' => $history->loading_assistant ?? $order?->loading_assistant ?? 'N/A',
             'is_sampling_blocked' => (bool) ($history->is_sampling_blocked ?? $order?->is_sampling_blocked ?? false),
             'sampling_unlock_count' => (int) ($history->sampling_unlock_count ?? $order?->sampling_unlock_count ?? 0),
+            'second_lot_status' => is_array($stowagePlan) ? ($stowagePlan['second_lot_status'] ?? null) : null,
+            'second_lot_assigned' => is_array($stowagePlan) ? (bool) ($stowagePlan['second_lot_assigned'] ?? false) : false,
+            'split_lot_round' => is_array($stowagePlan) ? (int) ($stowagePlan['split_lot_round'] ?? (!empty($stowagePlan['second_lot_status']) ? 2 : 1)) : 1,
+            'first_ticket_net_tons' => is_array($stowagePlan) && isset($stowagePlan['first_ticket_net_tons']) ? (float) $stowagePlan['first_ticket_net_tons'] : null,
+            'first_ticket_number' => is_array($stowagePlan) ? ($stowagePlan['first_ticket_number'] ?? null) : null,
+            'first_lot_folio' => is_array($stowagePlan) ? ($stowagePlan['first_lot_folio'] ?? null) : null,
+            'first_warehouse' => is_array($stowagePlan) ? ($stowagePlan['first_warehouse'] ?? null) : null,
+            'second_ticket_net_tons' => is_array($stowagePlan) && isset($stowagePlan['second_ticket_net_tons']) ? (float) $stowagePlan['second_ticket_net_tons'] : null,
+            'second_ticket_number' => is_array($stowagePlan) ? ($stowagePlan['second_ticket_number'] ?? null) : null,
+            'second_lot_folio' => is_array($stowagePlan) ? ($stowagePlan['second_lot_folio'] ?? null) : null,
+            'second_warehouse' => is_array($stowagePlan) ? ($stowagePlan['second_warehouse'] ?? null) : null,
+            'third_lot_folio' => is_array($stowagePlan) ? ($stowagePlan['third_lot_folio'] ?? null) : null,
+            'third_warehouse' => is_array($stowagePlan) ? ($stowagePlan['third_warehouse'] ?? null) : null,
+            'remaining_programmed_tons' => is_array($stowagePlan) && isset($stowagePlan['remaining_programmed_tons']) ? (float) $stowagePlan['remaining_programmed_tons'] : null,
         ];
     }
 
@@ -3655,6 +3892,20 @@ class DocumentationController extends Controller
             'loading_assistant' => $history?->loading_assistant ?? $order->loading_assistant ?? 'N/A',
             'is_sampling_blocked' => (bool) ($history?->is_sampling_blocked ?? $order->is_sampling_blocked ?? false),
             'sampling_unlock_count' => (int) ($history?->sampling_unlock_count ?? $order->sampling_unlock_count ?? 0),
+            'second_lot_status' => is_array($stowagePlan) ? ($stowagePlan['second_lot_status'] ?? null) : null,
+            'second_lot_assigned' => is_array($stowagePlan) ? (bool) ($stowagePlan['second_lot_assigned'] ?? false) : false,
+            'split_lot_round' => is_array($stowagePlan) ? (int) ($stowagePlan['split_lot_round'] ?? (!empty($stowagePlan['second_lot_status']) ? 2 : 1)) : 1,
+            'first_ticket_net_tons' => is_array($stowagePlan) && isset($stowagePlan['first_ticket_net_tons']) ? (float) $stowagePlan['first_ticket_net_tons'] : null,
+            'first_ticket_number' => is_array($stowagePlan) ? ($stowagePlan['first_ticket_number'] ?? null) : null,
+            'first_lot_folio' => is_array($stowagePlan) ? ($stowagePlan['first_lot_folio'] ?? null) : null,
+            'first_warehouse' => is_array($stowagePlan) ? ($stowagePlan['first_warehouse'] ?? null) : null,
+            'second_ticket_net_tons' => is_array($stowagePlan) && isset($stowagePlan['second_ticket_net_tons']) ? (float) $stowagePlan['second_ticket_net_tons'] : null,
+            'second_ticket_number' => is_array($stowagePlan) ? ($stowagePlan['second_ticket_number'] ?? null) : null,
+            'second_lot_folio' => is_array($stowagePlan) ? ($stowagePlan['second_lot_folio'] ?? null) : null,
+            'second_warehouse' => is_array($stowagePlan) ? ($stowagePlan['second_warehouse'] ?? null) : null,
+            'third_lot_folio' => is_array($stowagePlan) ? ($stowagePlan['third_lot_folio'] ?? null) : null,
+            'third_warehouse' => is_array($stowagePlan) ? ($stowagePlan['third_warehouse'] ?? null) : null,
+            'remaining_programmed_tons' => is_array($stowagePlan) && isset($stowagePlan['remaining_programmed_tons']) ? (float) $stowagePlan['remaining_programmed_tons'] : null,
         ];
     }
 
@@ -3739,6 +3990,12 @@ class DocumentationController extends Controller
 
     private function personalAgroindustrySquadLeaders()
     {
+        (new \App\Http\Controllers\SquadLeaderController)->ensureTablesExist();
+        $dbLeaders = \App\Models\SquadLeader::orderBy('name')->pluck('name');
+        if ($dbLeaders->isNotEmpty()) {
+            return $dbLeaders;
+        }
+
         $leaders = AptAttendance::query()
             ->where(function ($query) {
                 $query->whereRaw('UPPER(service_provider) LIKE ?', ['%PERSONAL PROPIO%'])

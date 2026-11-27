@@ -511,6 +511,25 @@ export default function EntrySale({
                         </div>
 
                         {/* Status Card */}
+                        {orderDetails?.is_second_lot_tare && (
+                            <div className="rounded-2xl p-5 border-2 border-amber-300 bg-amber-50 shadow-sm">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-xs font-black uppercase tracking-wider text-amber-900">
+                                        {Number(orderDetails.split_lot_round) >= 3 ? "3ra Tara (Continuación en 3er Lote)" : "2da Tara (Continuación en Otro Lote)"}
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-200 text-amber-950">
+                                        Restan {Number(orderDetails.remaining_programmed_tons || orderDetails.programmed_weight || 0).toFixed(2)} TM
+                                    </span>
+                                </div>
+                                <p className="text-xs text-amber-800 leading-relaxed">
+                                    1er Ticket ({orderDetails.first_ticket_number || "Ticket #1"}): <b>{Number(orderDetails.first_ticket_net_tons || 0).toFixed(2)} TM</b>
+                                    {Number(orderDetails.split_lot_round) >= 3 && (
+                                        <> • 2do Ticket ({orderDetails.second_ticket_number || "Ticket #2"}): <b>{Number(orderDetails.second_ticket_net_tons || 0).toFixed(2)} TM</b></>
+                                    )} de <b>{Number(orderDetails.original_programmed_weight || 0).toFixed(2)} TM</b> programadas. Al guardar esta {Number(orderDetails.split_lot_round) >= 3 ? "3ra Tara" : "2da Tara"} podrá seleccionar el nuevo lote/almacén en la tabla de Embarques.
+                                </p>
+                            </div>
+                        )}
+
                         <div
                             className={`rounded-2xl p-6 border shadow-sm ${orderDetails ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}
                         >

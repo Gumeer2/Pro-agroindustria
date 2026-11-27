@@ -820,7 +820,13 @@ export default function EnsacadoraSamplingModal({
         return e1 >= maxSamplesPerEnv && e2 >= maxSamplesPerEnv;
     }, [samples, maxSamplesPerEnv]);
 
-    const isLocked = isSaved && isBothEnsacadorasCompleted;
+    const isSecondLotEditable = Boolean(
+        order?.second_lot_status === "in_progress" ||
+        order?.second_lot_status === "lot_assigned" ||
+        order?.stowage_plan?.second_lot_status === "in_progress" ||
+        order?.stowage_plan?.second_lot_status === "lot_assigned"
+    );
+    const isLocked = isSaved && isBothEnsacadorasCompleted && !isSecondLotEditable;
 
     // Proteger contra cierre involuntario de pestaña/navegador si hay estibas sin guardar
     useEffect(() => {

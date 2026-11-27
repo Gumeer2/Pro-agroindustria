@@ -25,6 +25,20 @@ class LoadingAssistantController extends Controller
         return response()->json($assistant, 201);
     }
 
+    public function destroy($id)
+    {
+        $this->ensureTablesExist();
+        $assistant = LoadingAssistant::find($id);
+        if (!$assistant) {
+            $assistant = LoadingAssistant::where('name', $id)->first();
+        }
+        if ($assistant) {
+            $assistant->delete();
+            return response()->json(['success' => true, 'message' => 'Auxiliar eliminado correctamente.']);
+        }
+        return response()->json(['success' => false, 'message' => 'Auxiliar no encontrado.'], 404);
+    }
+
     private function ensureTablesExist(): void
     {
         if (!Schema::hasTable('loading_assistants')) {
